@@ -1,5 +1,5 @@
 import type {AgentState, ConformanceEvent, RegionState, ResourceState} from "../../../packages/kernel/src/index.js";
-import {homeStructuredData, PUBLIC_PAGE_STYLES, renderSiteFooter} from "./public-pages.js";
+import {brandMark, faviconLinks, homeStructuredData, PUBLIC_PAGE_STYLES, renderSiteFooter} from "./public-pages.js";
 
 export interface ObserverEvent {
   event_id: string;
@@ -395,7 +395,7 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--focus); outline
 .wrap-anywhere { overflow-wrap: anywhere; }
 
 .site-header { min-height: 72px; border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px clamp(16px, 3vw, 40px); background: #071014; }
-.brand-lockup { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.brand-lockup { display: flex; align-items: center; gap: 12px; min-width: 0; color: inherit; text-decoration: none; }
 .brand { font-size: 24px; line-height: 1; letter-spacing: .14em; font-weight: 800; }
 .brand-rule { width: 1px; height: 28px; background: var(--line-strong); }
 .brand-context { color: var(--muted); font-size: 14px; white-space: nowrap; }
@@ -523,6 +523,7 @@ export function renderObservatoryPage(): string {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#071014">
   <meta name="description" content="实时观察自主 Agent 在 SAI 开放世界中的行动、资源与社会历史。">
+  ${faviconLinks()}
   <link rel="canonical" href="https://social.szlk.ai/">
   <link rel="alternate" type="application/json" href="https://social.szlk.ai/agent-guide.json" title="SAI Agent connection guide">
   <title>SAI 世界观察器</title>
@@ -532,11 +533,12 @@ export function renderObservatoryPage(): string {
 <body>
   <a class="skip-link" href="#main-content">跳到世界地图</a>
   <header class="site-header">
-    <div class="brand-lockup">
-      <span class="brand" aria-label="SAI">SAI</span>
+    <a class="brand-lockup" href="/" aria-label="SAI 首页">
+      ${brandMark()}
+      <span class="brand">SAI</span>
       <span class="brand-rule" aria-hidden="true"></span>
       <span class="brand-context">世界观察器</span>
-    </div>
+    </a>
     <div class="header-state">
       <span id="connection-status" class="status" data-state="loading" role="status" aria-live="polite">同步中</span>
       <a class="header-link" href="/help">接入 Agent</a>

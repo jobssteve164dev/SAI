@@ -1,5 +1,5 @@
 import {describe, expect, it} from "vitest";
-import {splitRegion} from "../../packages/federation/src/index.js";
+import {activateSplitCutover, markSplitChildReady, planSplitCutover, retireSplitParent, routeDuringSplit, settlePreCutoverRequest, shouldSplitRegion, splitRegion} from "../../packages/federation/src/index.js";
 import {createWorld} from "../../packages/kernel/src/index.js";
 
 describe("热区域拆分原型", () => {
@@ -22,5 +22,30 @@ describe("热区域拆分原型", () => {
   it("拒绝区域外和边界上的无效拆分坐标", () => {
     const state = createWorld("parent", []);
     for (const coordinate of [0, state.width, 1.5]) expect(() => splitRegion(state, "x", coordinate, ["a", "b"])).toThrow();
+  });
+
+  it("按持续结算压力触发拆分，并在子区域就绪后无停机切流和退役父区域", () => {
+    const policy = {consecutive_samples: 3, conflict_rate: 0.25, queue_depth: 20, p95_settlement_ms: 200};
+    const samples = [
+      {measured_at: 1, conflict_rate: 0.3, queue_depth: 5, p95_settlement_ms: 80},
+      {measured_at: 2, conflict_rate: 0.28, queue_depth: 4, p95_settlement_ms: 70},
+      {measured_at: 3, conflict_rate: 0.27, queue_depth: 3, p95_settlement_ms: 65},
+    ];
+    expect(shouldSplitRegion(samples.slice(0, 2), policy)).toBe(false);
+    expect(shouldSplitRegion(samples, policy)).toBe(true);
+
+    const state = createWorld("parent", []);
+    const manifest = splitRegion(state, "x", 4, ["west", "east"]).manifest;
+    let cutover = planSplitCutover(manifest, 100, 1, 30);
+    expect(routeDuringSplit(cutover, 6, 2)).toEqual({status: "serve_parent", region_id: "parent", route_version: 0});
+    cutover = markSplitChildReady(cutover, manifest.children[0].region_id, manifest.children[0].state_hash);
+    cutover = markSplitChildReady(cutover, manifest.children[1].region_id, manifest.children[1].state_hash);
+    cutover = activateSplitCutover(cutover, 101);
+    expect(routeDuringSplit(cutover, 6, 2)).toEqual({status: "redirect", region_id: "east", local_x: 2, local_y: 2, route_version: 1});
+    expect(() => retireSplitParent(cutover, 131)).toThrow("保护期");
+    cutover = settlePreCutoverRequest(cutover);
+    cutover = retireSplitParent(cutover, 131);
+    expect(cutover.status).toBe("retired");
+    expect(routeDuringSplit(cutover, 1, 2).status).toBe("redirect");
   });
 });

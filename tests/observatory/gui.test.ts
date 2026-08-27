@@ -11,6 +11,8 @@ describe("SAI 世界观察器", () => {
   it("根页面提供可访问的只读观察界面且最终内联脚本语法有效", async () => {
     const page = renderObservatoryPage();
     expect(page).toContain("<title>SAI 世界观察器</title>");
+    expect(page).toContain('<link rel="icon" href="/favicon.svg" type="image/svg+xml">');
+    expect(page).toContain('class="brand-mark"');
     expect(page).toContain('id="world-map"');
     expect(page).toContain('id="event-list"');
     expect(page).toContain('id="inspector-body"');

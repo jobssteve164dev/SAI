@@ -6,7 +6,7 @@ import {assertTransferPrepareInput, createNodeDescriptor, createNodeKeyPair, cre
 import {buildObservation, createWorld, stateHash, transition, type ActInput, type ActResult, type AgentState, type ConformanceEvent, type Observation, type RegionState, type StoredObservation} from "../../../packages/kernel/src/index.js";
 import {createSaiMcpHandler} from "../../../packages/mcp/src/index.js";
 import {createObserverSnapshot, observatoryResponse, type ObserverSnapshot} from "./observatory.js";
-import {agentGuideResponse, helpResponse, isLegalRoute, legalResponse, llmsResponse, robotsResponse, sitemapResponse} from "./public-pages.js";
+import {agentGuideResponse, faviconResponse, helpResponse, isLegalRoute, legalResponse, llmsResponse, robotsResponse, sitemapResponse} from "./public-pages.js";
 
 interface Env {
   REGIONS: DurableObjectNamespace<RegionDurableObject>;
@@ -107,6 +107,7 @@ export class RegionDurableObject extends DurableObject<Env> {
       if (url.pathname === "/" && (request.method === "GET" || request.method === "HEAD")) return observatoryResponse(request.method);
       if (url.pathname === "/") return json({error: "method_not_allowed"}, 405, {allow: "GET, HEAD"});
       if (url.pathname === "/help" && (request.method === "GET" || request.method === "HEAD")) return helpResponse(request.method);
+      if ((url.pathname === "/favicon.svg" || url.pathname === "/favicon.ico") && (request.method === "GET" || request.method === "HEAD")) return faviconResponse(request.method, url.pathname.endsWith(".ico") ? "ico" : "svg");
       if (url.pathname === "/robots.txt" && request.method === "GET") return robotsResponse();
       if (url.pathname === "/sitemap.xml" && request.method === "GET") return sitemapResponse();
       if (url.pathname === "/llms.txt" && request.method === "GET") return llmsResponse();

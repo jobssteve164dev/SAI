@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sai.world/spec/0.2.0/route-publication.schema.json",
+  "title": "SAI Signed Route Publication",
+  "type": "object",
+  "required": ["protocol", "publisher", "manifest", "previous_publication_hash", "activates_at", "expires_at", "supported_protocols", "signature"],
+  "properties": {
+    "protocol": {"const": "sai-federation/0.2.0"},
+    "publisher": {"type": "object"},
+    "manifest": {"type": "object"},
+    "previous_publication_hash": {"type": ["string", "null"], "pattern": "^[A-Za-z0-9_-]{43}$"},
+    "activates_at": {"type": "integer", "minimum": 0},
+    "expires_at": {"type": "integer", "minimum": 0},
+    "supported_protocols": {"type": "array", "minItems": 1, "items": {"type": "string"}, "uniqueItems": true},
+    "signature": {"type": "string", "minLength": 32}
+  },
+  "additionalProperties": false
+}

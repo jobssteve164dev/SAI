@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sai.world/spec/0.2.0/transfer-asset-proof.schema.json",
+  "title": "SAI Transfer Asset Proof",
+  "type": "object",
+  "required": ["protocol", "proof_id", "transfer_id", "agent_id", "source_node", "source_state_hash", "inventory_hash", "assets", "issued_at", "signature"],
+  "properties": {
+    "protocol": {"const": "sai-federation/0.2.0"},
+    "proof_id": {"type": "string", "pattern": "^asset-proof_[A-Za-z0-9_-]+$"},
+    "transfer_id": {"type": "string", "pattern": "^transfer_[A-Za-z0-9_-]+$"},
+    "agent_id": {"type": "string", "pattern": "^agent:ed25519-v1:[A-Za-z0-9_-]+$"},
+    "source_node": {"type": "object"},
+    "source_state_hash": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "inventory_hash": {"type": "string", "pattern": "^[A-Za-z0-9_-]{43}$"},
+    "assets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["asset_type", "quantity"],
+        "properties": {"asset_type": {"type": "string"}, "quantity": {"type": "integer", "minimum": 0}},
+        "additionalProperties": false
+      }
+    },
+    "issued_at": {"type": "integer", "minimum": 0},
+    "signature": {"type": "string", "minLength": 32}
+  },
+  "additionalProperties": false
+}

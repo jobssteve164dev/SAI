@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sai.world/spec/0.2.0/node-incident.schema.json",
+  "title": "SAI Signed Node Incident",
+  "type": "object",
+  "required": ["protocol", "incident_id", "subject_node", "reporter", "category", "evidence_hash", "observed_at", "signature"],
+  "properties": {
+    "protocol": {"const": "sai-federation/0.2.0"},
+    "incident_id": {"type": "string", "pattern": "^incident_[A-Za-z0-9_-]+$"},
+    "subject_node": {"type": "string", "pattern": "^node:ed25519-v1:[A-Za-z0-9_-]+$"},
+    "reporter": {"type": "object"},
+    "category": {"enum": ["equivocation", "invalid_history", "invalid_transfer", "availability"]},
+    "evidence_hash": {"type": "string", "pattern": "^[A-Za-z0-9_-]{43}$"},
+    "observed_at": {"type": "integer", "minimum": 0},
+    "signature": {"type": "string", "minLength": 32}
+  },
+  "additionalProperties": false
+}

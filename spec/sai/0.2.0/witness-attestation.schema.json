@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sai.world/spec/0.2.0/witness-attestation.schema.json",
+  "title": "SAI Transfer Witness Attestation",
+  "type": "object",
+  "required": ["protocol", "proof_hash", "witness", "observed_at", "signature"],
+  "properties": {
+    "protocol": {"const": "sai-federation/0.2.0"},
+    "proof_hash": {"type": "string", "pattern": "^[A-Za-z0-9_-]{43}$"},
+    "witness": {"type": "object"},
+    "observed_at": {"type": "integer", "minimum": 0},
+    "signature": {"type": "string", "minLength": 32}
+  },
+  "additionalProperties": false
+}
