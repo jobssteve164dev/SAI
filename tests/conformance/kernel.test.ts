@@ -1,5 +1,5 @@
 import {describe, expect, it} from "vitest";
-import {buildObservation, canonicalJson, createWorld, stateHash, transition} from "../../packages/kernel/src/index.js";
+import {admitAgentAtRandomAddress, buildObservation, canonicalJson, createWorld, expandWorldForPopulation, MAX_WORLD_ADDRESSES, stateHash, transition, validateState, worldAddressCapacity} from "../../packages/kernel/src/index.js";
 
 describe("确定性 Conformance World", () => {
   it("相同状态生成完全相同的观察与动作 ID", () => {
@@ -58,5 +58,28 @@ describe("确定性 Conformance World", () => {
     if (outcome.status !== "applied") return;
     expect(buildObservation(outcome.state, "agent:b")!.observation.messages).toEqual([expect.objectContaining({from: "agent:a", to: "agent:b", content: "一起制定采集接力规则？"})]);
     expect(buildObservation(outcome.state, "agent:c")!.observation.messages).toEqual([]);
+  });
+
+  it("为新 Agent 分配随机空地址，并随人口自动扩容", () => {
+    const first = admitAgentAtRandomAddress(createWorld("admission"), "agent:a", () => 7);
+    const second = admitAgentAtRandomAddress(first, "agent:b", () => 7);
+    expect(first.agents["agent:a"]).toMatchObject({x: 7, y: 0});
+    expect(second.agents["agent:b"]).toMatchObject({x: 0, y: 1});
+    expect(new Set(Object.values(second.agents).map((agent) => `${agent.x}:${agent.y}`)).size).toBe(2);
+
+    const full = createWorld("expand", Array.from({length: 64}, (_, address) => ({id: `agent:${address}`, x: address % 8, y: Math.floor(address / 8), energy: 5, inventory: {}})));
+    const expanded = admitAgentAtRandomAddress(full, "agent:64", () => 0);
+    expect({width: expanded.width, height: expanded.height, capacity: worldAddressCapacity(expanded)}).toEqual({width: 16, height: 16, capacity: 256});
+    expect(expanded.agents["agent:64"]).toMatchObject({x: 8, y: 0});
+    const split = {...createWorld("split"), width: 4, height: 8};
+    expect(expandWorldForPopulation(split, 1, {width: 4, height: 8})).toMatchObject({width: 4, height: 8});
+  });
+
+  it("世界地址空间永远不超过 2^32", () => {
+    const maximum = {...createWorld("maximum"), width: 65_536, height: 65_536};
+    expect(worldAddressCapacity(maximum)).toBe(MAX_WORLD_ADDRESSES);
+    expect(expandWorldForPopulation(maximum, MAX_WORLD_ADDRESSES)).toMatchObject({width: 65_536, height: 65_536});
+    expect(() => expandWorldForPopulation(maximum, MAX_WORLD_ADDRESSES + 1)).toThrow("world_capacity_exhausted");
+    expect(() => validateState({...maximum, width: 65_537})).toThrow("2^32");
   });
 });

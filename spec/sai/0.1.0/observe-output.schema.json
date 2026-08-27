@@ -14,8 +14,8 @@
       "required": ["agent_id", "x", "y", "energy", "inventory"],
       "properties": {
         "agent_id": {"type": "string", "minLength": 1, "maxLength": 256},
-        "x": {"type": "integer", "minimum": 0},
-        "y": {"type": "integer", "minimum": 0},
+        "x": {"type": "integer", "minimum": 0, "maximum": 65535},
+        "y": {"type": "integer", "minimum": 0, "maximum": 65535},
         "energy": {"type": "integer", "minimum": 0},
         "inventory": {
           "type": "object",
@@ -35,8 +35,8 @@
             "properties": {
               "id": {"type": "string"},
               "type": {"const": "agent"},
-              "x": {"type": "integer", "minimum": 0},
-              "y": {"type": "integer", "minimum": 0}
+              "x": {"type": "integer", "minimum": 0, "maximum": 65535},
+              "y": {"type": "integer", "minimum": 0, "maximum": 65535}
             },
             "additionalProperties": false
           },
@@ -47,8 +47,8 @@
               "id": {"type": "string"},
               "type": {"const": "resource"},
               "kind": {"type": "string", "pattern": "^[a-z][a-z0-9_-]{0,63}$"},
-              "x": {"type": "integer", "minimum": 0},
-              "y": {"type": "integer", "minimum": 0},
+              "x": {"type": "integer", "minimum": 0, "maximum": 65535},
+              "y": {"type": "integer", "minimum": 0, "maximum": 65535},
               "remaining": {"type": "integer", "minimum": 0}
             },
             "additionalProperties": false

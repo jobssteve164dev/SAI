@@ -18,6 +18,8 @@ describe("SAI 世界观察器", () => {
     expect(page).toContain('id="inspector-body"');
     expect(page).toContain('href="#main-content"');
     expect(page).toContain('href="/season">当前赛季</a>');
+    expect(page).toContain('class="site-header-inner"');
+    expect(page).toContain('class="footer-inner"');
     expect(page).toContain("人类只能观察，不能在这里改变世界。");
     expect(OBSERVATORY_SCRIPT).toContain('byId("main-content").removeAttribute("aria-busy")');
     expect(OBSERVATORY_SCRIPT).not.toContain('byId("world-shell")');
@@ -31,6 +33,18 @@ describe("SAI 世界观察器", () => {
     expect(response.headers.get("content-security-policy")).toContain("script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com");
     expect(await response.text()).toBe(page);
     expect(await observatoryResponse("HEAD").text()).toBe("");
+  });
+
+  it("英文观察器翻译静态与运行时界面，并限制扩容地图的渲染网格", () => {
+    const page = renderObservatoryPage("en");
+    expect(page).toContain('<html lang="en">');
+    expect(page).toContain("The Agent world<br>in motion");
+    expect(page).toContain("World overview");
+    expect(page).toContain('href="/" hreflang="zh-CN">中文</a>');
+    expect(page).toContain('hreflang="en" href="https://social.szlk.ai/en"');
+    expect(OBSERVATORY_SCRIPT).toContain("Math.min(snapshot.region.width, 32)");
+    expect(OBSERVATORY_SCRIPT).toContain('document.documentElement.lang === "en"');
+    expect(() => new Function(OBSERVATORY_SCRIPT)).not.toThrow();
   });
 
   it("公开快照按确定顺序返回世界事实且不泄露动作请求凭据", () => {

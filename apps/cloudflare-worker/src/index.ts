@@ -1,12 +1,12 @@
 import {DurableObject} from "cloudflare:workers";
-import {createHash, randomUUID, type JsonWebKey} from "node:crypto";
+import {randomBytes, randomUUID, type JsonWebKey} from "node:crypto";
 import type {AuthInfo} from "@modelcontextprotocol/server";
 import {AuthService, type AuthSnapshot} from "../../../packages/auth/src/index.js";
 import {assertTransferPrepareInput, createNodeDescriptor, createNodeKeyPair, createTransferCancellation, createTransferCredential, createTransferReceipt, verifyTransferCancellation, verifyTransferCredential, verifyTransferReceipt, type NodeDescriptor, type NodeKeyPair, type TransferCancellation, type TransferCredential, type TransferReceipt} from "../../../packages/federation/src/index.js";
-import {buildObservation, createWorld, stateHash, transition, type ActInput, type ActResult, type AgentState, type ConformanceEvent, type Observation, type RegionState, type StoredObservation} from "../../../packages/kernel/src/index.js";
+import {admitAgentAtRandomAddress, buildObservation, createWorld, expandWorldForPopulation, stateHash, transition, type ActInput, type ActResult, type AgentState, type ConformanceEvent, type Observation, type RegionState, type StoredObservation} from "../../../packages/kernel/src/index.js";
 import {createSaiMcpHandler} from "../../../packages/mcp/src/index.js";
 import {createObserverSnapshot, observatoryResponse, type ObserverSnapshot} from "./observatory.js";
-import {agentGuideResponse, faviconResponse, helpResponse, isLegalRoute, legalResponse, llmsResponse, robotsResponse, seasonResponse, sitemapResponse} from "./public-pages.js";
+import {agentGuideResponse, faviconResponse, helpResponse, legalResponse, llmsResponse, resolveLegalRoute, robotsResponse, seasonResponse, sitemapResponse} from "./public-pages.js";
 
 interface Env {
   REGIONS: DurableObjectNamespace<RegionDurableObject>;
@@ -27,9 +27,7 @@ class DurableRegionApplication {
   async admit(agentId: string): Promise<void> {
     const state = await this.state();
     if (state.agents[agentId]) return;
-    const digest = createHash("sha256").update(agentId).digest();
-    state.agents[agentId] = {id: agentId, x: digest[0]! % state.width, y: digest[1]! % state.height, energy: 5, inventory: {}};
-    await this.storage.put("world", state);
+    await this.storage.put("world", admitAgentAtRandomAddress(state, agentId, () => randomBytes(4).readUInt32BE(0)));
   }
 
   async observe(agentId: string, input: {cursor?: string; max_bytes?: number} = {}): Promise<Observation> {
@@ -67,7 +65,7 @@ class DurableRegionApplication {
   async exportAgent(agentId: string): Promise<AgentState> { const agent = (await this.state()).agents[agentId]; if (!agent) throw new Error("agent_not_found"); return structuredClone(agent); }
   async lock(agentId: string): Promise<void> { await this.exportAgent(agentId); await this.storage.put(`agent-lock:${agentId}`, true); }
   async unlock(agentId: string): Promise<void> { await this.storage.delete(`agent-lock:${agentId}`); }
-  async importAgent(agent: AgentState): Promise<void> { const state = await this.state(); const existing = state.agents[agent.id]; if (existing && JSON.stringify(existing) !== JSON.stringify(agent)) throw new Error("目标区域已存在不同状态的 Agent"); state.agents[agent.id] = structuredClone(agent); await this.storage.put("world", state); }
+  async importAgent(agent: AgentState): Promise<void> { const state = await this.state(); const existing = state.agents[agent.id]; if (existing && JSON.stringify(existing) !== JSON.stringify(agent)) throw new Error("目标区域已存在不同状态的 Agent"); if (existing) return; const expanded = expandWorldForPopulation(state, Object.keys(state.agents).length + 1, {width: agent.x + 1, height: agent.y + 1}); expanded.agents[agent.id] = structuredClone(agent); await this.storage.put("world", expanded); }
   async removeAgent(agentId: string): Promise<void> { const state = await this.state(); delete state.agents[agentId]; await this.storage.put("world", state); await this.unlock(agentId); }
 
   async observerSnapshot(): Promise<ObserverSnapshot> {
@@ -105,15 +103,19 @@ export class RegionDurableObject extends DurableObject<Env> {
     const url = new URL(request.url);
     try {
       if (url.pathname === "/" && (request.method === "GET" || request.method === "HEAD")) return observatoryResponse(request.method);
+      if (url.pathname === "/en" && (request.method === "GET" || request.method === "HEAD")) return observatoryResponse(request.method, "en");
       if (url.pathname === "/") return json({error: "method_not_allowed"}, 405, {allow: "GET, HEAD"});
       if (url.pathname === "/help" && (request.method === "GET" || request.method === "HEAD")) return helpResponse(request.method);
+      if (url.pathname === "/en/help" && (request.method === "GET" || request.method === "HEAD")) return helpResponse(request.method, "en");
       if (url.pathname === "/season" && (request.method === "GET" || request.method === "HEAD")) return seasonResponse(request.method);
+      if (url.pathname === "/en/season" && (request.method === "GET" || request.method === "HEAD")) return seasonResponse(request.method, "en");
       if ((url.pathname === "/favicon.svg" || url.pathname === "/favicon.ico") && (request.method === "GET" || request.method === "HEAD")) return faviconResponse(request.method, url.pathname.endsWith(".ico") ? "ico" : "svg");
       if (url.pathname === "/robots.txt" && request.method === "GET") return robotsResponse();
       if (url.pathname === "/sitemap.xml" && request.method === "GET") return sitemapResponse();
       if (url.pathname === "/llms.txt" && request.method === "GET") return llmsResponse();
       if (url.pathname === "/agent-guide.json" && request.method === "GET") return agentGuideResponse();
-      if (isLegalRoute(url.pathname) && (request.method === "GET" || request.method === "HEAD")) return legalResponse(request, url.pathname);
+      const legalRoute = resolveLegalRoute(url.pathname);
+      if (legalRoute && (request.method === "GET" || request.method === "HEAD")) return legalResponse(request, legalRoute.route, legalRoute.locale);
       if (url.pathname === "/health") return json({service: "SAI", implementation: "cloudflare-durable-object", version: "0.2.0", node_id: this.nodeKeys.nodeId, region_id: this.env.REGION_ID, status: "ok"});
       if (url.pathname === "/api/observer/snapshot" && request.method === "GET") return json(await this.region.observerSnapshot(), 200, {"access-control-allow-origin": "*"});
       if (url.pathname === "/api/observer/snapshot" && request.method === "OPTIONS") return new Response(null, {status: 204, headers: {allow: "GET, OPTIONS", "access-control-allow-origin": "*", "access-control-allow-methods": "GET, OPTIONS"}});

@@ -1,5 +1,5 @@
-import {createHash} from "node:crypto";
-import {buildObservation, createWorld, transition, type ActInput, type ActResult, type AgentState, type ConformanceEvent, type Observation, type RegionState, type StoredObservation} from "../../../packages/kernel/src/index.js";
+import {randomBytes} from "node:crypto";
+import {admitAgentAtRandomAddress, buildObservation, createWorld, expandWorldForPopulation, transition, type ActInput, type ActResult, type AgentState, type ConformanceEvent, type Observation, type RegionState, type StoredObservation} from "../../../packages/kernel/src/index.js";
 import {FileStore} from "./store.js";
 
 export class RegionService {
@@ -30,7 +30,9 @@ export class RegionService {
     await this.serial(async () => {
       const existing = this.state.agents[agent.id];
       if (existing && JSON.stringify(existing) !== JSON.stringify(agent)) throw new Error("目标区域已存在不同状态的 Agent");
-      this.state = {...this.state, agents: {...this.state.agents, [agent.id]: structuredClone(agent)}};
+      if (existing) return;
+      const expanded = expandWorldForPopulation(this.state, Object.keys(this.state.agents).length + 1, {width: agent.x + 1, height: agent.y + 1});
+      this.state = {...expanded, agents: {...expanded.agents, [agent.id]: structuredClone(agent)}};
       await this.store.saveSnapshot(this.state);
     });
   }
@@ -48,9 +50,7 @@ export class RegionService {
   async admit(agentId: string): Promise<void> {
     await this.serial(async () => {
       if (this.state.agents[agentId]) return;
-      const digest = createHash("sha256").update(agentId).digest();
-      const agent: AgentState = {id: agentId, x: digest[0]! % this.state.width, y: digest[1]! % this.state.height, energy: 5, inventory: {}};
-      this.state = {...this.state, agents: {...this.state.agents, [agentId]: agent}};
+      this.state = admitAgentAtRandomAddress(this.state, agentId, () => randomBytes(4).readUInt32BE(0));
       await this.store.saveSnapshot(this.state);
     });
   }

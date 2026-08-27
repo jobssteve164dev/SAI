@@ -17,6 +17,9 @@ import {
 } from "./types.js";
 
 const MAX_ENERGY = 10;
+export const MAX_WORLD_ADDRESSES = 2 ** 32;
+export const MAX_WORLD_AXIS = 2 ** 16;
+const INITIAL_WORLD_AXIS = 8;
 const MESSAGE_SCHEMA = {
   type: "object",
   required: ["content"],
@@ -31,8 +34,8 @@ export function createWorld(regionId = "local", agents: AgentState[] = []): Regi
     region_id: regionId,
     event_seq: 0,
     logical_tick: 0,
-    width: 8,
-    height: 8,
+    width: INITIAL_WORLD_AXIS,
+    height: INITIAL_WORLD_AXIS,
     agents: Object.fromEntries(agents.map((agent) => [agent.id, structuredClone(agent)])),
     resources: {
       "resource-alpha": {id: "resource-alpha", kind: "crystal", x: 1, y: 0, remaining: 8},
@@ -40,6 +43,42 @@ export function createWorld(regionId = "local", agents: AgentState[] = []): Regi
     },
     messages: [],
   };
+}
+
+export function worldAddressCapacity(state: Pick<RegionState, "width" | "height">): number {
+  return state.width * state.height;
+}
+
+export function expandWorldForPopulation(state: RegionState, population: number, minimumDimensions: {width: number; height: number} = {width: 1, height: 1}): RegionState {
+  if (!Number.isSafeInteger(population) || population < 0) throw new TypeError("Agent 数量必须是非负安全整数");
+  const minimums = [minimumDimensions.width, minimumDimensions.height];
+  if (minimums.some((value) => !Number.isSafeInteger(value) || value < 1)) throw new TypeError("世界尺寸要求必须是正安全整数");
+  if (population > MAX_WORLD_ADDRESSES || minimums.some((value) => value > MAX_WORLD_AXIS)) throw new Error("world_capacity_exhausted");
+  if (worldAddressCapacity(state) >= population && state.width >= minimumDimensions.width && state.height >= minimumDimensions.height) return structuredClone(state);
+  let axis = Math.max(INITIAL_WORLD_AXIS, state.width, state.height, minimumDimensions.width, minimumDimensions.height);
+  while (axis * axis < population && axis < MAX_WORLD_AXIS) axis *= 2;
+  if (axis > MAX_WORLD_AXIS || axis * axis < population) throw new Error("world_capacity_exhausted");
+  return axis === state.width && axis === state.height ? structuredClone(state) : {...structuredClone(state), width: axis, height: axis};
+}
+
+export function admitAgentAtRandomAddress(state: RegionState, agentId: string, randomUint32: () => number): RegionState {
+  if (state.agents[agentId]) return structuredClone(state);
+  const population = Object.keys(state.agents).length + 1;
+  const next = expandWorldForPopulation(state, population);
+  const capacity = worldAddressCapacity(next);
+  const random = randomUint32();
+  if (!Number.isSafeInteger(random) || random < 0 || random >= MAX_WORLD_ADDRESSES) throw new TypeError("随机地址源必须返回 uint32");
+  const occupied = new Set(Object.values(next.agents).map((agent) => agent.y * next.width + agent.x));
+  const start = random % capacity;
+  let address = start;
+  for (let offset = 0; offset <= occupied.size; offset += 1) {
+    address = (start + offset) % capacity;
+    if (!occupied.has(address)) break;
+  }
+  if (occupied.has(address)) throw new Error("world_capacity_exhausted");
+  const agent: AgentState = {id: agentId, x: address % next.width, y: Math.floor(address / next.width), energy: 5, inventory: {}};
+  next.agents[agentId] = agent;
+  return next;
 }
 
 export function stateHash(state: RegionState): string {
@@ -63,6 +102,9 @@ export function validateState(state: RegionState): void {
   for (const resource of Object.values(state.resources)) integers.push(resource.x, resource.y, resource.remaining);
   if (integers.some((value) => !Number.isSafeInteger(value) || value < 0)) throw new TypeError("世界状态含非法整数");
   if (state.width < 1 || state.height < 1) throw new TypeError("世界尺寸必须为正整数");
+  if (state.width > MAX_WORLD_AXIS || state.height > MAX_WORLD_AXIS || worldAddressCapacity(state) > MAX_WORLD_ADDRESSES) throw new TypeError("世界地址空间不能超过 2^32");
+  if (Object.values(state.agents).some((agent) => agent.x >= state.width || agent.y >= state.height)) throw new TypeError("Agent 坐标超出世界边界");
+  if (Object.values(state.resources).some((resource) => resource.x >= state.width || resource.y >= state.height)) throw new TypeError("资源坐标超出世界边界");
 }
 
 function actionId(seed: unknown): string {

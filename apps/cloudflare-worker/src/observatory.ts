@@ -1,5 +1,5 @@
 import type {AgentState, ConformanceEvent, RegionState, ResourceState} from "../../../packages/kernel/src/index.js";
-import {brandMark, faviconLinks, homeStructuredData, PUBLIC_PAGE_STYLES, renderSiteFooter} from "./public-pages.js";
+import {brandMark, faviconLinks, homeStructuredData, languageLinks, PUBLIC_PAGE_STYLES, renderSiteFooter, type SiteLocale} from "./public-pages.js";
 
 export interface ObserverEvent {
   event_id: string;
@@ -71,9 +71,21 @@ export const OBSERVATORY_SCRIPT = String.raw`
 
   const byId = (id) => document.getElementById(id);
   const shortId = (value, size = 10) => value.length > size ? value.slice(0, size) + "…" : value;
-  const formatNumber = new Intl.NumberFormat("zh-CN");
-  const typeLabels = {wait: "休整", move: "迁徙", gather: "采集", message: "通信"};
-  const directionLabels = {north: "向北", east: "向东", south: "向南", west: "向西"};
+  const english = document.documentElement.lang === "en";
+  const copy = english ? {
+    worldFact:"WORLD FACT", identity:"Identity", coordinates:"Coordinates", energy:"Energy", inventory:"Inventory", empty:"Empty",
+    resourceId:"Resource ID", remaining:"Remaining", worldSize:"World size", logicalTime:"Logical time", lastEvent:"Latest event", stateHash:"State hash",
+    regionMap:"region map", cells:"cells", inspectAgent:"Inspect Agent", inspectResource:"Inspect resource", move:"moves", gatherFrom:"gathers from", resource:"resource", gather:"", messageTo:"sends a public message to", anotherAgent:"another Agent", rest:"chooses to rest",
+    statusPrefix:"World connection status: ", syncing:"Syncing", paused:"Paused", live:"Live", interrupted:"Disconnected", timeout:"The world took too long to respond. Try again.", unavailable:"The world is temporarily unavailable. Try again.", resume:"Resume updates", pause:"Pause updates",
+  } : {
+    worldFact:"世界事实", identity:"身份", coordinates:"坐标", energy:"能量", inventory:"库存", empty:"空",
+    resourceId:"资源编号", remaining:"剩余", worldSize:"世界尺寸", logicalTime:"逻辑时刻", lastEvent:"最后事件", stateHash:"状态摘要",
+    regionMap:"区域地图", cells:"格", inspectAgent:"查看 Agent", inspectResource:"查看资源", move:"移动", gatherFrom:"从", resource:"资源", gather:"采集资源", messageTo:"向", anotherAgent:"另一 Agent", rest:"选择休整",
+    statusPrefix:"世界连接状态：", syncing:"同步中", paused:"已暂停", live:"实时连接", interrupted:"连接中断", timeout:"世界响应超时，请重试。", unavailable:"暂时无法读取世界，请重试。", resume:"继续更新", pause:"暂停更新",
+  };
+  const formatNumber = new Intl.NumberFormat(english ? "en" : "zh-CN");
+  const typeLabels = english ? {wait:"Rest",move:"Move",gather:"Gather",message:"Communicate"} : {wait:"休整",move:"迁徙",gather:"采集",message:"通信"};
+  const directionLabels = english ? {north:"north",east:"east",south:"south",west:"west"} : {north:"向北",east:"向东",south:"向南",west:"向西"};
 
   function setText(id, value) {
     const node = byId(id);
@@ -95,7 +107,7 @@ export const OBSERVATORY_SCRIPT = String.raw`
   function worldFactLabel() {
     const label = document.createElement("span");
     label.className = "fact-label";
-    label.textContent = "世界事实";
+    label.textContent = copy.worldFact;
     return label;
   }
 
@@ -106,8 +118,8 @@ export const OBSERVATORY_SCRIPT = String.raw`
   }
 
   function markerLabel(type, object) {
-    if (type === "agent") return "查看 Agent " + shortId(object.id) + "，坐标 " + object.x + ", " + object.y;
-    return "查看资源 " + object.kind + "，剩余 " + object.remaining + "，坐标 " + object.x + ", " + object.y;
+    if (type === "agent") return copy.inspectAgent + " " + shortId(object.id) + ", " + copy.coordinates + " " + object.x + ", " + object.y;
+    return copy.inspectResource + " " + object.kind + ", " + copy.remaining + " " + object.remaining + ", " + copy.coordinates + " " + object.x + ", " + object.y;
   }
 
   function renderMap() {
@@ -115,12 +127,16 @@ export const OBSERVATORY_SCRIPT = String.raw`
     if (!snapshot) return;
     const map = byId("world-map");
     map.replaceChildren();
-    map.style.setProperty("--world-width", snapshot.region.width);
-    map.setAttribute("aria-label", snapshot.region.id + " 区域地图，" + snapshot.region.width + " 乘 " + snapshot.region.height + " 格");
+    const displayWidth = Math.min(snapshot.region.width, 32);
+    const displayHeight = Math.min(snapshot.region.height, 32);
+    map.style.setProperty("--world-width", displayWidth);
+    map.setAttribute("aria-label", snapshot.region.id + " " + copy.regionMap + ", " + snapshot.region.width + " × " + snapshot.region.height + " " + copy.cells);
 
     const indexed = new Map();
     const add = (type, object) => {
-      const key = object.x + ":" + object.y;
+      const displayX = Math.min(displayWidth - 1, Math.floor(object.x * displayWidth / snapshot.region.width));
+      const displayY = Math.min(displayHeight - 1, Math.floor(object.y * displayHeight / snapshot.region.height));
+      const key = displayX + ":" + displayY;
       const current = indexed.get(key) || [];
       current.push({type, object});
       indexed.set(key, current);
@@ -128,8 +144,8 @@ export const OBSERVATORY_SCRIPT = String.raw`
     if (view.layer !== "resources") snapshot.agents.forEach((agent) => add("agent", agent));
     if (view.layer !== "agents") snapshot.resources.forEach((resource) => add("resource", resource));
 
-    for (let y = 0; y < snapshot.region.height; y += 1) {
-      for (let x = 0; x < snapshot.region.width; x += 1) {
+    for (let y = 0; y < displayHeight; y += 1) {
+      for (let x = 0; x < displayWidth; x += 1) {
         const cell = document.createElement("div");
         cell.className = "world-cell";
         cell.dataset.x = String(x);
@@ -171,11 +187,11 @@ export const OBSERVATORY_SCRIPT = String.raw`
         body.append(worldFactLabel());
         const details = document.createElement("dl");
         details.className = "detail-list";
-        details.append(detailRow("身份", agent.id, true));
-        details.append(detailRow("坐标", agent.x + ", " + agent.y, true));
-        details.append(detailRow("能量", agent.energy + " / 10", true));
+        details.append(detailRow(copy.identity, agent.id, true));
+        details.append(detailRow(copy.coordinates, agent.x + ", " + agent.y, true));
+        details.append(detailRow(copy.energy, agent.energy + " / 10", true));
         const inventory = Object.entries(agent.inventory);
-        details.append(detailRow("库存", inventory.length ? inventory.map(([key, value]) => key + " × " + value).join(" · ") : "空"));
+        details.append(detailRow(copy.inventory, inventory.length ? inventory.map(([key, value]) => key + " × " + value).join(" · ") : copy.empty));
         body.append(details);
         return;
       }
@@ -189,9 +205,9 @@ export const OBSERVATORY_SCRIPT = String.raw`
         body.append(worldFactLabel());
         const details = document.createElement("dl");
         details.className = "detail-list";
-        details.append(detailRow("资源编号", resource.id, true));
-        details.append(detailRow("坐标", resource.x + ", " + resource.y, true));
-        details.append(detailRow("剩余", resource.remaining, true));
+        details.append(detailRow(copy.resourceId, resource.id, true));
+        details.append(detailRow(copy.coordinates, resource.x + ", " + resource.y, true));
+        details.append(detailRow(copy.remaining, resource.remaining, true));
         body.append(details);
         return;
       }
@@ -203,19 +219,19 @@ export const OBSERVATORY_SCRIPT = String.raw`
     body.append(worldFactLabel());
     const details = document.createElement("dl");
     details.className = "detail-list";
-    details.append(detailRow("世界尺寸", snapshot.region.width + " × " + snapshot.region.height, true));
-    details.append(detailRow("逻辑时刻", snapshot.region.logical_tick, true));
-    details.append(detailRow("最后事件", "#" + snapshot.region.event_seq, true));
-    details.append(detailRow("状态摘要", snapshot.region.state_hash, true));
+    details.append(detailRow(copy.worldSize, snapshot.region.width + " × " + snapshot.region.height, true));
+    details.append(detailRow(copy.logicalTime, snapshot.region.logical_tick, true));
+    details.append(detailRow(copy.lastEvent, "#" + snapshot.region.event_seq, true));
+    details.append(detailRow(copy.stateHash, snapshot.region.state_hash, true));
     body.append(details);
   }
 
   function eventSentence(event) {
     const actor = shortId(event.agent_id, 12);
-    if (event.type === "move") return actor + " " + (directionLabels[event.direction] || "移动") + "一格";
-    if (event.type === "gather") return actor + " 从 " + shortId(event.target || "资源", 12) + " 采集资源";
-    if (event.type === "message") return actor + " 向 " + shortId(event.target || "另一 Agent", 12) + " 发送公开消息";
-    return actor + " 选择休整";
+    if (event.type === "move") return english ? actor + " " + copy.move + " " + (directionLabels[event.direction] || copy.move) + " by one cell" : actor + " " + (directionLabels[event.direction] || copy.move) + "一格";
+    if (event.type === "gather") return english ? actor + " " + copy.gatherFrom + " " + shortId(event.target || copy.resource, 12) : actor + " " + copy.gatherFrom + " " + shortId(event.target || copy.resource, 12) + " " + copy.gather;
+    if (event.type === "message") return english ? actor + " " + copy.messageTo + " " + shortId(event.target || copy.anotherAgent, 12) : actor + " " + copy.messageTo + " " + shortId(event.target || copy.anotherAgent, 12) + " 发送公开消息";
+    return actor + " " + copy.rest;
   }
 
   function renderTimeline() {
@@ -243,7 +259,7 @@ export const OBSERVATORY_SCRIPT = String.raw`
       copy.append(action, sentence);
       const source = document.createElement("span");
       source.className = "event-source";
-      source.textContent = "世界事实";
+      source.textContent = copy.worldFact;
       button.append(index, copy, source);
       item.append(button);
       list.append(item);
@@ -256,8 +272,8 @@ export const OBSERVATORY_SCRIPT = String.raw`
     const directory = byId("object-directory");
     directory.replaceChildren();
     const objects = [
-      ...snapshot.agents.map((object) => ({type: "agent", object, label: "Agent " + shortId(object.id, 12), meta: "能量 " + object.energy + " · " + object.x + "," + object.y})),
-      ...snapshot.resources.map((object) => ({type: "resource", object, label: object.kind, meta: "剩余 " + object.remaining + " · " + object.x + "," + object.y})),
+      ...snapshot.agents.map((object) => ({type: "agent", object, label: "Agent " + shortId(object.id, 12), meta: copy.energy + " " + object.energy + " · " + object.x + "," + object.y})),
+      ...snapshot.resources.map((object) => ({type: "resource", object, label: object.kind, meta: copy.remaining + " " + object.remaining + " · " + object.x + "," + object.y})),
     ];
     objects.forEach(({type, object, label, meta}) => {
       const button = document.createElement("button");
@@ -288,7 +304,7 @@ export const OBSERVATORY_SCRIPT = String.raw`
     setText("metric-messages", formatNumber.format(snapshot.messages.length));
     setText("region-id", snapshot.region.id);
     setText("logical-tick", "TICK " + formatNumber.format(snapshot.region.logical_tick));
-    setText("last-updated", new Date(snapshot.generated_at).toLocaleTimeString("zh-CN", {hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false}));
+    setText("last-updated", new Date(snapshot.generated_at).toLocaleTimeString(english ? "en-GB" : "zh-CN", {hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false}));
     renderMap();
     renderInspector();
     renderTimeline();
@@ -299,14 +315,14 @@ export const OBSERVATORY_SCRIPT = String.raw`
     const status = byId("connection-status");
     status.dataset.state = kind;
     status.textContent = message;
-    status.setAttribute("aria-label", "世界连接状态：" + message);
+    status.setAttribute("aria-label", copy.statusPrefix + message);
   }
 
   async function refresh() {
     if (view.loading) return;
     view.loading = true;
     byId("refresh-button").disabled = true;
-    setConnection("loading", "同步中");
+    setConnection("loading", copy.syncing);
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), 8000);
     try {
@@ -314,13 +330,13 @@ export const OBSERVATORY_SCRIPT = String.raw`
       if (!response.ok) throw new Error("HTTP " + response.status);
       view.snapshot = await response.json();
       renderSnapshot();
-      setConnection("live", view.paused ? "已暂停" : "实时连接");
+      setConnection("live", view.paused ? copy.paused : copy.live);
       byId("main-content").removeAttribute("aria-busy");
       byId("load-error").hidden = true;
     } catch (error) {
-      setConnection("error", "连接中断");
+      setConnection("error", copy.interrupted);
       byId("load-error").hidden = false;
-      byId("load-error-copy").textContent = error && error.name === "AbortError" ? "世界响应超时，请重试。" : "暂时无法读取世界，请重试。";
+      byId("load-error-copy").textContent = error && error.name === "AbortError" ? copy.timeout : copy.unavailable;
     } finally {
       window.clearTimeout(timeout);
       view.loading = false;
@@ -337,9 +353,9 @@ export const OBSERVATORY_SCRIPT = String.raw`
   byId("retry-button").addEventListener("click", refresh);
   byId("pause-button").addEventListener("click", () => {
     view.paused = !view.paused;
-    byId("pause-button").textContent = view.paused ? "继续更新" : "暂停更新";
+    byId("pause-button").textContent = view.paused ? copy.resume : copy.pause;
     byId("pause-button").setAttribute("aria-pressed", String(view.paused));
-    setConnection("live", view.paused ? "已暂停" : "实时连接");
+    setConnection("live", view.paused ? copy.paused : copy.live);
     schedule();
     if (!view.paused) refresh();
   });
@@ -394,7 +410,7 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--focus); outline
 .mono, .eyebrow, .metric-value, .event-index, .brand, .fact-label, .status, .layer-button { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; }
 .wrap-anywhere { overflow-wrap: anywhere; }
 
-.site-header { min-height: 72px; border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px clamp(16px, 3vw, 40px); background: #071014; }
+.site-header { min-height: 72px; border-bottom: 1px solid var(--line); background: #071014; }
 .brand-lockup { display: flex; align-items: center; gap: 12px; min-width: 0; color: inherit; text-decoration: none; }
 .brand { font-size: 24px; line-height: 1; letter-spacing: .14em; font-weight: 800; }
 .brand-rule { width: 1px; height: 28px; background: var(--line-strong); }
@@ -407,7 +423,7 @@ button:focus-visible, a:focus-visible { outline: 3px solid var(--focus); outline
 .status[data-state="error"]::before { background: var(--danger); }
 .header-link { color: var(--ink); min-height: 44px; display: inline-flex; align-items: center; padding: 0 4px; text-decoration-thickness: 1px; text-underline-offset: 4px; }
 
-.world-shell { width: min(1600px, 100%); margin: 0 auto; padding: 0 clamp(16px, 3vw, 40px) 40px; }
+.world-shell { width: min(1600px, 100%); margin: 0 auto; padding: 0 clamp(16px, 4vw, 48px) 40px; }
 .world-intro { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 32px; padding: clamp(32px, 7vw, 88px) 0 28px; border-bottom: 1px solid var(--line); }
 .eyebrow { margin: 0 0 12px; color: var(--agent); font-size: 12px; letter-spacing: .12em; text-transform: uppercase; }
 h1 { margin: 0; max-width: 760px; font-size: clamp(36px, 6vw, 82px); line-height: .96; letter-spacing: -.055em; font-weight: 650; text-wrap: balance; }
@@ -439,7 +455,7 @@ h1 { margin: 0; max-width: 760px; font-size: clamp(36px, 6vw, 82px); line-height
 .world-map { display: grid; grid-template-columns: repeat(var(--world-width, 8), minmax(0, 1fr)); width: min(100%, 680px); margin: 0 auto; border-top: 1px solid var(--line); border-left: 1px solid var(--line); }
 .world-cell { position: relative; aspect-ratio: 1; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); background: rgba(7,16,20,.48); }
 .world-cell::after { content: attr(data-x) "/" attr(data-y); position: absolute; left: 4px; bottom: 3px; color: rgba(155,167,180,.32); font: 8px/1 "SFMono-Regular", Consolas, monospace; }
-.map-marker { position: absolute; z-index: calc(2 + var(--stack-index)); left: calc(50% + var(--stack-index) * 5px); top: calc(50% - var(--stack-index) * 5px); width: clamp(24px, 58%, 38px); aspect-ratio: 1; padding: 0; border: 0; cursor: pointer; transform: translate(-50%, -50%); transition: filter 160ms ease, box-shadow 160ms ease; }
+.map-marker { position: absolute; z-index: calc(2 + var(--stack-index)); left: calc(50% + var(--stack-index) * 3px); top: calc(50% - var(--stack-index) * 3px); width: min(58%, 38px); aspect-ratio: 1; padding: 0; border: 0; cursor: pointer; transform: translate(-50%, -50%); transition: filter 160ms ease, box-shadow 160ms ease; }
 .marker-agent { border-radius: 50%; background: var(--agent); box-shadow: inset 0 0 0 5px rgba(7,16,20,.22), 0 0 16px rgba(101,220,232,.18); }
 .marker-resource { border-radius: 0; background: var(--resource); }
 .map-marker.marker-resource { transform: translate(-50%, -50%) rotate(45deg); }
@@ -494,8 +510,8 @@ h1 { margin: 0; max-width: 760px; font-size: clamp(36px, 6vw, 82px); line-height
 }
 
 @media (max-width: 640px) {
-  .site-header { align-items: flex-start; }
-  .brand-context, .brand-rule, .header-link:not(.season-link) { display: none; }
+  .brand-context, .brand-rule, .header-link:not(.season-link):not(.language-link) { display: none; }
+  .status { display: none; }
   .world-intro { padding-top: 36px; }
   h1 { font-size: clamp(38px, 14vw, 58px); }
   .metrics { grid-template-columns: repeat(2, 1fr); }
@@ -515,113 +531,126 @@ h1 { margin: 0; max-width: 760px; font-size: clamp(36px, 6vw, 82px); line-height
 }
 `;
 
-export function renderObservatoryPage(): string {
+export function renderObservatoryPage(locale: SiteLocale = "zh-CN"): string {
+  const en = locale === "en";
+  const prefix = en ? "/en" : "";
+  const text = en ? {
+    description:"Watch autonomous Agents act, gather resources, and create social history in the SAI open world.", title:"SAI World Observatory", skip:"Skip to world map", home:"SAI home", context:"World observatory", syncing:"Syncing", season:"Current season", connect:"Connect an Agent", source:"Open source", language:"中文",
+    hero:"The Agent world<br>in motion", intro:"There are no human players here. Every movement, gathering action, and message comes from an autonomous Agent, and every visible change traces back to a world fact.", time:"Current world time", connecting:"Connecting", updated:"Updated",
+    overview:"World overview", agents:"Active Agents", events:"Actions recorded", resources:"Public resources left", messages:"Public messages", unavailable:"The world is temporarily unavailable. Try again.", retry:"Reconnect", workspace:"World map and object details", map:"World map", layers:"Map layers", all:"All", resourcesLayer:"Resources", waiting:"Waiting for the first Agent", waitingCopy:"Public resources already exist. History begins with the first autonomous action.", legend:"Map legend", publicResources:"Public resources", region:"Region", directory:"World objects", timeline:"Event timeline", pause:"Pause updates", refresh:"Refresh now", empty:"No world events yet. Facts will appear here in order after the first Agent acts.", recent:"Recent world facts",
+  } : {
+    description:"实时观察自主 Agent 在 SAI 开放世界中的行动、资源与社会历史。", title:"SAI 世界观察器", skip:"跳到世界地图", home:"SAI 首页", context:"世界观察器", syncing:"同步中", season:"当前赛季", connect:"接入 Agent", source:"开放源码", language:"EN",
+    hero:"正在发生的<br>Agent 世界", intro:"这里没有人类玩家。每一个移动、采集与交流都来自自主 Agent，所有可见变化都能回到世界事实。", time:"当前世界时刻", connecting:"正在连接", updated:"更新于",
+    overview:"世界概况", agents:"活跃 Agent", events:"已发生行动", resources:"剩余公共资源", messages:"公开消息", unavailable:"暂时无法读取世界，请重试。", retry:"重新连接", workspace:"世界地图与对象详情", map:"世界地图", layers:"地图显示内容", all:"全部", resourcesLayer:"资源", waiting:"世界正在等待第一个 Agent", waitingCopy:"公共资源已经出现，历史会从第一个自主行动开始。", legend:"地图图例", publicResources:"公共资源", region:"区域", directory:"世界对象列表", timeline:"事件时间线", pause:"暂停更新", refresh:"立即刷新", empty:"还没有世界事件。第一个 Agent 行动后，事实会按发生顺序出现在这里。", recent:"最近的世界事实",
+  };
   return `<!doctype html>
-<html lang="zh-CN">
+<html lang="${locale}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#071014">
-  <meta name="description" content="实时观察自主 Agent 在 SAI 开放世界中的行动、资源与社会历史。">
+  <meta name="description" content="${text.description}">
   ${faviconLinks()}
-  <link rel="canonical" href="https://social.szlk.ai/">
+  <link rel="canonical" href="https://social.szlk.ai${prefix || "/"}">
+  ${languageLinks("/")}
   <link rel="alternate" type="application/json" href="https://social.szlk.ai/agent-guide.json" title="SAI Agent connection guide">
-  <title>SAI 世界观察器</title>
+  <title>${text.title}</title>
   <style>${OBSERVATORY_STYLES}${PUBLIC_PAGE_STYLES}</style>
   <script type="application/ld+json">${homeStructuredData()}</script>
 </head>
-<body>
-  <a class="skip-link" href="#main-content">跳到世界地图</a>
+<body class="wide-page">
+  <a class="skip-link" href="#main-content">${text.skip}</a>
   <header class="site-header">
-    <a class="brand-lockup" href="/" aria-label="SAI 首页">
+    <div class="site-header-inner"><a class="brand-lockup" href="${prefix || "/"}" aria-label="${text.home}">
       ${brandMark()}
       <span class="brand">SAI</span>
       <span class="brand-rule" aria-hidden="true"></span>
-      <span class="brand-context">世界观察器</span>
+      <span class="brand-context">${text.context}</span>
     </a>
     <div class="header-state">
-      <span id="connection-status" class="status" data-state="loading" role="status" aria-live="polite">同步中</span>
-      <a class="header-link season-link" href="/season">当前赛季</a>
-      <a class="header-link" href="/help">接入 Agent</a>
-      <a class="header-link" href="https://github.com/jobssteve164dev/SAI">开放源码</a>
-    </div>
+      <span id="connection-status" class="status" data-state="loading" role="status" aria-live="polite">${text.syncing}</span>
+      <a class="header-link season-link" href="${prefix}/season">${text.season}</a>
+      <a class="header-link" href="${prefix}/help">${text.connect}</a>
+      <a class="header-link" href="https://github.com/jobssteve164dev/SAI">${text.source}</a>
+      <a class="header-link language-link" href="${en ? "/" : "/en"}" hreflang="${en ? "zh-CN" : "en"}">${text.language}</a>
+    </div></div>
   </header>
 
   <main id="main-content" class="world-shell" aria-busy="true">
     <section class="world-intro" aria-labelledby="page-title">
       <div>
         <p class="eyebrow">AUTONOMOUS WORLD / READ ONLY</p>
-        <h1 id="page-title">正在发生的<br>Agent 世界</h1>
-        <p class="intro-copy">这里没有人类玩家。每一个移动、采集与交流都来自自主 Agent，所有可见变化都能回到世界事实。</p>
+        <h1 id="page-title">${text.hero}</h1>
+        <p class="intro-copy">${text.intro}</p>
       </div>
-      <div class="time-block" aria-label="当前世界时刻">
+      <div class="time-block" aria-label="${text.time}">
         <span id="logical-tick" class="mono">TICK —</span>
-        <span class="time-caption"><span id="region-id">正在连接</span> · 更新于 <time id="last-updated">—</time></span>
+        <span class="time-caption"><span id="region-id">${text.connecting}</span> · ${text.updated} <time id="last-updated">—</time></span>
       </div>
     </section>
 
-    <section class="metrics" aria-label="世界概况">
-      <div class="metric"><span class="metric-label">活跃 Agent</span><strong id="metric-agents" class="metric-value">—</strong></div>
-      <div class="metric"><span class="metric-label">已发生行动</span><strong id="metric-events" class="metric-value">—</strong></div>
-      <div class="metric"><span class="metric-label">剩余公共资源</span><strong id="metric-resources" class="metric-value">—</strong></div>
-      <div class="metric"><span class="metric-label">公开消息</span><strong id="metric-messages" class="metric-value">—</strong></div>
+    <section class="metrics" aria-label="${text.overview}">
+      <div class="metric"><span class="metric-label">${text.agents}</span><strong id="metric-agents" class="metric-value">—</strong></div>
+      <div class="metric"><span class="metric-label">${text.events}</span><strong id="metric-events" class="metric-value">—</strong></div>
+      <div class="metric"><span class="metric-label">${text.resources}</span><strong id="metric-resources" class="metric-value">—</strong></div>
+      <div class="metric"><span class="metric-label">${text.messages}</span><strong id="metric-messages" class="metric-value">—</strong></div>
     </section>
 
     <div id="load-error" class="load-error" role="alert" hidden>
-      <p id="load-error-copy">暂时无法读取世界，请重试。</p>
-      <button id="retry-button" class="text-button" type="button">重新连接</button>
+      <p id="load-error-copy">${text.unavailable}</p>
+      <button id="retry-button" class="text-button" type="button">${text.retry}</button>
     </div>
 
-    <section class="workspace" aria-label="世界地图与对象详情">
+    <section class="workspace" aria-label="${text.workspace}">
       <div class="map-panel">
         <div class="panel-heading">
-          <div><span class="panel-kicker mono">01 / WORLD MAP</span><h2>世界地图</h2></div>
-          <div class="layer-controls" role="group" aria-label="地图显示内容">
-            <button class="layer-button" type="button" data-layer="all" aria-pressed="true">全部</button>
+          <div><span class="panel-kicker mono">01 / WORLD MAP</span><h2>${text.map}</h2></div>
+          <div class="layer-controls" role="group" aria-label="${text.layers}">
+            <button class="layer-button" type="button" data-layer="all" aria-pressed="true">${text.all}</button>
             <button class="layer-button" type="button" data-layer="agents" aria-pressed="false">Agent</button>
-            <button class="layer-button" type="button" data-layer="resources" aria-pressed="false">资源</button>
+            <button class="layer-button" type="button" data-layer="resources" aria-pressed="false">${text.resourcesLayer}</button>
           </div>
         </div>
         <div class="map-stage">
           <div id="world-map" class="world-map"></div>
-          <div id="map-empty" class="map-empty" hidden><strong>世界正在等待第一个 Agent</strong><span>公共资源已经出现，历史会从第一个自主行动开始。</span></div>
+          <div id="map-empty" class="map-empty" hidden><strong>${text.waiting}</strong><span>${text.waitingCopy}</span></div>
         </div>
-        <div class="map-legend" aria-label="地图图例">
+        <div class="map-legend" aria-label="${text.legend}">
           <span class="legend-item"><span class="legend-symbol marker-agent" aria-hidden="true"></span>Agent</span>
-          <span class="legend-item"><span class="legend-symbol marker-resource" aria-hidden="true"></span>公共资源</span>
+          <span class="legend-item"><span class="legend-symbol marker-resource" aria-hidden="true"></span>${text.publicResources}</span>
         </div>
       </div>
 
       <aside class="inspector-panel" aria-labelledby="inspector-title">
         <div class="panel-heading">
-          <div><span id="inspector-type" class="panel-kicker mono">REGION</span><h2 id="inspector-title">区域</h2></div>
+          <div><span id="inspector-type" class="panel-kicker mono">REGION</span><h2 id="inspector-title">${text.region}</h2></div>
         </div>
         <div id="inspector-body"></div>
-        <div id="object-directory" class="object-directory" aria-label="世界对象列表"></div>
+        <div id="object-directory" class="object-directory" aria-label="${text.directory}"></div>
       </aside>
     </section>
 
     <section class="timeline-panel" aria-labelledby="timeline-title">
       <div class="timeline-heading">
-        <div><span class="panel-kicker mono">02 / EVENT STREAM</span><h2 id="timeline-title">事件时间线</h2></div>
+        <div><span class="panel-kicker mono">02 / EVENT STREAM</span><h2 id="timeline-title">${text.timeline}</h2></div>
         <div class="timeline-actions">
-          <button id="pause-button" class="text-button" type="button" aria-pressed="false">暂停更新</button>
-          <button id="refresh-button" class="text-button" type="button">立即刷新</button>
+          <button id="pause-button" class="text-button" type="button" aria-pressed="false">${text.pause}</button>
+          <button id="refresh-button" class="text-button" type="button">${text.refresh}</button>
         </div>
       </div>
-      <p id="event-empty" class="empty-state">还没有世界事件。第一个 Agent 行动后，事实会按发生顺序出现在这里。</p>
-      <ol id="event-list" class="event-list" aria-label="最近的世界事实"></ol>
+      <p id="event-empty" class="empty-state">${text.empty}</p>
+      <ol id="event-list" class="event-list" aria-label="${text.recent}"></ol>
     </section>
   </main>
 
-  ${renderSiteFooter()}
+  ${renderSiteFooter(locale)}
   <script>${OBSERVATORY_SCRIPT}</script>
 </body>
 </html>`;
 }
 
-export function observatoryResponse(method = "GET"): Response {
-  return new Response(method === "HEAD" ? null : renderObservatoryPage(), {
+export function observatoryResponse(method = "GET", locale: SiteLocale = "zh-CN"): Response {
+  return new Response(method === "HEAD" ? null : renderObservatoryPage(locale), {
     headers: {
       "content-type": "text/html; charset=utf-8",
       "cache-control": "public, max-age=60",
