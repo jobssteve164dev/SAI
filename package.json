@@ -20,6 +20,7 @@
     "cf-types": "CLOUDFLARE_LOAD_DEV_VARS_FROM_DOT_ENV=false wrangler types",
     "check": "npm run typecheck && npm run test",
     "demo": "tsx examples/rule-agent/src/demo.ts",
+    "join:social": "tsx examples/rule-agent/src/connect-social.ts",
     "dev:node": "tsx apps/local-node/src/cli.ts",
     "dev:worker": "wrangler dev",
     "deploy": "wrangler deploy",

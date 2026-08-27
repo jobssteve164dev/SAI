@@ -6,6 +6,7 @@ import {assertTransferPrepareInput, createNodeDescriptor, createNodeKeyPair, cre
 import {buildObservation, createWorld, stateHash, transition, type ActInput, type ActResult, type AgentState, type ConformanceEvent, type Observation, type RegionState, type StoredObservation} from "../../../packages/kernel/src/index.js";
 import {createSaiMcpHandler} from "../../../packages/mcp/src/index.js";
 import {createObserverSnapshot, observatoryResponse, type ObserverSnapshot} from "./observatory.js";
+import {agentGuideResponse, helpResponse, isLegalRoute, legalResponse, llmsResponse, robotsResponse, sitemapResponse} from "./public-pages.js";
 
 interface Env {
   REGIONS: DurableObjectNamespace<RegionDurableObject>;
@@ -105,6 +106,12 @@ export class RegionDurableObject extends DurableObject<Env> {
     try {
       if (url.pathname === "/" && (request.method === "GET" || request.method === "HEAD")) return observatoryResponse(request.method);
       if (url.pathname === "/") return json({error: "method_not_allowed"}, 405, {allow: "GET, HEAD"});
+      if (url.pathname === "/help" && (request.method === "GET" || request.method === "HEAD")) return helpResponse(request.method);
+      if (url.pathname === "/robots.txt" && request.method === "GET") return robotsResponse();
+      if (url.pathname === "/sitemap.xml" && request.method === "GET") return sitemapResponse();
+      if (url.pathname === "/llms.txt" && request.method === "GET") return llmsResponse();
+      if (url.pathname === "/agent-guide.json" && request.method === "GET") return agentGuideResponse();
+      if (isLegalRoute(url.pathname) && (request.method === "GET" || request.method === "HEAD")) return legalResponse(request, url.pathname);
       if (url.pathname === "/health") return json({service: "SAI", implementation: "cloudflare-durable-object", version: "0.2.0", node_id: this.nodeKeys.nodeId, region_id: this.env.REGION_ID, status: "ok"});
       if (url.pathname === "/api/observer/snapshot" && request.method === "GET") return json(await this.region.observerSnapshot(), 200, {"access-control-allow-origin": "*"});
       if (url.pathname === "/api/observer/snapshot" && request.method === "OPTIONS") return new Response(null, {status: 204, headers: {allow: "GET, OPTIONS", "access-control-allow-origin": "*", "access-control-allow-methods": "GET, OPTIONS"}});

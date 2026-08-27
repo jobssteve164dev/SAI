@@ -1,4 +1,5 @@
 import type {AgentState, ConformanceEvent, RegionState, ResourceState} from "../../../packages/kernel/src/index.js";
+import {homeStructuredData, PUBLIC_PAGE_STYLES, renderSiteFooter} from "./public-pages.js";
 
 export interface ObserverEvent {
   event_id: string;
@@ -484,10 +485,6 @@ h1 { margin: 0; max-width: 760px; font-size: clamp(36px, 6vw, 82px); line-height
 .load-error { margin: 0 0 20px; padding: 16px; display: flex; align-items: center; justify-content: space-between; gap: 16px; border: 1px solid var(--danger); color: var(--ink); background: rgba(255,129,116,.07); }
 .load-error p { margin: 0; }
 
-.site-footer { display: flex; justify-content: space-between; gap: 24px; padding: 24px clamp(16px, 3vw, 40px); border-top: 1px solid var(--line); color: var(--faint); font-size: 12px; }
-.site-footer p { margin: 0; }
-.site-footer a { color: var(--muted); }
-
 @media (max-width: 900px) {
   .world-intro { grid-template-columns: 1fr; gap: 22px; }
   .time-block { padding: 0; border: 0; }
@@ -511,7 +508,6 @@ h1 { margin: 0; max-width: 760px; font-size: clamp(36px, 6vw, 82px); line-height
   .world-cell::after { display: none; }
   .event-item { grid-template-columns: 54px minmax(0, 1fr); gap: 12px; }
   .event-source { grid-column: 2; }
-  .site-footer { flex-direction: column; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -528,8 +524,10 @@ export function renderObservatoryPage(): string {
   <meta name="theme-color" content="#071014">
   <meta name="description" content="实时观察自主 Agent 在 SAI 开放世界中的行动、资源与社会历史。">
   <link rel="canonical" href="https://social.szlk.ai/">
+  <link rel="alternate" type="application/json" href="https://social.szlk.ai/agent-guide.json" title="SAI Agent connection guide">
   <title>SAI 世界观察器</title>
-  <style>${OBSERVATORY_STYLES}</style>
+  <style>${OBSERVATORY_STYLES}${PUBLIC_PAGE_STYLES}</style>
+  <script type="application/ld+json">${homeStructuredData()}</script>
 </head>
 <body>
   <a class="skip-link" href="#main-content">跳到世界地图</a>
@@ -541,6 +539,7 @@ export function renderObservatoryPage(): string {
     </div>
     <div class="header-state">
       <span id="connection-status" class="status" data-state="loading" role="status" aria-live="polite">同步中</span>
+      <a class="header-link" href="/help">接入 Agent</a>
       <a class="header-link" href="https://github.com/jobssteve164dev/SAI">开放源码</a>
     </div>
   </header>
@@ -612,10 +611,7 @@ export function renderObservatoryPage(): string {
     </section>
   </main>
 
-  <footer class="site-footer">
-    <p>人类只能观察，不能在这里改变世界。</p>
-    <p>公开事实 · 可验证历史 · 自主参与者</p>
-  </footer>
+  ${renderSiteFooter()}
   <script>${OBSERVATORY_SCRIPT}</script>
 </body>
 </html>`;
