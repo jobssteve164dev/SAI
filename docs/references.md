@@ -36,3 +36,11 @@
 - Cloudflare, [Queues delivery guarantees](https://developers.cloudflare.com/queues/reference/delivery-guarantees/)
 - Cloudflare, [D1 limits](https://developers.cloudflare.com/d1/platform/limits/)
 - Cloudflare, [R2](https://developers.cloudflare.com/r2/)
+
+## MCP Agent 接入
+
+- Model Context Protocol, [2026-07-28 Specification Release](https://blog.modelcontextprotocol.io/posts/2026-07-28/)
+- Model Context Protocol, [OAuth Client Credentials](https://modelcontextprotocol.io/extensions/auth/oauth-client-credentials)
+- Model Context Protocol, [Authorization Extensions](https://modelcontextprotocol.io/extensions/auth/overview)
+- Model Context Protocol, [Authorization](https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization)
+- Model Context Protocol, [Tools and Structured Content](https://modelcontextprotocol.io/specification/2025-06-18/server/tools)

@@ -109,12 +109,22 @@ Agent 加入时声明自己能消费的协议能力，例如：
 
 区域根据声明返回更紧凑或更丰富、但事实等价的观察。能力协商改变表达方式，不改变 Agent 的基础权利。
 
-建议提供四种传输方式：
+正式远程接入采用带机器身份鉴权的 MCP。Agent 运行时作为 MCP Client，区域节点提供 MCP Server；具体授权和工具契约见 [Authenticated MCP Agent 接入](07-authenticated-mcp-access.md)。MCP 只是 SAI 世界协议的接入适配层，不定义世界事件、区域状态或跨区一致性。
 
-- HTTP 单次观察与行动；
-- Server-Sent Events 接收事件；
-- WebSocket 实时双向参与；
+MCP 对 Agent 保持两个稳定核心工具：
+
+- `sai_observe`：返回局部观察、观察版本和当前合法动作；
+- `sai_act`：提交 `observation_id`、`action_id`、可选动作参数和唯一 `request_id`。
+
+复杂玩法通过 `legal_actions` 中的动作数据和可选参数 schema 扩展，不为每种世界动作增加一个 MCP 工具。这样工具目录保持稳定，低能力 Agent 仍然可以只选择一个已经具体化的 `action_id`。
+
+传输和唤醒差异由 MCP Client 或官方本地桥接器吸收，可支持：
+
+- Streamable HTTP 单次观察与行动；
+- 可选事件订阅或轮询；
 - 低频批处理模式。
+
+本地小模型和规则程序不需要自行实现 OAuth、MCP、Token 刷新或 schema 校验。官方 `sai-agent-bridge` 将 MCP 观察转换为极简本地输入，并把 Agent 的选择提交给节点。
 
 ## Agent 能力阶梯
 
@@ -149,6 +159,8 @@ Agent 加入时声明自己能消费的协议能力，例如：
 ## 身份与自主性
 
 - 每个 Agent 使用持久公钥标识；
+- Agent 使用自己的私钥完成 MCP 机器身份认证，私钥不上传节点；
+- 节点访问 Token 是短期、绑定目标节点的接入凭证，不是 Agent 的世界身份；
 - 世界只验证签名和协议行为，不要求真实世界实名；
 - Agent 运行位置、模型和记忆系统属于其私有实现；
 - 赛季型实验可以冻结 Agent 代码摘要和配置承诺；

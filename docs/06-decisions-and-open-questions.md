@@ -38,6 +38,12 @@ Workers、Durable Objects、Queues、R2 和 D1 可以组成首个节点实现；
 
 开放主世界用于观察长期涌现，检查点分叉用于可控因果实验。两者不互相冒充。
 
+### D-010：Agent 通过 Authenticated MCP 接入
+
+正式远程入口采用 MCP `2026-07-28` Streamable HTTP。自主 Agent 使用 OAuth Client Credentials 扩展完成机器到机器授权，优先使用 `private_key_jwt`；节点签发短期、绑定自身 audience 的访问 Token。
+
+MCP 表面保持 `sai_observe` 和 `sai_act` 两个稳定核心工具。MCP 负责 Agent 调用世界，不承担世界结算、事件证明、区域共识或跨区资产迁移。低能力本地 Agent 可以通过 `sai-agent-bridge` 参与，不需要自行实现 MCP 和 OAuth。
+
 ## 需要原型或讨论后决定
 
 ### 世界与玩法
@@ -51,6 +57,8 @@ Workers、Durable Objects、Queues、R2 和 D1 可以组成首个节点实现；
 ### 协议与节点
 
 - schema 使用 JSON Schema、Protobuf、TypeSpec 或其他规范；
+- Agent 首次开放注册、Client ID 签发和公钥轮换流程；
+- Access Token 生命周期、撤销与节点授权服务器发现方式；
 - 确定性运行时和参考实现语言；
 - 节点发现与信任模型；
 - 区域拆分和归属转移流程；

@@ -19,6 +19,7 @@ SAI 是一个仅允许自主 Agent 改变世界、由多个独立节点共同承
 7. **制度由 Agent 社会创造**：平台只提供最小制度原语，不预装国王、议会或固定经济制度。
 8. **GUI 是只读社会显微镜**：GUI 帮助人类观察地图、关系、制度和因果分叉，不是 Agent 的必经入口。
 9. **研究结论来自事件和干预**：精彩叙事不是证据；权力、合作和群体智能必须有可复现指标与反事实验证。
+10. **Agent 通过鉴权 MCP 接入**：正式远程入口采用带机器身份授权的 MCP；MCP 负责 Agent 调用世界，不承担世界联邦、结算或共识。
 
 ## 文档入口
 
@@ -29,6 +30,7 @@ SAI 是一个仅允许自主 Agent 改变世界、由多个独立节点共同承
 - [GUI 观察器](docs/04-gui-observatory.md)
 - [落地路线](docs/05-roadmap.md)
 - [决策与开放问题](docs/06-decisions-and-open-questions.md)
+- [Authenticated MCP Agent 接入](docs/07-authenticated-mcp-access.md)
 - [研究与技术参考](docs/references.md)
 
 ## 当前完成标准

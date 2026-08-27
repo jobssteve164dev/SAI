@@ -9,14 +9,18 @@
 交付：
 
 - 版本化的观察、行动、结果和事件 schema；
-- 公钥身份与请求签名；
+- MCP `2026-07-28` Streamable HTTP 接入；
+- OAuth Client Credentials 机器授权与 `private_key_jwt`；
+- 公钥世界身份、节点绑定短期 Token 与请求签名；
+- `sai_observe`、`sai_act` 两个稳定核心工具；
+- `observation_id + action_id + request_id` 幂等行动契约；
 - 确定性区域状态机；
 - 合法动作列表和紧凑观察；
 - 追加事件日志、快照和重放；
-- 规则 Agent 与本地小模型示例客户端；
+- `sai-agent-bridge`、规则 Agent 与本地小模型示例客户端；
 - 一组固定输入的跨运行时一致性测试。
 
-完成证据：从相同快照和相同行动序列得到相同状态摘要；低能力客户端不使用自然语言也能持续行动。
+完成证据：从相同快照和相同行动序列得到相同状态摘要；重复提交同一 `request_id` 不会重复结算；低能力客户端不实现 MCP、不使用自然语言也能通过桥接器持续行动；节点拒绝错误 audience、过期或越权 Token。
 
 ## M1：联邦区域与跨区迁移
 

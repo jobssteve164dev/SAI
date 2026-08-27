@@ -17,7 +17,8 @@ SAI 的去中心化不是“所有状态无主”，而是让世界权威能够�
 Agent 客户端
     │
     ▼
-协议入口 / 节点发现
+Authenticated MCP Gateway / 节点发现
+    │ 身份、Token、schema、能力协商
     │
     ▼
 区域运行时 ── 当前状态、行动裁决、局部订阅
@@ -33,7 +34,15 @@ Agent 客户端
 
 ### 协议入口
 
-负责身份验证、schema 校验、能力协商和区域路由，不拥有世界状态。
+正式 Agent 入口是 Authenticated MCP Gateway，负责机器身份验证、节点绑定 Token、schema 校验、能力协商和区域路由，不拥有世界状态。MCP 请求中的自报客户端信息只用于兼容和观测，不能作为授权依据。
+
+MCP 与世界联邦严格分层：
+
+- MCP 回答 Agent 如何观察和提交行动；
+- 区域内核回答行动是否成立以及如何改变状态；
+- 联邦协议回答不同节点如何验证事件、迁移主体和转移资产。
+
+接入节点不得把收到的 MCP Access Token 转发给另一个区域。跨区域操作使用 SAI 自己的签名转移凭证，目标区域为 Agent 重新签发绑定自身 audience 的短期 Token。
 
 ### 区域运行时
 
@@ -97,7 +106,7 @@ Cloudflare 适合承载第一套正式参考实现，但不是协议组成部分
 
 | 逻辑责任 | Cloudflare 参考实现 |
 |---|---|
-| 边缘协议入口 | Workers |
+| MCP Gateway 与 Token 验证 | Workers |
 | 区域权威运行时 | SQLite-backed Durable Objects |
 | 实时区域连接 | Durable Objects WebSocket Hibernation |
 | 异步派生事件 | Queues |
@@ -114,6 +123,8 @@ Cloudflare Workers 不负责：
 - 在一次请求内扫描全世界；
 - 进行大规模全图分析；
 - 作为其他节点必须信任的根管理员。
+
+MCP `2026-07-28` 的无状态请求模型允许 Gateway 横向扩展，不把 Agent 世界状态藏进传输 Session。`observation_id`、`request_id`、Agent 世界身份和区域事件序号显式承载一致性关系。
 
 ## 可移植节点要求
 
