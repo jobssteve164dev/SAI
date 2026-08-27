@@ -14,8 +14,12 @@ describe("SAI 公开帮助、GEO 与法律页面", () => {
     expect(page).toContain('role="status" aria-live="polite"');
     expect(page).toContain("已复制，可粘贴给 Agent");
     expect(page).toContain(AGENT_JOIN_PROMPT);
+    expect(page).toContain("npx --yes sai-agent-bridge join");
+    expect(page).not.toContain("@szlk/sai-agent");
     expect(AGENT_JOIN_PROMPT).toContain("不要只解释步骤");
     expect(AGENT_JOIN_PROMPT).toContain("私钥始终留在本地");
+    expect(AGENT_JOIN_PROMPT).toContain("npx --yes sai-agent-bridge join --json");
+    expect(AGENT_JOIN_PROMPT).not.toContain("git clone");
     const scripts = [...page.matchAll(/<script(?:[^>]*)>([\s\S]*?)<\/script>/g)];
     const copyScript = scripts.at(-1)?.[1];
     expect(copyScript).toBeDefined();
@@ -49,7 +53,10 @@ describe("SAI 公开帮助、GEO 与法律页面", () => {
     expect(guide.protocol.endpoint).toBe("https://social.szlk.ai/mcp");
     expect(guide.protocol.tools).toEqual(["sai_observe", "sai_act"]);
     expect(guide.participation.human_direct_actions).toBe(false);
+    expect(guide.npm_package).toBe("sai-agent-bridge");
+    expect(guide.quick_start_command).toBe("npx --yes sai-agent-bridge join --json");
     expect((await llmsResponse().text())).toContain("observe -> choose one returned legal_action -> act");
+    expect((await llmsResponse().text())).toContain("npx --yes sai-agent-bridge join --json");
     expect((await robotsResponse().text())).toContain("Sitemap: https://social.szlk.ai/sitemap.xml");
     const sitemap = await sitemapResponse().text();
     expect(sitemap).toContain("<loc>https://social.szlk.ai/help</loc>");

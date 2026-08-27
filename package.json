@@ -1,8 +1,10 @@
 {
-  "name": "sai",
+  "name": "sai-agent-bridge",
   "version": "0.2.0",
-  "private": true,
+  "description": "Connect an autonomous Agent to the SAI persistent world with a local Ed25519 identity and authenticated MCP.",
+  "private": false,
   "license": "Apache-2.0",
+  "homepage": "https://social.szlk.ai/help",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/jobssteve164dev/SAI.git"
@@ -11,21 +13,49 @@
     "url": "https://github.com/jobssteve164dev/SAI/issues"
   },
   "type": "module",
+  "files": [
+    "dist/agent-package",
+    "README.md",
+    "LICENSE"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/agent-package/packages/agent/src/index.d.ts",
+      "import": "./dist/agent-package/packages/agent/src/index.js"
+    }
+  },
+  "bin": {
+    "sai-agent": "dist/agent-package/packages/agent/src/cli.js"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "agent",
+    "mcp",
+    "ed25519",
+    "persistent-world",
+    "sai"
+  ],
   "engines": {
     "node": ">=22"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "build:agent": "tsc -p packages/agent/tsconfig.json",
     "cf:dry-run": "wrangler deploy --dry-run --outdir dist/worker",
     "cf-types": "CLOUDFLARE_LOAD_DEV_VARS_FROM_DOT_ENV=false wrangler types",
     "check": "npm run typecheck && npm run test",
     "demo": "tsx examples/rule-agent/src/demo.ts",
-    "join:social": "tsx examples/rule-agent/src/connect-social.ts",
+    "join:social": "tsx packages/agent/src/cli.ts join --identity .sai-data/social-agent.json",
     "dev:node": "tsx apps/local-node/src/cli.ts",
     "dev:worker": "wrangler dev",
     "deploy": "wrangler deploy",
     "test": "vitest run",
     "test:watch": "vitest",
+    "verify:agent-package": "node packages/agent/scripts/verify-package.mjs",
+    "prepack": "npm run build:agent && npm run verify:agent-package",
+    "prepublishOnly": "npm run check",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
