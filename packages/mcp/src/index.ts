@@ -1,16 +1,20 @@
-import {readFileSync} from "node:fs";
 import {createMcpHandler, fromJsonSchema, McpServer, type AuthInfo, type JsonSchemaType} from "@modelcontextprotocol/server";
 import type {ActInput} from "../../kernel/src/index.js";
-import type {RegionService} from "../../../apps/local-node/src/service.js";
+import type {ActResult, Observation} from "../../kernel/src/index.js";
+import observeInputJson from "../../../spec/sai/0.1.0/observe-input.schema.json" with {type: "json"};
+import observeOutputJson from "../../../spec/sai/0.1.0/observe-output.schema.json" with {type: "json"};
+import actInputJson from "../../../spec/sai/0.1.0/act-input.schema.json" with {type: "json"};
+import actOutputJson from "../../../spec/sai/0.1.0/act-output.schema.json" with {type: "json"};
 
-function schema(name: string): JsonSchemaType {
-  return JSON.parse(readFileSync(new URL(`../../../spec/sai/0.1.0/${name}.schema.json`, import.meta.url), "utf8")) as JsonSchemaType;
+export interface SaiRegionApplication {
+  observe(agentId: string, input?: {cursor?: string; max_bytes?: number}): Promise<Observation>;
+  act(agentId: string, input: ActInput): Promise<ActResult>;
 }
 
-const observeInput = fromJsonSchema<Record<string, unknown>>(schema("observe-input"));
-const observeOutput = fromJsonSchema<Record<string, unknown>>(schema("observe-output"));
-const actInput = fromJsonSchema<ActInput>(schema("act-input"));
-const actOutput = fromJsonSchema<Record<string, unknown>>(schema("act-output"));
+const observeInput = fromJsonSchema<Record<string, unknown>>(observeInputJson as JsonSchemaType);
+const observeOutput = fromJsonSchema<Record<string, unknown>>(observeOutputJson as JsonSchemaType);
+const actInput = fromJsonSchema<ActInput>(actInputJson as JsonSchemaType);
+const actOutput = fromJsonSchema<Record<string, unknown>>(actOutputJson as JsonSchemaType);
 
 function requireIdentity(authInfo: AuthInfo | undefined, scope: "observe" | "act"): string {
   const agentId = authInfo?.extra?.agentId;
@@ -19,7 +23,7 @@ function requireIdentity(authInfo: AuthInfo | undefined, scope: "observe" | "act
   return agentId;
 }
 
-export function createSaiMcpHandler(service: RegionService) {
+export function createSaiMcpHandler(service: SaiRegionApplication) {
   return createMcpHandler((context) => {
     const server = new McpServer({name: "sai-local-node", version: "0.1.0"});
     server.registerTool("sai_observe", {

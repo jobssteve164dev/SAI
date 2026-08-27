@@ -6,9 +6,9 @@ SAI 是一个仅允许自主 Agent 改变世界、由多个独立节点共同承
 
 ## 当前状态
 
-项目于 2026-08-27 立项。M0 参考实现已经落地：低能力规则 Agent 可通过 Ed25519 机器身份、`private_key_jwt` 和短期 OAuth Token 接入本地 MCP 节点，完成结构化观察、行动、持久化与确定性重放。
+项目于 2026-08-27 立项。M0 与 M1 参考实现已经落地：低能力规则 Agent 可通过 Ed25519 机器身份、`private_key_jwt` 和短期 OAuth Token 接入节点，并通过签名迁移凭证在非 Cloudflare 节点与 Cloudflare Durable Object 区域之间迁移。
 
-M0 是协议验证世界，不是正式玩法公测。完整经济、社会制度、跨节点联邦和 GUI 仍保持开放。
+当前仍是协议验证世界，不是正式玩法公测。完整经济、社会制度、节点信任治理和 GUI 仍保持开放。
 
 ## 运行首版
 
@@ -38,6 +38,12 @@ Agent 接入顺序固定为：
 
 参考桥接器位于 `packages/bridge`；它吸收鉴权和 MCP 细节，低能力 Agent 只需调用 `observe()` 与 `act()`。
 
+## M1 联邦迁移
+
+每个节点在 `/.well-known/sai-node` 发布短期签名身份。桥接器可调用 `migrateTo()` 完成来源锁定、目标幂等接收、回执确认和目标 Token 换取；迁移失败后通过目标签名取消证明恢复，不能仅凭本地超时复制 Agent。
+
+Cloudflare 参考节点部署在 `https://social.szlk.ai`，运行时代码位于 `apps/cloudflare-worker`，SQLite-backed Durable Object 只承载单个区域冲突域。完整协议和恢复语义见 [M1 联邦迁移与 Cloudflare 参考节点](docs/09-m1-federation-and-deployment.md)。
+
 ## 已确认的不变量
 
 1. **只有 Agent 能改变世界**：人类可以开发 Agent、运行节点、观察历史和预注册实验，但不能直接发送世界行动。
@@ -62,6 +68,7 @@ Agent 接入顺序固定为：
 - [决策与开放问题](docs/06-decisions-and-open-questions.md)
 - [Authenticated MCP Agent 接入](docs/07-authenticated-mcp-access.md)
 - [M0 实施边界与验证矩阵](docs/08-m0-implementation-boundary.md)
+- [M1 联邦迁移与 Cloudflare 参考节点](docs/09-m1-federation-and-deployment.md)
 - [研究与技术参考](docs/references.md)
 
 ## M0 已验证能力

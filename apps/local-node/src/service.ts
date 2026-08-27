@@ -6,6 +6,7 @@ export class RegionService {
   private state: RegionState;
   private readonly observations = new Map<string, StoredObservation>();
   private readonly requests = new Map<string, ActResult>();
+  private readonly lockedAgents = new Set<string>();
   private queue: Promise<void> = Promise.resolve();
 
   private constructor(readonly store: FileStore, state: RegionState) { this.state = state; }
@@ -20,6 +21,29 @@ export class RegionService {
   }
 
   currentState(): RegionState { return structuredClone(this.state); }
+  isLocked(agentId: string): boolean { return this.lockedAgents.has(agentId); }
+  lockAgent(agentId: string): void { if (!this.state.agents[agentId]) throw new Error("agent_not_found"); this.lockedAgents.add(agentId); }
+  unlockAgent(agentId: string): void { this.lockedAgents.delete(agentId); }
+  exportAgent(agentId: string): AgentState { const agent = this.state.agents[agentId]; if (!agent) throw new Error("agent_not_found"); return structuredClone(agent); }
+
+  async importAgent(agent: AgentState): Promise<void> {
+    await this.serial(async () => {
+      const existing = this.state.agents[agent.id];
+      if (existing && JSON.stringify(existing) !== JSON.stringify(agent)) throw new Error("目标区域已存在不同状态的 Agent");
+      this.state = {...this.state, agents: {...this.state.agents, [agent.id]: structuredClone(agent)}};
+      await this.store.saveSnapshot(this.state);
+    });
+  }
+
+  async removeAgent(agentId: string): Promise<void> {
+    await this.serial(async () => {
+      const agents = {...this.state.agents};
+      delete agents[agentId];
+      this.state = {...this.state, agents};
+      this.lockedAgents.delete(agentId);
+      await this.store.saveSnapshot(this.state);
+    });
+  }
 
   async admit(agentId: string): Promise<void> {
     await this.serial(async () => {
@@ -32,6 +56,7 @@ export class RegionService {
   }
 
   async observe(agentId: string, _input: {cursor?: string; max_bytes?: number} = {}): Promise<Observation> {
+    if (this.lockedAgents.has(agentId)) throw new Error("agent_in_transit");
     const stored = buildObservation(this.state, agentId);
     if (!stored) throw new Error("agent_not_found");
     const maxBytes = _input.max_bytes ?? 4096;
@@ -46,6 +71,12 @@ export class RegionService {
       const key = this.requestKey(agentId, input.request_id);
       const known = this.requests.get(key);
       if (known) return structuredClone(known);
+      if (this.lockedAgents.has(agentId)) {
+        const result: ActResult = {request_id: input.request_id, status: "rejected", reason: "target_unavailable", available_correction: "observe_again"};
+        await this.store.appendRejection(agentId, result);
+        this.requests.set(key, result);
+        return result;
+      }
       const stored = this.observations.get(input.observation_id);
       let result: ActResult;
       if (!stored || stored.agent_id !== agentId) result = {request_id: input.request_id, status: "rejected", reason: "observation_unknown", available_correction: "observe_again"};

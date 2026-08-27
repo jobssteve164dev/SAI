@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sai.world/spec/0.2.0/node-descriptor.schema.json",
+  "title": "SAI Federation Node Descriptor",
+  "type": "object",
+  "required": ["protocol", "node_id", "public_jwk", "base_url", "regions", "issued_at", "expires_at", "signature"],
+  "properties": {
+    "protocol": {"const": "sai-federation/0.2.0"},
+    "node_id": {"type": "string", "pattern": "^node:ed25519-v1:[A-Za-z0-9_-]+$"},
+    "public_jwk": {"type": "object"},
+    "base_url": {"type": "string", "format": "uri"},
+    "regions": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "issued_at": {"type": "integer", "minimum": 0},
+    "expires_at": {"type": "integer", "minimum": 0},
+    "signature": {"type": "string", "minLength": 32}
+  },
+  "additionalProperties": false
+}

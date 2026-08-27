@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sai.world/spec/0.2.0/transfer-receipt.schema.json",
+  "title": "SAI Cross-region Transfer Receipt",
+  "type": "object",
+  "required": ["protocol", "transfer_id", "status", "target_node", "target_region", "agent_id", "accepted_state_hash", "accepted_at", "signature"],
+  "properties": {
+    "protocol": {"const": "sai-federation/0.2.0"},
+    "transfer_id": {"type": "string"},
+    "status": {"const": "accepted"},
+    "target_node": {"type": "object"},
+    "target_region": {"type": "string"},
+    "agent_id": {"type": "string"},
+    "accepted_state_hash": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "accepted_at": {"type": "integer", "minimum": 0},
+    "signature": {"type": "string", "minLength": 32}
+  },
+  "additionalProperties": false
+}

@@ -99,12 +99,13 @@ M0 的冻结实现边界、Conformance World 和完整验证矩阵见 [M0 实施
 
 ## 当前最近动作
 
-M0 基础决策已经完成，下一轮可以直接实现以下纵向闭环：
+M0 本地协议闭环与 M1 联邦参考实现已进入代码。当前验收入口包括：
 
-1. 权威 JSON Schema 与固定协议向量；
-2. TypeScript 纯确定性内核和 Conformance World；
-3. 本地 Authenticated MCP 节点；
-4. `sai-agent-bridge` 与规则 Agent；
-5. 鉴权、幂等、重放和篡改拒绝验证。
+1. Node.js 文件持久化兼容节点；
+2. Cloudflare Worker + SQLite Durable Object 参考节点；
+3. Ed25519 节点发现、签名迁移凭证、回执与取消墓碑；
+4. 双 Node 节点迁移及 Node → workerd 真实跨实现迁移；
+5. 确定性热区域拆分和 route manifest；
+6. GitHub `main` 验证后由 Wrangler 直推 `social.szlk.ai`。
 
-M0 不搭建 GUI、代币系统、正式经济、跨节点联邦或复杂云基础设施。
+M2 开始前仍需单独决定正式世界的资源、生存、空间与互动规则；不得把 Conformance World 直接升级为正式玩法。

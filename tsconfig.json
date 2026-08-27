@@ -24,6 +24,7 @@
     "apps/**/*.ts",
     "examples/**/*.ts",
     "packages/**/*.ts",
-    "tests/**/*.ts"
+    "tests/**/*.ts",
+    "worker-configuration.d.ts"
   ]
 }

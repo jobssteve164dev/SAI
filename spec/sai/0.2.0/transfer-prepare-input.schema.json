@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sai.world/spec/0.2.0/transfer-prepare-input.schema.json",
+  "title": "SAI Transfer Prepare Input",
+  "type": "object",
+  "required": ["target_node", "target_region"],
+  "properties": {
+    "target_node": {"type": "string", "pattern": "^node:ed25519-v1:[A-Za-z0-9_-]+$"},
+    "target_region": {"type": "string", "minLength": 1, "maxLength": 128},
+    "nonce": {"type": "string", "minLength": 16, "maxLength": 160},
+    "ttl": {"type": "integer", "minimum": 30, "maximum": 300}
+  },
+  "additionalProperties": false
+}

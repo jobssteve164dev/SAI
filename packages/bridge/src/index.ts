@@ -2,6 +2,7 @@ import {randomUUID} from "node:crypto";
 import {Client, StreamableHTTPClientTransport} from "@modelcontextprotocol/client";
 import {createClientAssertion, type AgentIdentity} from "../../identity/src/index.js";
 import type {ActInput, ActResult, Observation} from "../../kernel/src/index.js";
+import {verifyNodeDescriptor, type NodeDescriptor, type TransferCancellation, type TransferCredential, type TransferReceipt} from "../../federation/src/index.js";
 
 async function expectJson<T>(response: Response): Promise<T> {
   const body = await response.json() as T & {error_description?: string};
@@ -43,6 +44,39 @@ export class SaiBridge {
     const result = await this.requiredClient().callTool({name: "sai_act", arguments: {...input}});
     if (result.isError || !result.structuredContent) throw new Error("sai_act 未返回结构化结果");
     return result.structuredContent as unknown as ActResult;
+  }
+
+  async nodeDescriptor(now = Math.floor(Date.now() / 1000)): Promise<NodeDescriptor> {
+    const descriptor = await expectJson<NodeDescriptor>(await fetch(`${this.baseUrl}/.well-known/sai-node`));
+    await verifyNodeDescriptor(descriptor, now);
+    return descriptor;
+  }
+
+  async migrateTo(targetBaseUrl: string, targetRegion: string): Promise<{receipt: TransferReceipt; target: SaiBridge}> {
+    if (!this.token) throw new Error("bridge 尚未连接");
+    const targetDescriptor = await expectJson<NodeDescriptor>(await fetch(`${targetBaseUrl}/.well-known/sai-node`));
+    await verifyNodeDescriptor(targetDescriptor, Math.floor(Date.now() / 1000));
+    const credential = await expectJson<TransferCredential>(await fetch(`${this.baseUrl}/federation/v1/transfers/prepare`, {
+      method: "POST", headers: {authorization: `Bearer ${this.token}`, "content-type": "application/json"}, body: JSON.stringify({target_node: targetDescriptor.node_id, target_region: targetRegion}),
+    }));
+    return this.finishMigration(targetBaseUrl, credential);
+  }
+
+  async recoverPendingMigration(targetBaseUrl: string): Promise<{status: "completed"; target: SaiBridge; receipt: TransferReceipt} | {status: "recovered"}> {
+    if (!this.token) throw new Error("bridge 尚未连接");
+    const credential = await expectJson<TransferCredential>(await fetch(`${this.baseUrl}/federation/v1/transfers/current`, {headers: {authorization: `Bearer ${this.token}`}}));
+    const outcome = await expectJson<{status: "accepted"; receipt: TransferReceipt} | {status: "cancelled"; cancellation: TransferCancellation}>(await fetch(`${targetBaseUrl}/federation/v1/transfers/cancel`, {method: "POST", headers: {"content-type": "application/json"}, body: JSON.stringify(credential)}));
+    if (outcome.status === "accepted") return {status: "completed", ...(await this.finishMigration(targetBaseUrl, credential, outcome.receipt))};
+    await expectJson(await fetch(`${this.baseUrl}/federation/v1/transfers/recover`, {method: "POST", headers: {authorization: `Bearer ${this.token}`, "content-type": "application/json"}, body: JSON.stringify({cancellation: outcome.cancellation})}));
+    return {status: "recovered"};
+  }
+
+  private async finishMigration(targetBaseUrl: string, credential: TransferCredential, knownReceipt?: TransferReceipt): Promise<{receipt: TransferReceipt; target: SaiBridge}> {
+    const receipt = knownReceipt ?? await expectJson<TransferReceipt>(await fetch(`${targetBaseUrl}/federation/v1/transfers/accept`, {method: "POST", headers: {"content-type": "application/json"}, body: JSON.stringify(credential)}));
+    await expectJson(await fetch(`${this.baseUrl}/federation/v1/transfers/complete`, {method: "POST", headers: {"content-type": "application/json"}, body: JSON.stringify(receipt)}));
+    const target = new SaiBridge(targetBaseUrl, this.identity);
+    await target.connect();
+    return {receipt, target};
   }
 
   async close(): Promise<void> { if (this.client) await this.client.close(); this.client = undefined; this.token = undefined; }

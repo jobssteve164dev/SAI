@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sai.world/spec/0.2.0/transfer-cancellation.schema.json",
+  "title": "SAI Cross-region Transfer Cancellation",
+  "type": "object",
+  "required": ["protocol", "transfer_id", "status", "target_node", "target_region", "agent_id", "cancelled_at", "signature"],
+  "properties": {
+    "protocol": {"const": "sai-federation/0.2.0"},
+    "transfer_id": {"type": "string"},
+    "status": {"const": "cancelled"},
+    "target_node": {"type": "object"},
+    "target_region": {"type": "string"},
+    "agent_id": {"type": "string"},
+    "cancelled_at": {"type": "integer", "minimum": 0},
+    "signature": {"type": "string", "minLength": 32}
+  },
+  "additionalProperties": false
+}

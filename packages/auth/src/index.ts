@@ -1,17 +1,17 @@
-import {generateKeyPairSync, type JsonWebKey, type KeyObject} from "node:crypto";
-import {exportJWK, importJWK, jwtVerify, SignJWT} from "jose";
+import {generateKeyPairSync, type JsonWebKey} from "node:crypto";
+import {importJWK, jwtVerify, SignJWT} from "jose";
 import {agentIdFromJwk, verifyIdentityAssertion} from "../../identity/src/index.js";
 
 export interface RegisteredAgent {publicJwk: JsonWebKey; epoch: number; enabled: boolean}
-export interface AuthSnapshot {agents: Record<string, RegisteredAgent>; usedAssertions: string[]}
+export interface AuthSnapshot {agents: Record<string, RegisteredAgent>; usedAssertions: string[]; signingKeys?: {publicJwk: JsonWebKey; privateJwk: JsonWebKey}}
 export interface AccessClaims {agentId: string; scopes: string[]; region: string; epoch: number}
 
 export class AuthService {
   readonly issuer: string;
   readonly mcpResource: string;
   readonly region: string;
-  private readonly privateKey: KeyObject;
-  private readonly publicKey: KeyObject;
+  private readonly privateJwk: JsonWebKey;
+  private readonly publicJwk: JsonWebKey;
   private readonly agents: Record<string, RegisteredAgent>;
   private readonly usedAssertions: Set<string>;
 
@@ -19,15 +19,34 @@ export class AuthService {
     this.issuer = options.baseUrl;
     this.mcpResource = `${options.baseUrl}/mcp`;
     this.region = options.region;
-    const pair = generateKeyPairSync("ed25519");
-    this.privateKey = pair.privateKey;
-    this.publicKey = pair.publicKey;
+    const persisted = options.snapshot?.signingKeys;
+    if (persisted) {
+      this.privateJwk = structuredClone(persisted.privateJwk);
+      this.publicJwk = structuredClone(persisted.publicJwk);
+    } else {
+      const pair = generateKeyPairSync("ed25519");
+      this.privateJwk = pair.privateKey.export({format: "jwk"});
+      this.publicJwk = pair.publicKey.export({format: "jwk"});
+    }
     this.agents = structuredClone(options.snapshot?.agents ?? {});
     this.usedAssertions = new Set(options.snapshot?.usedAssertions ?? []);
   }
 
-  snapshot(): AuthSnapshot { return {agents: structuredClone(this.agents), usedAssertions: [...this.usedAssertions].sort()}; }
-  async jwks(): Promise<{keys: JsonWebKey[]}> { return {keys: [{...(await exportJWK(this.publicKey)), use: "sig", alg: "EdDSA", kid: "sai-local-node"}]}; }
+  snapshot(): AuthSnapshot {
+    return {
+      agents: structuredClone(this.agents),
+      usedAssertions: [...this.usedAssertions].sort(),
+      signingKeys: {publicJwk: structuredClone(this.publicJwk), privateJwk: structuredClone(this.privateJwk)},
+    };
+  }
+  getAgentPublicJwk(agentId: string): JsonWebKey | undefined { return this.agents[agentId] ? structuredClone(this.agents[agentId].publicJwk) : undefined; }
+  importAgent(publicJwk: JsonWebKey): string {
+    const agentId = agentIdFromJwk(publicJwk);
+    const existing = this.agents[agentId];
+    this.agents[agentId] = {publicJwk: structuredClone(publicJwk), epoch: existing?.epoch ?? 0, enabled: true};
+    return agentId;
+  }
+  async jwks(): Promise<{keys: JsonWebKey[]}> { return {keys: [{...this.publicJwk, use: "sig", alg: "EdDSA", kid: "sai-local-node"}]}; }
 
   async register(publicJwk: JsonWebKey, assertion: string, now?: number): Promise<string> {
     const {agentId, jti} = await verifyIdentityAssertion(assertion, publicJwk, `${this.issuer}/oauth/register`, now);
@@ -44,14 +63,16 @@ export class AuthService {
     const verified = await verifyIdentityAssertion(input.assertion, registered.publicJwk, `${this.issuer}/oauth/token`, now);
     if (verified.agentId !== input.clientId) throw new Error("client_id 与密钥身份不匹配");
     this.consumeAssertion(input.clientId, verified.jti);
+    const signingKey = await importJWK(this.privateJwk, "EdDSA");
     const access_token = await new SignJWT({scope: input.scopes.join(" "), region: this.region, epoch: registered.epoch})
       .setProtectedHeader({alg: "EdDSA", typ: "at+jwt", kid: "sai-local-node"})
-      .setIssuer(this.issuer).setSubject(input.clientId).setAudience(this.mcpResource).setIssuedAt(now).setExpirationTime(now + ttl).setJti(`${input.clientId}:${verified.jti}`).sign(this.privateKey);
+      .setIssuer(this.issuer).setSubject(input.clientId).setAudience(this.mcpResource).setIssuedAt(now).setExpirationTime(now + ttl).setJti(`${input.clientId}:${verified.jti}`).sign(signingKey);
     return {access_token, token_type: "Bearer", expires_in: ttl, scope: input.scopes.join(" ")};
   }
 
   async verifyAccessToken(token: string, now?: number): Promise<AccessClaims> {
-    const result = await jwtVerify(token, this.publicKey, {algorithms: ["EdDSA"], issuer: this.issuer, audience: this.mcpResource, ...(now === undefined ? {} : {currentDate: new Date(now * 1000)})});
+    const verifyingKey = await importJWK(this.publicJwk, "EdDSA");
+    const result = await jwtVerify(token, verifyingKey, {algorithms: ["EdDSA"], issuer: this.issuer, audience: this.mcpResource, ...(now === undefined ? {} : {currentDate: new Date(now * 1000)})});
     const agentId = result.payload.sub;
     const scope = result.payload.scope;
     const epoch = result.payload.epoch;

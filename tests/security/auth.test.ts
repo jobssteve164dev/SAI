@@ -35,4 +35,13 @@ describe("Ed25519 private_key_jwt", () => {
     const issued = await first.token({clientId: identity.agentId, assertion: await createClientAssertion(identity, "https://first.example/oauth/token", "node-t"), resource: "https://first.example/mcp", scopes: ["act"]});
     await expect(second.verifyAccessToken(issued.access_token)).rejects.toThrow();
   });
+
+  it("授权签名密钥随快照持久化，节点重启后已签发 Token 仍然有效", async () => {
+    const identity = await createIdentity();
+    const first = new AuthService({baseUrl: "https://persistent.example", region: "r1"});
+    await first.register(identity.publicJwk, await createClientAssertion(identity, "https://persistent.example/oauth/register", "persist-r"));
+    const issued = await first.token({clientId: identity.agentId, assertion: await createClientAssertion(identity, "https://persistent.example/oauth/token", "persist-t"), resource: "https://persistent.example/mcp", scopes: ["observe"]});
+    const restarted = new AuthService({baseUrl: "https://persistent.example", region: "r1", snapshot: first.snapshot()});
+    expect((await restarted.verifyAccessToken(issued.access_token)).agentId).toBe(identity.agentId);
+  });
 });

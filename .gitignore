@@ -3,3 +3,6 @@ node_modules/
 .sai-data/
 coverage/
 *.log
+.env
+.dev.vars
+.wrangler/

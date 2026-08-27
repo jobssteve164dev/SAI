@@ -6,6 +6,8 @@ import {AuthService} from "../../../packages/auth/src/index.js";
 import {createSaiMcpHandler} from "../../../packages/mcp/src/index.js";
 import {FileStore} from "./store.js";
 import {RegionService} from "./service.js";
+import {LocalFederationService} from "./federation.js";
+import {assertTransferPrepareInput, type TransferCredential, type TransferReceipt} from "../../../packages/federation/src/index.js";
 
 function json(value: unknown, status = 200, headers: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(value), {status, headers: {"content-type": "application/json", ...headers}});
@@ -16,6 +18,7 @@ export interface LocalNode {
   server: Server;
   auth: AuthService;
   region: RegionService;
+  federation: LocalFederationService;
   close(): Promise<void>;
 }
 
@@ -32,6 +35,7 @@ export async function startLocalNode(options: {dataDirectory: string; host?: str
   const region = await RegionService.open(store, options.regionId ?? "local");
   const authSnapshot = await store.loadAuth();
   const auth = new AuthService({baseUrl: url, region: options.regionId ?? "local", ...(authSnapshot ? {snapshot: authSnapshot} : {})});
+  const federation = await LocalFederationService.open({baseUrl: url, regionId: options.regionId ?? "local", region, auth, store});
   const mcp = createSaiMcpHandler(region);
 
   const fetchHandler = {
@@ -41,6 +45,8 @@ export async function startLocalNode(options: {dataDirectory: string; host?: str
         if (request.headers.get("host") !== new URL(url).host) return json({error: "invalid_host"}, 403);
         const origin = request.headers.get("origin");
         if (origin && origin !== url) return json({error: "invalid_origin"}, 403);
+        if (requestUrl.pathname === "/" || requestUrl.pathname === "/health") return json({service: "SAI", version: "0.2.0", node_id: federation.keys.nodeId, region_id: options.regionId ?? "local", status: "ok"});
+        if (requestUrl.pathname === "/.well-known/sai-node") return json(await federation.descriptor());
         if (requestUrl.pathname === "/.well-known/oauth-protected-resource/mcp") return json({resource: `${url}/mcp`, authorization_servers: [url], scopes_supported: ["observe", "act"], bearer_methods_supported: ["header"]});
         if (requestUrl.pathname === "/.well-known/oauth-authorization-server") return json({issuer: url, token_endpoint: `${url}/oauth/token`, jwks_uri: `${url}/oauth/jwks`, registration_endpoint: `${url}/oauth/register`, token_endpoint_auth_methods_supported: ["private_key_jwt"], scopes_supported: ["observe", "act"], response_types_supported: []});
         if (requestUrl.pathname === "/oauth/jwks") return json(await auth.jwks());
@@ -57,6 +63,33 @@ export async function startLocalNode(options: {dataDirectory: string; host?: str
           const token = await auth.token({clientId: form.get("client_id") ?? "", assertion: form.get("client_assertion") ?? "", resource: form.get("resource") ?? "", scopes: (form.get("scope") ?? "").split(" ").filter(Boolean)});
           await store.saveAuth(auth.snapshot());
           return json(token);
+        }
+        if (requestUrl.pathname === "/federation/v1/transfers/accept" && request.method === "POST") {
+          return json(await federation.accept(await request.json() as TransferCredential));
+        }
+        if (requestUrl.pathname === "/federation/v1/transfers/complete" && request.method === "POST") {
+          await federation.complete(await request.json() as TransferReceipt);
+          return json({status: "completed"});
+        }
+        if (requestUrl.pathname === "/federation/v1/transfers/cancel" && request.method === "POST") {
+          return json(await federation.cancel(await request.json() as TransferCredential));
+        }
+        if (requestUrl.pathname === "/federation/v1/transfers/prepare" && request.method === "POST") {
+          const claims = await authenticated(request, auth, "act");
+          const body: unknown = await request.json();
+          assertTransferPrepareInput(body);
+          return json(await federation.prepare(claims.agentId, body));
+        }
+        if (requestUrl.pathname === "/federation/v1/transfers/current" && request.method === "GET") {
+          const claims = await authenticated(request, auth, "act");
+          const credential = federation.current(claims.agentId);
+          return credential ? json(credential) : json({error: "not_found"}, 404);
+        }
+        if (requestUrl.pathname === "/federation/v1/transfers/recover" && request.method === "POST") {
+          const claims = await authenticated(request, auth, "act");
+          const body = await request.json() as {cancellation: import("../../../packages/federation/src/index.js").TransferCancellation};
+          await federation.recover(claims.agentId, body.cancellation);
+          return json({status: "recovered"});
         }
         if (requestUrl.pathname === "/mcp") {
           const authorization = request.headers.get("authorization");
@@ -76,5 +109,13 @@ export async function startLocalNode(options: {dataDirectory: string; host?: str
   };
   server.removeAllListeners("request");
   server.on("request", toNodeHandler(fetchHandler));
-  return {url, server, auth, region, close: async () => { await mcp.close(); await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve())); }};
+  return {url, server, auth, region, federation, close: async () => { await mcp.close(); await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve())); }};
+}
+
+async function authenticated(request: Request, auth: AuthService, requiredScope: "observe" | "act") {
+  const authorization = request.headers.get("authorization");
+  if (!authorization?.startsWith("Bearer ")) throw new Error("缺少 bearer token");
+  const claims = await auth.verifyAccessToken(authorization.slice(7));
+  if (!claims.scopes.includes(requiredScope)) throw new Error(`缺少 ${requiredScope} scope`);
+  return claims;
 }

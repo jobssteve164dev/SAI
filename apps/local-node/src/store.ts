@@ -2,6 +2,7 @@ import {appendFile, mkdir, readFile, rename, writeFile} from "node:fs/promises";
 import {join} from "node:path";
 import {fromSnapshot, replay, toSnapshot, type ActResult, type ConformanceEvent, type RegionState, type Snapshot, type StoredObservation} from "../../../packages/kernel/src/index.js";
 import type {AuthSnapshot} from "../../../packages/auth/src/index.js";
+import type {FederationSnapshot} from "./federation.js";
 
 async function readJson<T>(path: string): Promise<T | undefined> {
   try { return JSON.parse(await readFile(path, "utf8")) as T; }
@@ -35,6 +36,8 @@ export class FileStore {
   async saveSnapshot(state: RegionState): Promise<void> { await this.atomicJson("snapshot.json", toSnapshot(state)); }
   async loadAuth(): Promise<AuthSnapshot | undefined> { return readJson(this.path("auth.json")); }
   async saveAuth(value: AuthSnapshot): Promise<void> { await this.atomicJson("auth.json", value); }
+  async loadFederation(): Promise<FederationSnapshot | undefined> { return readJson(this.path("federation.json")); }
+  async saveFederation(value: FederationSnapshot): Promise<void> { await this.atomicJson("federation.json", value); }
 
   private async atomicJson(name: string, value: unknown): Promise<void> {
     const target = this.path(name);
