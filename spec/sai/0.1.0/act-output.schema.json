@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sai.world/spec/0.1.0/act-output.schema.json",
+  "title": "SAI Act Output",
+  "type": "object",
+  "required": ["request_id", "status"],
+  "properties": {
+    "request_id": {"type": "string"},
+    "status": {"enum": ["applied", "rejected"]},
+    "event_id": {"type": "string"},
+    "state_hash": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+    "cost": {
+      "type": "object",
+      "propertyNames": {"pattern": "^[a-z][a-z0-9_-]{0,63}$"},
+      "additionalProperties": {"type": "integer", "minimum": 0}
+    },
+    "received": {
+      "type": "object",
+      "propertyNames": {"pattern": "^[a-z][a-z0-9_-]{0,63}$"},
+      "additionalProperties": {"type": "integer", "minimum": 0}
+    },
+    "reason": {
+      "enum": [
+        "agent_not_found",
+        "action_not_found",
+        "arguments_invalid",
+        "insufficient_energy",
+        "position_changed",
+        "target_unavailable",
+        "target_out_of_range",
+        "observation_unknown"
+      ]
+    },
+    "available_correction": {"enum": ["observe_again", "choose_another_action"]}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"status": {"const": "applied"}}},
+      "then": {
+        "properties": {"event_id": true, "state_hash": true},
+        "required": ["event_id", "state_hash"]
+      }
+    },
+    {
+      "if": {"properties": {"status": {"const": "rejected"}}},
+      "then": {
+        "properties": {"reason": true, "available_correction": true},
+        "required": ["reason", "available_correction"]
+      }
+    }
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sai.world/spec/0.1.0/event.schema.json",
+  "title": "SAI Conformance Event",
+  "type": "object",
+  "required": [
+    "protocol",
+    "rules_version",
+    "event_id",
+    "region_id",
+    "event_seq",
+    "agent_id",
+    "request_id",
+    "command",
+    "result",
+    "state_hash"
+  ],
+  "properties": {
+    "protocol": {"const": "sai/0.1.0"},
+    "rules_version": {"const": "conformance/0.1.0"},
+    "event_id": {"type": "string"},
+    "region_id": {"type": "string"},
+    "event_seq": {"type": "integer", "minimum": 1},
+    "agent_id": {"type": "string"},
+    "request_id": {"type": "string"},
+    "command": {"type": "object"},
+    "result": {"type": "object"},
+    "state_hash": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"}
+  },
+  "additionalProperties": false
+}

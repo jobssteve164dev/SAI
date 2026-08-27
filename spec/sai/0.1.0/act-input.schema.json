@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sai.world/spec/0.1.0/act-input.schema.json",
+  "title": "SAI Act Input",
+  "type": "object",
+  "required": ["observation_id", "action_id", "request_id"],
+  "properties": {
+    "observation_id": {"type": "string", "pattern": "^obs_[A-Za-z0-9_-]+$"},
+    "action_id": {"type": "string", "pattern": "^act_[A-Za-z0-9_-]+$"},
+    "arguments": {"type": "object", "default": {}},
+    "request_id": {"type": "string", "pattern": "^[A-Za-z0-9._:-]{1,160}$"}
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,38 @@
+import {describe, expect, it} from "vitest";
+import {AuthService} from "../../packages/auth/src/index.js";
+import {createClientAssertion, createIdentity} from "../../packages/identity/src/index.js";
+
+describe("Ed25519 private_key_jwt", () => {
+  it("验证密钥身份、audience、scope、过期与 epoch 撤销", async () => {
+    const baseUrl = "https://node.example";
+    const auth = new AuthService({baseUrl, region: "r1"});
+    const identity = await createIdentity();
+    const registerAssertion = await createClientAssertion(identity, `${baseUrl}/oauth/register`, "register", 1000);
+    expect(await auth.register(identity.publicJwk, registerAssertion, 1000)).toBe(identity.agentId);
+    await expect(auth.register(identity.publicJwk, registerAssertion, 1000)).rejects.toThrow("已使用");
+
+    const tokenAssertion = await createClientAssertion(identity, `${baseUrl}/oauth/token`, "token", 1000);
+    const issued = await auth.token({clientId: identity.agentId, assertion: tokenAssertion, resource: `${baseUrl}/mcp`, scopes: ["observe"]}, 1000, 60);
+    expect((await auth.verifyAccessToken(issued.access_token, 1030)).scopes).toEqual(["observe"]);
+    await expect(auth.verifyAccessToken(issued.access_token, 1061)).rejects.toThrow();
+    auth.revoke(identity.agentId);
+    await expect(auth.verifyAccessToken(issued.access_token, 1030)).rejects.toThrow("已失效");
+  });
+
+  it("拒绝错误 resource 与未知 scope", async () => {
+    const auth = new AuthService({baseUrl: "https://node.example", region: "r1"});
+    const identity = await createIdentity();
+    await auth.register(identity.publicJwk, await createClientAssertion(identity, "https://node.example/oauth/register", "r"));
+    await expect(auth.token({clientId: identity.agentId, assertion: await createClientAssertion(identity, "https://node.example/oauth/token", "t1"), resource: "https://evil.example/mcp", scopes: ["observe"]})).rejects.toThrow("精确匹配");
+    await expect(auth.token({clientId: identity.agentId, assertion: await createClientAssertion(identity, "https://node.example/oauth/token", "t2"), resource: "https://node.example/mcp", scopes: ["admin"]})).rejects.toThrow("scope");
+  });
+
+  it("一个节点签发的 Token 不能用于另一个节点", async () => {
+    const identity = await createIdentity();
+    const first = new AuthService({baseUrl: "https://first.example", region: "r1"});
+    const second = new AuthService({baseUrl: "https://second.example", region: "r2"});
+    await first.register(identity.publicJwk, await createClientAssertion(identity, "https://first.example/oauth/register", "node-r"));
+    const issued = await first.token({clientId: identity.agentId, assertion: await createClientAssertion(identity, "https://first.example/oauth/token", "node-t"), resource: "https://first.example/mcp", scopes: ["act"]});
+    await expect(second.verifyAccessToken(issued.access_token)).rejects.toThrow();
+  });
+});

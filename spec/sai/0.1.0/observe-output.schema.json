@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sai.world/spec/0.1.0/observe-output.schema.json",
+  "title": "SAI Observe Output",
+  "type": "object",
+  "required": ["protocol", "observation_id", "region_id", "cursor", "self", "nearby", "legal_actions"],
+  "properties": {
+    "protocol": {"const": "sai/0.1.0"},
+    "observation_id": {"type": "string", "pattern": "^obs_[A-Za-z0-9_-]+$"},
+    "region_id": {"type": "string", "minLength": 1, "maxLength": 128},
+    "cursor": {"type": "string", "minLength": 1, "maxLength": 160},
+    "self": {
+      "type": "object",
+      "required": ["agent_id", "x", "y", "energy", "inventory"],
+      "properties": {
+        "agent_id": {"type": "string", "minLength": 1, "maxLength": 256},
+        "x": {"type": "integer", "minimum": 0},
+        "y": {"type": "integer", "minimum": 0},
+        "energy": {"type": "integer", "minimum": 0},
+        "inventory": {
+          "type": "object",
+          "propertyNames": {"pattern": "^[a-z][a-z0-9_-]{0,63}$"},
+          "additionalProperties": {"type": "integer", "minimum": 0}
+        }
+      },
+      "additionalProperties": false
+    },
+    "nearby": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": ["id", "type", "x", "y"],
+            "properties": {
+              "id": {"type": "string"},
+              "type": {"const": "agent"},
+              "x": {"type": "integer", "minimum": 0},
+              "y": {"type": "integer", "minimum": 0}
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "required": ["id", "type", "kind", "x", "y", "remaining"],
+            "properties": {
+              "id": {"type": "string"},
+              "type": {"const": "resource"},
+              "kind": {"type": "string", "pattern": "^[a-z][a-z0-9_-]{0,63}$"},
+              "x": {"type": "integer", "minimum": 0},
+              "y": {"type": "integer", "minimum": 0},
+              "remaining": {"type": "integer", "minimum": 0}
+            },
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
+    "legal_actions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["action_id", "type"],
+        "properties": {
+          "action_id": {"type": "string", "pattern": "^act_[A-Za-z0-9_-]+$"},
+          "type": {"enum": ["wait", "move", "gather", "message"]},
+          "direction": {"enum": ["north", "east", "south", "west"]},
+          "target": {"type": "string", "minLength": 1},
+          "arguments_schema": {"type": "object"}
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sai.world/spec/0.1.0/observe-input.schema.json",
+  "title": "SAI Observe Input",
+  "type": "object",
+  "properties": {
+    "cursor": {"type": "string", "minLength": 1, "maxLength": 160},
+    "max_bytes": {"type": "integer", "minimum": 512, "maximum": 65536, "default": 4096}
+  },
+  "additionalProperties": false
+}

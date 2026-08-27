@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sai.world/spec/0.1.0/snapshot.schema.json",
+  "title": "SAI Conformance Snapshot",
+  "type": "object",
+  "required": ["protocol", "rules_version", "region_id", "event_seq", "logical_tick", "width", "height", "agents", "resources", "messages", "state_hash"],
+  "properties": {
+    "protocol": {"const": "sai/0.1.0"},
+    "rules_version": {"const": "conformance/0.1.0"},
+    "region_id": {"type": "string"},
+    "event_seq": {"type": "integer", "minimum": 0},
+    "logical_tick": {"type": "integer", "minimum": 0},
+    "width": {"type": "integer", "minimum": 1},
+    "height": {"type": "integer", "minimum": 1},
+    "agents": {"type": "object"},
+    "resources": {"type": "object"},
+    "messages": {"type": "array"},
+    "state_hash": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"}
+  },
+  "additionalProperties": false
+}

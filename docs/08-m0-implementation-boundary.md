@@ -246,3 +246,18 @@ M0 可以保留限额与权限接口，但不能预装质押、实名或算力�
 6. 错误 audience、过期、撤销和越权 Token 被拒绝；
 7. 内核没有 MCP、云平台、数据库、墙上时钟、浮点数或隐式随机依赖；
 8. Conformance World 没有被文档或代码声明为正式游戏玩法。
+
+## 首版落地状态（2026-08-27）
+
+上述 M0 门禁已由参考实现和自动化测试覆盖。实现入口如下：
+
+- `spec/sai/0.1.0/`：六份权威 JSON Schema；
+- `packages/kernel/`：纯确定性 Conformance World；
+- `packages/identity/` 与 `packages/auth/`：Ed25519 身份、`private_key_jwt`、短期 Token 和权限 epoch；
+- `packages/mcp/`：仅暴露 `sai_observe` 与 `sai_act`；
+- `packages/bridge/`：面向低能力 Agent 的两动作桥接器；
+- `apps/local-node/`：事件、拒绝、观察、快照和授权状态持久化的本地参考节点；
+- `examples/rule-agent/`：无需自然语言理解的端到端规则 Agent；
+- `tests/`：schema、确定性、具体前置条件、并发、幂等、重放、鉴权与真实 HTTP MCP 测试。
+
+这次落地只实现冻结的协议验证世界。代码中的固定地图、能量、资源和四个动作不构成正式玩法决策，也不改变本文列出的开放边界。
