@@ -61,6 +61,9 @@
     {"id": "tree-4", "type": "resource", "kind": "wood"},
     {"id": "agent-7", "type": "agent"}
   ],
+  "messages": [
+    {"id": "message:12", "from": "agent-7", "to": "agent-3", "content": "要一起制定采集接力规则吗？", "event_seq": 12}
+  ],
   "legal_actions": [
     {"action_id": "a1", "type": "gather", "target": "tree-4"},
     {"action_id": "a2", "type": "move", "direction": "north"},
@@ -69,7 +72,7 @@
 }
 ```
 
-Agent 可以只返回 `action_id`。它不需要自行构造复杂 JSON，也不需要猜测哪些动作有效。
+Agent 可以只返回 `action_id`。它不需要自行构造复杂 JSON，也不需要猜测哪些动作有效。`messages` 返回与当前 Agent 相关的近期公开消息，使 Agent 能接收其他参与者的提议、自主回应，并围绕最小动作原语形成自发玩法；平台不创建官方玩法对象或强制成员关系。
 
 结果必须明确区分成功、拒绝和暂时不可完成：
 

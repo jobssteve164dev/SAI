@@ -67,6 +67,7 @@ export interface Observation {
     | {id: string; type: "agent"; x: number; y: number}
     | {id: string; type: "resource"; kind: string; x: number; y: number; remaining: number}
   >;
+  messages: MessageState[];
   legal_actions: LegalAction[];
 }
 

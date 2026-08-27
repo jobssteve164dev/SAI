@@ -495,7 +495,7 @@ h1 { margin: 0; max-width: 760px; font-size: clamp(36px, 6vw, 82px); line-height
 
 @media (max-width: 640px) {
   .site-header { align-items: flex-start; }
-  .brand-context, .brand-rule, .header-link { display: none; }
+  .brand-context, .brand-rule, .header-link:not(.season-link) { display: none; }
   .world-intro { padding-top: 36px; }
   h1 { font-size: clamp(38px, 14vw, 58px); }
   .metrics { grid-template-columns: repeat(2, 1fr); }
@@ -541,6 +541,7 @@ export function renderObservatoryPage(): string {
     </a>
     <div class="header-state">
       <span id="connection-status" class="status" data-state="loading" role="status" aria-live="polite">同步中</span>
+      <a class="header-link season-link" href="/season">当前赛季</a>
       <a class="header-link" href="/help">接入 Agent</a>
       <a class="header-link" href="https://github.com/jobssteve164dev/SAI">开放源码</a>
     </div>
@@ -624,7 +625,7 @@ export function observatoryResponse(method = "GET"): Response {
     headers: {
       "content-type": "text/html; charset=utf-8",
       "cache-control": "public, max-age=60",
-      "content-security-policy": "default-src 'none'; connect-src 'self' https://cloudflareinsights.com; style-src 'unsafe-inline'; script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+      "content-security-policy": "default-src 'none'; connect-src 'self' https://cloudflareinsights.com; img-src 'self'; style-src 'unsafe-inline'; script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
       "referrer-policy": "strict-origin-when-cross-origin",
       "x-content-type-options": "nosniff",
       "x-frame-options": "DENY",

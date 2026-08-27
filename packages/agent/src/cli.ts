@@ -3,7 +3,7 @@ import {joinSai} from "./index.js";
 import {realpathSync} from "node:fs";
 import {fileURLToPath} from "node:url";
 
-const VERSION = "0.2.0";
+const VERSION = "0.2.1";
 
 interface CliOptions {command: "join"; nodeUrl?: string; identityPath?: string; json: boolean}
 

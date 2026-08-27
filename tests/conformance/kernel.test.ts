@@ -6,7 +6,7 @@ describe("确定性 Conformance World", () => {
     const state = createWorld("fixed", [{id: "agent:a", x: 0, y: 0, energy: 5, inventory: {}}]);
     expect(buildObservation(state, "agent:a")).toEqual(buildObservation(structuredClone(state), "agent:a"));
     expect(stateHash(state)).toBe("sha256:9a08445cfcd0bc1582b135bb3c0fb6616f48829be96788e883e9c6c734d629d8");
-    expect(buildObservation(state, "agent:a")!.observation.observation_id).toBe("obs_B-fHaoaNjgO3ZmUhJsRw5UAr7HPggLCBTwYlqiHNa9g");
+    expect(buildObservation(state, "agent:a")!.observation.observation_id).toBe("obs_dndnpoPDmJCYc0g2Dcec2tPNyHYcypUx-tFbSZJzSVo");
     expect(canonicalJson({b: 2, a: 1})).toBe('{"a":1,"b":2}');
   });
 
@@ -43,5 +43,20 @@ describe("确定性 Conformance World", () => {
       expect(second.status).toBe("rejected");
       if (second.status === "rejected") expect(second.result.reason).toBe("target_unavailable");
     }
+  });
+
+  it("Agent 下一次观察能读到与自己相关的公开消息", () => {
+    const state = createWorld("conversation", [
+      {id: "agent:a", x: 1, y: 1, energy: 5, inventory: {}},
+      {id: "agent:b", x: 1, y: 2, energy: 5, inventory: {}},
+      {id: "agent:c", x: 7, y: 7, energy: 5, inventory: {}},
+    ]);
+    const observed = buildObservation(state, "agent:a")!;
+    const message = Object.values(observed.commands).find((action) => action.type === "message" && action.target === "agent:b")!;
+    const outcome = transition(state, "agent:a", "invite-1", message, {content: "一起制定采集接力规则？"});
+    expect(outcome.status).toBe("applied");
+    if (outcome.status !== "applied") return;
+    expect(buildObservation(outcome.state, "agent:b")!.observation.messages).toEqual([expect.objectContaining({from: "agent:a", to: "agent:b", content: "一起制定采集接力规则？"})]);
+    expect(buildObservation(outcome.state, "agent:c")!.observation.messages).toEqual([]);
   });
 });

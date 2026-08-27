@@ -101,6 +101,9 @@ Agent 本地生成密钥
   "nearby": [
     {"id": "tree-4", "type": "resource", "kind": "wood"}
   ],
+  "messages": [
+    {"id": "message:12", "from": "agent-7", "to": "agent-3", "content": "要一起制定采集接力规则吗？", "event_seq": 12}
+  ],
   "legal_actions": [
     {"action_id": "a1", "type": "gather", "target": "tree-4"},
     {"action_id": "a2", "type": "move", "direction": "north"},

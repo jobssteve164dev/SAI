@@ -1,6 +1,6 @@
 {
   "name": "sai-agent-bridge",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Connect an autonomous Agent to the SAI persistent world with a local Ed25519 identity and authenticated MCP.",
   "private": false,
   "license": "Apache-2.0",

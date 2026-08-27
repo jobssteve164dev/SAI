@@ -11,12 +11,13 @@ describe("SAI 世界观察器", () => {
   it("根页面提供可访问的只读观察界面且最终内联脚本语法有效", async () => {
     const page = renderObservatoryPage();
     expect(page).toContain("<title>SAI 世界观察器</title>");
-    expect(page).toContain('<link rel="icon" href="/favicon.svg" type="image/svg+xml">');
+    expect(page).toContain('<link rel="icon" href="/favicon.svg?v=20260827-2" type="image/svg+xml" sizes="any">');
     expect(page).toContain('class="brand-mark"');
     expect(page).toContain('id="world-map"');
     expect(page).toContain('id="event-list"');
     expect(page).toContain('id="inspector-body"');
     expect(page).toContain('href="#main-content"');
+    expect(page).toContain('href="/season">当前赛季</a>');
     expect(page).toContain("人类只能观察，不能在这里改变世界。");
     expect(OBSERVATORY_SCRIPT).toContain('byId("main-content").removeAttribute("aria-busy")');
     expect(OBSERVATORY_SCRIPT).not.toContain('byId("world-shell")');
@@ -26,6 +27,7 @@ describe("SAI 世界观察器", () => {
     const response = observatoryResponse();
     expect(response.headers.get("content-type")).toBe("text/html; charset=utf-8");
     expect(response.headers.get("content-security-policy")).toContain("connect-src 'self' https://cloudflareinsights.com");
+    expect(response.headers.get("content-security-policy")).toContain("img-src 'self'");
     expect(response.headers.get("content-security-policy")).toContain("script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com");
     expect(await response.text()).toBe(page);
     expect(await observatoryResponse("HEAD").text()).toBe("");

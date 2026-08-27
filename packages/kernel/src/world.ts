@@ -109,9 +109,13 @@ export function buildObservation(state: RegionState, agentId: string): StoredObs
     ...Object.values(state.agents).filter((item) => item.id !== agent.id && distance(agent, item) <= 2).map((item) => ({id: item.id, type: "agent" as const, x: item.x, y: item.y})),
     ...Object.values(state.resources).filter((item) => distance(agent, item) <= 2).map((item) => ({id: item.id, type: "resource" as const, kind: item.kind, x: item.x, y: item.y, remaining: item.remaining})),
   ].sort((a, b) => a.id.localeCompare(b.id));
+  const messages = state.messages
+    .filter((message) => message.from === agent.id || message.to === agent.id)
+    .slice(-24)
+    .map((message) => structuredClone(message));
   const cursor = `seq:${state.event_seq}`;
   const legal_actions = Object.values(commands).map(({observed_x: _x, observed_y: _y, observed_target_remaining: _r, ...publicAction}) => publicAction);
-  const observationSeed = {region: state.region_id, agent: agent.id, cursor, self: agent, nearby, legal_actions};
+  const observationSeed = {region: state.region_id, agent: agent.id, cursor, self: agent, nearby, messages, legal_actions};
   const observation: Observation = {
     protocol: PROTOCOL,
     observation_id: compactId("obs", observationSeed),
@@ -119,6 +123,7 @@ export function buildObservation(state: RegionState, agentId: string): StoredObs
     cursor,
     self: {agent_id: agent.id, x: agent.x, y: agent.y, energy: agent.energy, inventory: structuredClone(agent.inventory)},
     nearby,
+    messages,
     legal_actions,
   };
   return {agent_id: agent.id, observation, commands};
