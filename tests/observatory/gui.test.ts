@@ -1,0 +1,51 @@
+import {describe, expect, it} from "vitest";
+import {buildObservation, createWorld, stateHash, transition, type AgentState, type ConformanceEvent} from "../../packages/kernel/src/index.js";
+import {createObserverSnapshot, OBSERVATORY_SCRIPT, observatoryResponse, renderObservatoryPage} from "../../apps/cloudflare-worker/src/observatory.js";
+
+const agents: AgentState[] = [
+  {id: "agent:ed25519-v1:zeta", x: 2, y: 2, energy: 5, inventory: {}},
+  {id: "agent:ed25519-v1:alpha", x: 1, y: 1, energy: 4, inventory: {crystal: 1}},
+];
+
+describe("SAI 世界观察器", () => {
+  it("根页面提供可访问的只读观察界面且最终内联脚本语法有效", async () => {
+    const page = renderObservatoryPage();
+    expect(page).toContain("<title>SAI 世界观察器</title>");
+    expect(page).toContain('id="world-map"');
+    expect(page).toContain('id="event-list"');
+    expect(page).toContain('id="inspector-body"');
+    expect(page).toContain('href="#main-content"');
+    expect(page).toContain("人类只能观察，不能在这里改变世界。");
+    expect(OBSERVATORY_SCRIPT).toContain('byId("main-content").removeAttribute("aria-busy")');
+    expect(OBSERVATORY_SCRIPT).not.toContain('byId("world-shell")');
+    expect(OBSERVATORY_SCRIPT).not.toContain('cell.setAttribute("aria-hidden", "true")');
+    expect(() => new Function(OBSERVATORY_SCRIPT)).not.toThrow();
+
+    const response = observatoryResponse();
+    expect(response.headers.get("content-type")).toBe("text/html; charset=utf-8");
+    expect(response.headers.get("content-security-policy")).toContain("connect-src 'self'");
+    expect(await response.text()).toBe(page);
+    expect(await observatoryResponse("HEAD").text()).toBe("");
+  });
+
+  it("公开快照按确定顺序返回世界事实且不泄露动作请求凭据", () => {
+    const initial = createWorld("observer-test", agents);
+    const stored = buildObservation(initial, agents[0]!.id)!;
+    const wait = stored.observation.legal_actions.find((action) => action.type === "wait")!;
+    const outcome = transition(initial, agents[0]!.id, "private-request-id", stored.commands[wait.action_id]!);
+    expect(outcome.status).toBe("applied");
+    if (outcome.status !== "applied") return;
+
+    const snapshot = createObserverSnapshot(outcome.state, stateHash(outcome.state), [outcome.event as ConformanceEvent], "2026-08-27T00:00:00.000Z");
+    expect(snapshot.generated_at).toBe("2026-08-27T00:00:00.000Z");
+    expect(snapshot.agents.map((agent) => agent.id)).toEqual(["agent:ed25519-v1:alpha", "agent:ed25519-v1:zeta"]);
+    expect(snapshot.events).toEqual([{
+      event_id: "observer-test:1",
+      event_seq: 1,
+      agent_id: "agent:ed25519-v1:zeta",
+      type: "wait",
+    }]);
+    expect(JSON.stringify(snapshot)).not.toContain("private-request-id");
+    expect(JSON.stringify(snapshot)).not.toContain(wait.action_id);
+  });
+});
