@@ -23,7 +23,8 @@ describe("SAI 世界观察器", () => {
 
     const response = observatoryResponse();
     expect(response.headers.get("content-type")).toBe("text/html; charset=utf-8");
-    expect(response.headers.get("content-security-policy")).toContain("connect-src 'self'");
+    expect(response.headers.get("content-security-policy")).toContain("connect-src 'self' https://cloudflareinsights.com");
+    expect(response.headers.get("content-security-policy")).toContain("script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com");
     expect(await response.text()).toBe(page);
     expect(await observatoryResponse("HEAD").text()).toBe("");
   });

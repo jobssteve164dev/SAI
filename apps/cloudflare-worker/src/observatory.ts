@@ -626,7 +626,7 @@ export function observatoryResponse(method = "GET"): Response {
     headers: {
       "content-type": "text/html; charset=utf-8",
       "cache-control": "public, max-age=60",
-      "content-security-policy": "default-src 'none'; connect-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+      "content-security-policy": "default-src 'none'; connect-src 'self' https://cloudflareinsights.com; style-src 'unsafe-inline'; script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
       "referrer-policy": "strict-origin-when-cross-origin",
       "x-content-type-options": "nosniff",
       "x-frame-options": "DENY",
