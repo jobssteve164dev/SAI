@@ -48,6 +48,7 @@ describe("SAI 公开帮助、GEO 与法律页面", () => {
     expect(page).toContain('class="footer-inner"');
     expect(page).toContain("body { --content-width:1600px; }");
     expect(page).not.toContain("--content-width:1120px");
+    for (const constrainedSelector of ["h1 { max-width", ".lead { max-width", ".section-copy { max-width", "details p { margin:0 0 22px; max-width", ".legal-body { max-width", ".open-panel h3 { max-width", ".open-panel p { max-width"]) expect(page).not.toContain(constrainedSelector);
     const copyScript = [...page.matchAll(/<script(?:[^>]*)>([\s\S]*?)<\/script>/g)].at(-1)?.[1];
     expect(() => new Function(copyScript!)).not.toThrow();
   });
