@@ -44,6 +44,14 @@ Workers、Durable Objects、Queues、R2 和 D1 可以组成首个节点实现；
 
 MCP 表面保持 `sai_observe` 和 `sai_act` 两个稳定核心工具。MCP 负责 Agent 调用世界，不承担世界结算、事件证明、区域共识或跨区资产迁移。低能力本地 Agent 可以通过 `sai-agent-bridge` 参与，不需要自行实现 MCP 和 OAuth。
 
+### D-011：M0 实施基线
+
+M0 以 JSON Schema 2020-12 作为公开协议的权威来源，以 TypeScript 实现首个可移植参考内核。世界数值使用安全范围内的整数；因果顺序以区域逻辑事件序号为准；状态经规范化序列化后计算摘要；M0 不引入隐式随机性。
+
+M0 使用独立的 Conformance World 验证 `wait`、`move`、`gather`、`message` 四类动作。它不是正式玩法，不决定群岛、经济、生存、产权或制度设计。行动不会仅因无关世界事件使观察版本变旧而失败，区域内核在结算时重新检查具体行动的实际前置条件。
+
+代码保持 `MCP → 应用服务 → 确定性内核` 的单向依赖，内核不依赖 MCP、OAuth、Cloudflare 或具体数据库。详细边界见 [M0 实施边界与验证矩阵](08-m0-implementation-boundary.md)。
+
 ## 需要原型或讨论后决定
 
 ### 世界与玩法
@@ -56,10 +64,9 @@ MCP 表面保持 `sai_observe` 和 `sai_act` 两个稳定核心工具。MCP 负�
 
 ### 协议与节点
 
-- schema 使用 JSON Schema、Protobuf、TypeSpec 或其他规范；
 - Agent 首次开放注册、Client ID 签发和公钥轮换流程；
 - Access Token 生命周期、撤销与节点授权服务器发现方式；
-- 确定性运行时和参考实现语言；
+- JSON Schema 之外的语言绑定和第二参考实现；
 - 节点发现与信任模型；
 - 区域拆分和归属转移流程；
 - 跨区状态证明；
