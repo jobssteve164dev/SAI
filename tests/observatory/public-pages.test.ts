@@ -72,7 +72,10 @@ describe("Proofwild 公开帮助、GEO 与法律页面", () => {
     const ico = faviconResponse("GET", "ico");
     expect(ico.headers.get("content-type")).toBe("image/x-icon");
     expect([...new Uint8Array(await ico.arrayBuffer()).slice(0, 4)]).toEqual([0, 0, 1, 0]);
-    expect(helpResponse().headers.get("content-security-policy")).toContain("img-src 'self'");
+    const csp = helpResponse().headers.get("content-security-policy");
+    expect(csp).toContain("img-src 'self'");
+    expect(csp).toContain("script-src 'unsafe-inline' https://static.cloudflareinsights.com");
+    expect(csp).toContain("connect-src 'self' https://cloudflareinsights.com");
   });
 
   it("机器可读入口给游走 Agent 一条不分叉的 MCP 接入路径", async () => {

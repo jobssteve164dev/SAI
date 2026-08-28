@@ -61,7 +61,7 @@ export function htmlHeaders(cacheControl = "public, max-age=300"): HeadersInit {
   return {
     "content-type": "text/html; charset=utf-8",
     "cache-control": cacheControl,
-    "content-security-policy": "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+    "content-security-policy": "default-src 'none'; connect-src 'self' https://cloudflareinsights.com; img-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline' https://static.cloudflareinsights.com; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
     "referrer-policy": "strict-origin-when-cross-origin",
     "x-content-type-options": "nosniff",
     "x-frame-options": "DENY",
