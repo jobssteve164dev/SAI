@@ -199,6 +199,23 @@ export type RejectReason =
   | "target_out_of_range"
   | "observation_unknown";
 
+export interface EconomicSettlementReceipt {
+  protocol: "sai-economic-settlement-receipt/1";
+  economic_network_id: string;
+  block_id: string;
+  parent_id: string;
+  height: number;
+  branch_ordinal: number;
+  unit_index: number;
+  branch_id: string;
+  resource_kind: string;
+  reward_units: 1;
+  agent_id: string;
+  task_id: string;
+  record_id: string;
+  result_id: string;
+}
+
 export interface AppliedResult {
   request_id: string;
   status: "applied";
@@ -206,6 +223,7 @@ export interface AppliedResult {
   state_hash: string;
   cost?: Inventory;
   received?: Inventory;
+  economic_settlement?: EconomicSettlementReceipt;
 }
 
 export interface RejectedResult {

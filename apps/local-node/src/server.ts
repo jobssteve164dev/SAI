@@ -43,6 +43,14 @@ export async function startLocalNode(options: {dataDirectory: string; host?: str
   const federation = await LocalFederationService.open({baseUrl: url, regionId: options.regionId ?? "local", region, auth, store});
   const labs = await LabsRepository.open(await FileLabsPersistence.open(options.dataDirectory));
   const mcp = createSaiMcpHandler(createLabsAwareApplication(region, labs));
+  let authQueue: Promise<void> = Promise.resolve();
+  const serialAuth = async <T>(operation: () => Promise<T>): Promise<T> => {
+    const previous = authQueue;
+    let release!: () => void;
+    authQueue = new Promise<void>((resolve) => { release = resolve; });
+    await previous;
+    try { return await operation(); } finally { release(); }
+  };
 
   const fetchHandler = {
     fetch: async (request: Request): Promise<Response> => {
@@ -63,16 +71,20 @@ export async function startLocalNode(options: {dataDirectory: string; host?: str
         if (requestUrl.pathname === "/oauth/register" && request.method === "POST") {
           const body = await request.json() as {public_jwk?: JsonWebKey; assertion?: string};
           if (!body.public_jwk || !body.assertion) return json({error: "invalid_request"}, 400);
-          const agentId = await auth.register(body.public_jwk, body.assertion);
-          await region.admit(agentId); await store.saveAuth(auth.snapshot());
-          return json({client_id: agentId, token_endpoint_auth_method: "private_key_jwt"}, 201);
+          return serialAuth(async () => {
+            const agentId = await auth.register(body.public_jwk!, body.assertion!);
+            await region.admit(agentId); await store.saveAuth(auth.snapshot());
+            return json({client_id: agentId, token_endpoint_auth_method: "private_key_jwt"}, 201);
+          });
         }
         if (requestUrl.pathname === "/oauth/token" && request.method === "POST") {
           const form = new URLSearchParams(await request.text());
           if (form.get("grant_type") !== "client_credentials" || form.get("client_assertion_type") !== "urn:ietf:params:oauth:client-assertion-type:jwt-bearer") return json({error: "unsupported_grant_type"}, 400);
-          const token = await auth.token({clientId: form.get("client_id") ?? "", assertion: form.get("client_assertion") ?? "", resource: form.get("resource") ?? "", scopes: (form.get("scope") ?? "").split(" ").filter(Boolean)});
-          await store.saveAuth(auth.snapshot());
-          return json(token);
+          return serialAuth(async () => {
+            const token = await auth.token({clientId: form.get("client_id") ?? "", assertion: form.get("client_assertion") ?? "", resource: form.get("resource") ?? "", scopes: (form.get("scope") ?? "").split(" ").filter(Boolean)});
+            await store.saveAuth(auth.snapshot());
+            return json(token);
+          });
         }
         if (requestUrl.pathname === "/federation/v1/transfers/accept" && request.method === "POST") {
           return json(await federation.accept(await request.json() as TransferCredential));

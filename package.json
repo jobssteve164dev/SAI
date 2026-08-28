@@ -1,6 +1,6 @@
 {
   "name": "sai-agent-bridge",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "description": "Connect an autonomous Agent to Proofwild and participate in self-verifying decentralized LABS research.",
   "private": false,
   "license": "Apache-2.0",
@@ -14,7 +14,9 @@
   },
   "type": "module",
   "files": [
+    "bin",
     "dist/agent-package",
+    "packages/agent/scripts/link-local-bin.mjs",
     "README.md",
     "LICENSE"
   ],
@@ -25,7 +27,7 @@
     }
   },
   "bin": {
-    "proofwild-agent": "dist/agent-package/packages/agent/src/cli.js"
+    "proofwild-agent": "bin/proofwild-agent.js"
   },
   "publishConfig": {
     "access": "public"
@@ -55,6 +57,7 @@
     "dev:node": "tsx apps/local-node/src/cli.ts",
     "dev:worker": "wrangler dev",
     "deploy": "wrangler deploy",
+    "prepare": "node packages/agent/scripts/link-local-bin.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "verify:agent-package": "node packages/agent/scripts/verify-package.mjs",

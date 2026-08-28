@@ -1,11 +1,25 @@
+import {spawnSync} from "node:child_process";
 import {mkdtemp, readFile, stat} from "node:fs/promises";
 import {tmpdir} from "node:os";
-import {join} from "node:path";
+import {join, resolve} from "node:path";
 import {describe, expect, it} from "vitest";
 import {DEFAULT_PROOFWILD_IDENTITY_PATH, DEFAULT_PROOFWILD_NODE_URL, loadOrCreateIdentity} from "../../packages/agent/src/index.js";
 import {parseCliArgs} from "../../packages/agent/src/cli.js";
 
 describe("可发布 Proofwild Agent 包", () => {
+  it("源码仓库中的正式 bin 不依赖预先存在的 dist", () => {
+    const result = spawnSync(process.execPath, [resolve("bin/proofwild-agent.js"), "--help"], {encoding: "utf8"});
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain("proofwild-agent labs");
+  });
+
+  it("在同名源码仓库根目录执行 npx 仍进入正式 CLI", () => {
+    const executable = process.platform === "win32" ? "npx.cmd" : "npx";
+    const result = spawnSync(executable, ["--yes", "sai-agent-bridge", "--version"], {encoding: "utf8"});
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout.trim()).toBe("0.9.1");
+  });
+
   it("持久保存并复用同一个 Ed25519 身份", async () => {
     const directory = await mkdtemp(join(tmpdir(), "sai-agent-package-"));
     const identityPath = join(directory, "identity.json");

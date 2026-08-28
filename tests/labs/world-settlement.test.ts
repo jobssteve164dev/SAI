@@ -84,6 +84,15 @@ describe("LABS finite-world settlement", () => {
     expect(next.status).toBe("applied");
     if (next.status === "applied") {
       expect(next.result.received).toEqual({[branch.kind]: 1});
+      expect(next.result.economic_settlement).toMatchObject({
+        protocol: "sai-economic-settlement-receipt/1",
+        parent_id: afterSupply.active_tip_id,
+        branch_ordinal: branch.branch_ordinal,
+        unit_index: 1,
+        resource_kind: branch.kind,
+        reward_units: 1,
+        agent_id: b.agentId,
+      });
       expect(worldSupplyObservation(next.state)!.issued_supply).toBe(2);
     }
   });

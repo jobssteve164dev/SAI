@@ -18,6 +18,7 @@ import {
   type ActionCommand,
   type AgentState,
   type Direction,
+  type EconomicSettlementReceipt,
   type Inventory,
   type LegalAction,
   type Observation,
@@ -28,7 +29,7 @@ import {
   type StoredObservation,
   type TransitionResult,
 } from "./types.js";
-import {ARCHIVED_ECOSYSTEM_WORLD_SUPPLY_SCHEDULE_IDS, ECONOMIC_NETWORK_ID, LEGACY_WORLD_MAX_SUPPLY, LEGACY_WORLD_SUPPLY_ALLOCATIONS, WORLD_MAX_SUPPLY, WORLD_RESOURCE_KINDS, appendWorldSupplyBlock, assertWorldSupplyChain, createWorldSupplyState, mineWorldSupplyBlock, worldResourceAt, worldResourceBranchesInBounds, worldSupplyActiveTip, worldSupplyBalances, worldSupplyClaimedUnits, worldSupplyNextUnitIndex, worldSupplyUnitKey} from "./supply.js";
+import {ARCHIVED_ECOSYSTEM_WORLD_SUPPLY_SCHEDULE_IDS, ECONOMIC_NETWORK_ID, LEGACY_WORLD_MAX_SUPPLY, LEGACY_WORLD_SUPPLY_ALLOCATIONS, WORLD_MAX_SUPPLY, WORLD_RESOURCE_KINDS, appendWorldSupplyBlock, assertWorldSupplyChain, createWorldSupplyState, mineWorldSupplyBlock, worldResourceAt, worldResourceBranchesInBounds, worldSupplyActiveTip, worldSupplyBalances, worldSupplyBlockId, worldSupplyClaimedUnits, worldSupplyNextUnitIndex, worldSupplyUnitKey} from "./supply.js";
 
 const MAX_ENERGY = 10;
 export const MAX_WORLD_ADDRESSES = 2 ** 32;
@@ -329,6 +330,7 @@ export function transition(state: RegionState, agentId: string, requestId: strin
   const agent = next.agents[agentId]!;
   const cost: Inventory = {};
   const received: Inventory = {};
+  let economicSettlement: EconomicSettlementReceipt | undefined;
   if (command.type === "wait") agent.energy = Math.min(MAX_ENERGY, agent.energy + 1);
   if (command.type === "move") {
     if (!command.direction) return {status: "rejected", state, result: reject(requestId, "action_not_found")};
@@ -354,7 +356,24 @@ export function transition(state: RegionState, agentId: string, requestId: strin
     const settlement = argumentsValue as LabsSettlementArguments;
     try {
       verifyLabsWorldSubmission(REFERENCE_RULESET, branch, settlement, agentId, worldSupplyActiveTip(next.supply));
-      next.supply = appendWorldSupplyBlock(next.supply, mineWorldSupplyBlock(next.supply, branch, settlement, agentId));
+      const block = mineWorldSupplyBlock(next.supply, branch, settlement, agentId);
+      next.supply = appendWorldSupplyBlock(next.supply, block);
+      economicSettlement = {
+        protocol: "sai-economic-settlement-receipt/1",
+        economic_network_id: block.economic_network_id,
+        block_id: worldSupplyBlockId(block),
+        parent_id: block.parent_id,
+        height: block.height,
+        branch_ordinal: block.branch_ordinal,
+        unit_index: block.unit_index,
+        branch_id: block.branch_id,
+        resource_kind: resource.kind,
+        reward_units: block.reward_amount,
+        agent_id: block.agent_id,
+        task_id: block.task_id,
+        record_id: block.record_id,
+        result_id: block.result_id,
+      };
     }
     catch { return {status: "rejected", state, result: reject(requestId, "arguments_invalid")}; }
     agent.energy -= 1;
@@ -377,6 +396,7 @@ export function transition(state: RegionState, agentId: string, requestId: strin
   const result: ActResult = {request_id: requestId, status: "applied", event_id: `${next.region_id}:${next.event_seq}`, state_hash: hash};
   if (Object.keys(cost).length) result.cost = cost;
   if (Object.keys(received).length) result.received = received;
+  if (economicSettlement) result.economic_settlement = economicSettlement;
   const event = {protocol: PROTOCOL, rules_version: RULES_VERSION, event_id: result.event_id, region_id: next.region_id, event_seq: next.event_seq, agent_id: agentId, request_id: requestId, command: {...command, arguments: structuredClone(argumentsValue)}, result, state_hash: hash};
   return {status: "applied", state: next, event, result};
 }

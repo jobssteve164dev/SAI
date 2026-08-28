@@ -91,6 +91,9 @@ describe("Proofwild 公开帮助、GEO 与法律页面", () => {
     expect(guide.quick_start_command).toBe("npx --yes sai-agent-bridge join --json");
     expect(guide.labs.inspect_command).toBe("npx --yes sai-agent-bridge labs --json");
     expect(guide.labs.explore_and_settle_command).toBe("npx --yes sai-agent-bridge labs --explore --json");
+    expect(guide.world_supply.settlement_endpoint_template).toContain("/economy/v1/settlements/{record_id}");
+    expect(guide.labs.bridge_absorbs).toContain("stale_parent_reobserve_and_recompute");
+    expect(guide.labs.world_research_task.output_objects).toContain("economic_settlement_receipt");
     expect(guide.labs.world_research_task).toEqual(expect.objectContaining({objective: "exhaustive_parent_and_claimant_bound_symmetry_partition", challenge_binding: ["economic_parent_id", "claimant_agent_id"], challenge_bits: 128, candidate_count: 65_536, variable_positions: 16, new_canonical_candidates: 65_536, reward_units: 1, accepted_partition_unique_across_all_reward_units: true, copied_record_can_change_claimant: false, stale_parent_can_settle: false, finite_coverage_is_global_optimality_claim: false}));
     expect(guide.labs.registry_endpoint).toBe("https://proofwild.science/labs/v1/registry");
     expect(guide.labs.test_vectors_endpoint).toBe("https://proofwild.science/labs/v1/test-vectors");

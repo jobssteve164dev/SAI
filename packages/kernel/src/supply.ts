@@ -203,6 +203,7 @@ function blockId(block: WorldSupplyBlock): string { return `sha256:${sha256(bloc
 
 export function worldSupplyBlockId(block: WorldSupplyBlock): string {
   assertWorldSupplyBlockShape(block);
+  assertMinimalProof(block);
   return blockId(block);
 }
 

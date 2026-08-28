@@ -1,9 +1,10 @@
-import {mkdtemp, rm} from "node:fs/promises";
+import {mkdtemp, rm, writeFile} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {afterEach, describe, expect, it} from "vitest";
 import {startLocalNode, type LocalNode} from "../../apps/local-node/src/server.js";
 import {SaiBridge} from "../../packages/bridge/src/index.js";
+import {participateLabs, type LabsProgressEvent} from "../../packages/agent/src/index.js";
 import {createIdentity} from "../../packages/identity/src/index.js";
 import {canonicalLabsSequence, createClaimBody, createLabsResult, executeLabsWorldResearch, labsContentId, labsEnergy, rulesetId, signLabsClaim, type LabsRuleset} from "../../packages/labs/src/index.js";
 import {syncLabsFromPeer} from "../../packages/labs/src/store.js";
@@ -78,20 +79,155 @@ describe("LABS direct exchange", () => {
     const before = worldSupplyObservation(participant.region.currentState())!;
     const result = await bridge.act({observation_id: observation.observation_id, action_id: research.action_id, arguments: {operation: "run_search"}, request_id: "labs-observe-act"});
     expect(result.status).toBe("applied");
-    expect(bridge.lastLabsResearch()).toMatchObject({
+    const receipt = bridge.lastLabsResearch();
+    expect(receipt).toMatchObject({
       contribution_type: expect.stringMatching(/^(search_coverage|frontier_improvement)$/),
       evaluated_candidates: 65_536,
       new_canonical_candidates: 65_536,
+      resource_kind: genesisBranch.kind,
       reward_units: 1,
       result_page: expect.stringContaining("/research/sha256%3A"),
       reproducibility_bundle: expect.stringContaining("/labs/v1/results/sha256%3A"),
+      settlement: {
+        protocol: "sai-economic-settlement-receipt/1",
+        resource_kind: genesisBranch.kind,
+        reward_units: 1,
+        verification_url: expect.stringContaining("/economy/v1/settlements/sha256%3A"),
+      },
     });
+    if (result.status !== "applied" || !receipt) throw new Error("missing applied LABS receipt");
+    const {verification_url: _verificationUrl, ...settlement} = receipt.settlement;
+    expect(result.economic_settlement).toEqual(settlement);
+    const proof = await (await fetch(receipt!.settlement.verification_url)).json() as {block_id: string; confirmations: number; block: {record_id: string; reward_amount: number}};
+    expect(proof).toMatchObject({block_id: receipt!.settlement.block_id, confirmations: 1, block: {record_id: receipt!.record_id, reward_amount: 1}});
     const after = participant.region.currentState();
     expect(after.agents[identity.agentId]!.inventory[genesisBranch.kind]).toBe(1);
     const supply = worldSupplyObservation(after)!;
     expect(supply.issued_supply).toBe(before.issued_supply + 1);
     expect(supply.reserve_supply + supply.issued_supply).toBe(WORLD_MAX_SUPPLY);
     await bridge.close();
+  });
+
+  it("reobserves and recomputes when another branch advances the economic parent", async () => {
+    const participant = await node("parent-race-retry");
+    const identityA = await createIdentity();
+    const identityB = await createIdentity();
+    const branchA = worldResourceBranch(0);
+    const branchB = worldResourceBranch(1);
+    await participant.region.importAgent({id: identityA.agentId, x: branchA.x, y: branchA.y, energy: 5, inventory: {}});
+    await participant.region.importAgent({id: identityB.agentId, x: branchB.x, y: branchB.y, energy: 5, inventory: {}});
+    const identityDirectory = await mkdtemp(join(tmpdir(), "sai-parent-race-identities-"));
+    directories.push(identityDirectory);
+    const pathB = join(identityDirectory, "b.json");
+    await writeFile(pathB, JSON.stringify(identityB), {mode: 0o600});
+
+    const advancingBridge = new SaiBridge(participant.url, identityA);
+    await advancingBridge.register();
+    await advancingBridge.connect();
+    const advancingObservation = await advancingBridge.observe();
+    const advancingAction = advancingObservation.legal_actions.find((action) => action.type === "research")!;
+    const originalEconomy = SaiBridge.prototype.economy;
+    let parentAdvanced = false;
+    SaiBridge.prototype.economy = async function() {
+      const snapshot = await originalEconomy.call(this);
+      if (this.identity.agentId === identityB.agentId && !parentAdvanced) {
+        parentAdvanced = true;
+        const advanced = await advancingBridge.act({observation_id: advancingObservation.observation_id, action_id: advancingAction.action_id, arguments: {operation: "run_search"}, request_id: "advance-parent-before-stale-submit"});
+        expect(advanced.status).toBe("applied");
+      }
+      return snapshot;
+    };
+
+    const progressB: LabsProgressEvent[] = [];
+    let result: Record<string, unknown>;
+    try {
+      result = await participateLabs({nodeUrl: participant.url, identityPath: pathB, explore: true, onProgress: (event) => progressB.push(event)});
+    } finally {
+      SaiBridge.prototype.economy = originalEconomy;
+      await advancingBridge.close();
+    }
+
+    expect(result.reward_units).toBe(1);
+    expect(result.research_attempts).toBe(2);
+    expect(progressB.some((event) => event.stage === "retrying")).toBe(true);
+    expect(result.identity_persisted === true && !("identity_path" in result)).toBe(true);
+    const research = result.research as {economic_parent_id: string; settlement: {parent_id: string}};
+    expect(research.economic_parent_id).toBe(research.settlement.parent_id);
+    expect(worldSupplyObservation(participant.region.currentState())!.issued_supply).toBe(2);
+  }, 45_000);
+
+  it("persists simultaneous Agent registrations without temporary-file collisions", async () => {
+    const participant = await node("concurrent-registration");
+    const identityA = await createIdentity();
+    const identityB = await createIdentity();
+    const bridgeA = new SaiBridge(participant.url, identityA);
+    const bridgeB = new SaiBridge(participant.url, identityB);
+    await Promise.all([bridgeA.register(), bridgeB.register()]);
+    await Promise.all([bridgeA.connect(), bridgeB.connect()]);
+    expect(participant.region.currentState().agents).toHaveProperty(identityA.agentId);
+    expect(participant.region.currentState().agents).toHaveProperty(identityB.agentId);
+    await Promise.all([bridgeA.close(), bridgeB.close()]);
+  });
+
+  it("searches the spawning resource tile before crossing an expanded world", async () => {
+    const participant = await node("expanded-local-search");
+    await participant.region.importAgent({id: "agent:expanded-boundary", x: 31, y: 31, energy: 5, inventory: {}});
+    const identity = await createIdentity();
+    await participant.region.importAgent({id: identity.agentId, x: 0, y: 0, energy: 10, inventory: {}});
+    const identityDirectory = await mkdtemp(join(tmpdir(), "sai-expanded-search-identity-"));
+    directories.push(identityDirectory);
+    const identityPath = join(identityDirectory, "agent.json");
+    await writeFile(identityPath, JSON.stringify(identity), {mode: 0o600});
+    const progress: LabsProgressEvent[] = [];
+
+    const result = await participateLabs({nodeUrl: participant.url, identityPath, explore: true, onProgress: (event) => progress.push(event)});
+
+    expect(result).toMatchObject({operation: "research_world_branch", branch_ordinal: 0, reward_units: 1, identity_persisted: true});
+    expect(result.steps).toEqual(expect.any(Number));
+    expect(result.steps as number).toBeLessThan(512);
+    expect(progress.some((event) => event.stage === "exploring")).toBe(true);
+    expect(progress.some((event) => event.stage === "computing")).toBe(true);
+    expect(progress.at(-1)?.stage).toBe("settled");
+  }, 30_000);
+
+  it("finishes after exhausting an isolated world without a LABS resource", async () => {
+    const identity = await createIdentity();
+    const identityDirectory = await mkdtemp(join(tmpdir(), "sai-isolated-search-identity-"));
+    directories.push(identityDirectory);
+    const identityPath = join(identityDirectory, "agent.json");
+    await writeFile(identityPath, JSON.stringify(identity), {mode: 0o600});
+    const originals = {
+      register: SaiBridge.prototype.register,
+      connect: SaiBridge.prototype.connect,
+      observe: SaiBridge.prototype.observe,
+      close: SaiBridge.prototype.close,
+    };
+    SaiBridge.prototype.register = async () => undefined;
+    SaiBridge.prototype.connect = async () => undefined;
+    SaiBridge.prototype.observe = async () => ({
+      protocol: "sai/0.1.0",
+      observation_id: "observation:isolated",
+      region_id: "isolated",
+      world_fork_id: "fork:isolated",
+      cursor: "seq:0",
+      self: {agent_id: identity.agentId, x: 0, y: 0, energy: 10, inventory: {}},
+      nearby: [],
+      messages: [],
+      legal_actions: [{action_id: "wait:isolated", type: "wait", arguments_schema: {type: "object", additionalProperties: false}}],
+    });
+    SaiBridge.prototype.close = async () => undefined;
+    const progress: LabsProgressEvent[] = [];
+
+    try {
+      const result = await participateLabs({nodeUrl: "https://isolated.invalid", identityPath, explore: true, onProgress: (event) => progress.push(event)});
+      expect(result).toMatchObject({operation: "explore_world", status: "no_labs_resource_found", reason: "all_reachable_cells_explored", steps: 0, visited_cells: 1});
+      expect(progress.at(-1)).toMatchObject({stage: "complete", reason: "all_reachable_cells_explored"});
+    } finally {
+      SaiBridge.prototype.register = originals.register;
+      SaiBridge.prototype.connect = originals.connect;
+      SaiBridge.prototype.observe = originals.observe;
+      SaiBridge.prototype.close = originals.close;
+    }
   });
 
   it("converges two knowledge participants while the reference node is offline without changing world resources", async () => {

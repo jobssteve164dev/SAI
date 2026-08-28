@@ -126,6 +126,7 @@ export class RegionDurableObject extends DurableObject<Env> {
   private nodeKeys!: NodeKeyPair;
   private mcp!: ReturnType<typeof createSaiMcpHandler>;
   private labs!: LabsRepository;
+  private authQueue: Promise<void> = Promise.resolve();
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -204,15 +205,19 @@ export class RegionDurableObject extends DurableObject<Env> {
       if (url.pathname === "/oauth/register" && request.method === "POST") {
         const body = await request.json() as {public_jwk?: JsonWebKey; assertion?: string};
         if (!body.public_jwk || !body.assertion) return json({error: "invalid_request"}, 400);
-        const agentId = await this.auth.register(body.public_jwk, body.assertion);
-        await this.region.admit(agentId); await this.persistAuth();
-        return json({client_id: agentId, token_endpoint_auth_method: "private_key_jwt"}, 201);
+        return this.serialAuth(async () => {
+          const agentId = await this.auth.register(body.public_jwk!, body.assertion!);
+          await this.region.admit(agentId); await this.persistAuth();
+          return json({client_id: agentId, token_endpoint_auth_method: "private_key_jwt"}, 201);
+        });
       }
       if (url.pathname === "/oauth/token" && request.method === "POST") {
         const form = new URLSearchParams(await request.text());
         if (form.get("grant_type") !== "client_credentials" || form.get("client_assertion_type") !== "urn:ietf:params:oauth:client-assertion-type:jwt-bearer") return json({error: "unsupported_grant_type"}, 400);
-        const token = await this.auth.token({clientId: form.get("client_id") ?? "", assertion: form.get("client_assertion") ?? "", resource: form.get("resource") ?? "", scopes: (form.get("scope") ?? "").split(" ").filter(Boolean)});
-        await this.persistAuth(); return json(token);
+        return this.serialAuth(async () => {
+          const token = await this.auth.token({clientId: form.get("client_id") ?? "", assertion: form.get("client_assertion") ?? "", resource: form.get("resource") ?? "", scopes: (form.get("scope") ?? "").split(" ").filter(Boolean)});
+          await this.persistAuth(); return json(token);
+        });
       }
       if (url.pathname === "/federation/v1/transfers/prepare" && request.method === "POST") {
         const agentId = await this.authenticated(request, "act");
@@ -241,6 +246,13 @@ export class RegionDurableObject extends DurableObject<Env> {
 
   private async descriptor(now = Math.floor(Date.now() / 1000)): Promise<NodeDescriptor> { return createNodeDescriptor(this.nodeKeys, this.env.PUBLIC_BASE_URL, [this.env.REGION_ID], now); }
   private async persistAuth(): Promise<void> { await this.ctx.storage.put("auth", this.auth.snapshot()); }
+  private async serialAuth<T>(operation: () => Promise<T>): Promise<T> {
+    const previous = this.authQueue;
+    let release!: () => void;
+    this.authQueue = new Promise<void>((resolve) => { release = resolve; });
+    await previous;
+    try { return await operation(); } finally { release(); }
+  }
   private async authenticated(request: Request, scope: "observe" | "act"): Promise<string> { const header = request.headers.get("authorization"); if (!header?.startsWith("Bearer ")) throw new Error("缺少 bearer token"); const claims = await this.auth.verifyAccessToken(header.slice(7)); if (!claims.scopes.includes(scope)) throw new Error(`缺少 ${scope} scope`); return claims.agentId; }
 
   private async prepare(agentId: string, input: {target_node: string; target_region: string; nonce?: string; ttl?: number}, now = Math.floor(Date.now() / 1000)): Promise<TransferCredential> {

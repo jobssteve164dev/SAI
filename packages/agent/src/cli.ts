@@ -2,8 +2,9 @@
 import {joinProofwild, participateLabs} from "./index.js";
 import {realpathSync} from "node:fs";
 import {fileURLToPath} from "node:url";
+import type {LabsProgressEvent} from "./index.js";
 
-const VERSION = "0.9.0";
+const VERSION = "0.9.1";
 
 interface JoinCliOptions {command: "join"; nodeUrl?: string; identityPath?: string; json: boolean}
 interface LabsCliOptions {command: "labs"; nodeUrl?: string; identityPath?: string; sequence?: string; claimType?: "discovery" | "reproduction" | "relay"; peerUrl?: string; explore: boolean; json: boolean}
@@ -28,6 +29,10 @@ function usage(): string {
   --json             输出机器可读结果
   --help             显示帮助
   --version          显示版本`;
+}
+
+function reportProgress(event: LabsProgressEvent): void {
+  process.stderr.write(`${JSON.stringify(event)}\n`);
 }
 
 export function parseCliArgs(args: string[]): CliOptions | {help: true} | {version: true} {
@@ -69,7 +74,7 @@ export async function runCli(args = process.argv.slice(2)): Promise<void> {
   if ("version" in options) { console.log(VERSION); return; }
   if (options.command === "labs") {
     if ([options.sequence, options.peerUrl, options.explore ? "explore" : undefined].filter(Boolean).length > 1) throw new Error("一次 labs 调用只能探索世界、发布序列或同步一个对等节点");
-    const result = await participateLabs({...(options.nodeUrl ? {nodeUrl: options.nodeUrl} : {}), ...(options.identityPath ? {identityPath: options.identityPath} : {}), ...(options.sequence ? {sequence: options.sequence} : {}), ...(options.claimType ? {claimType: options.claimType} : {}), ...(options.peerUrl ? {peerUrl: options.peerUrl} : {}), ...(options.explore ? {explore: true} : {})});
+    const result = await participateLabs({...(options.nodeUrl ? {nodeUrl: options.nodeUrl} : {}), ...(options.identityPath ? {identityPath: options.identityPath} : {}), ...(options.sequence ? {sequence: options.sequence} : {}), ...(options.claimType ? {claimType: options.claimType} : {}), ...(options.peerUrl ? {peerUrl: options.peerUrl} : {}), ...(options.explore ? {explore: true, onProgress: reportProgress} : {})});
     console.log(options.json ? JSON.stringify(result) : JSON.stringify(result, null, 2));
     return;
   }
@@ -79,7 +84,7 @@ export async function runCli(args = process.argv.slice(2)): Promise<void> {
     console.log(`Agent ${result.agent_id} 已连接 ${result.node_url}`);
     console.log(`行动 ${result.action.type} -> ${result.action.status}`);
     console.log(`当前位置 ${result.position.region_id} (${result.position.x}, ${result.position.y})`);
-    console.log(`身份已保存在 ${result.identity_path}；请安全保管，它承载这个 Agent 的持续世界身份。`);
+    console.log("身份已在本地持久保存；请安全保管，它承载这个 Agent 的持续世界身份。");
   }
 }
 

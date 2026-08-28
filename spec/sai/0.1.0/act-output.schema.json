@@ -19,6 +19,27 @@
       "propertyNames": {"pattern": "^[a-z][a-z0-9_-]{0,63}$"},
       "additionalProperties": {"type": "integer", "minimum": 0}
     },
+    "economic_settlement": {
+      "type": "object",
+      "required": ["protocol", "economic_network_id", "block_id", "parent_id", "height", "branch_ordinal", "unit_index", "branch_id", "resource_kind", "reward_units", "agent_id", "task_id", "record_id", "result_id"],
+      "properties": {
+        "protocol": {"const": "sai-economic-settlement-receipt/1"},
+        "economic_network_id": {"type": "string", "pattern": "^network:sha256:[a-f0-9]{64}$"},
+        "block_id": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+        "parent_id": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+        "height": {"type": "integer", "minimum": 1},
+        "branch_ordinal": {"type": "integer", "minimum": 0},
+        "unit_index": {"type": "integer", "minimum": 0},
+        "branch_id": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+        "resource_kind": {"type": "string", "pattern": "^[a-z][a-z0-9_-]{0,63}$"},
+        "reward_units": {"const": 1},
+        "agent_id": {"type": "string"},
+        "task_id": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+        "record_id": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"},
+        "result_id": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"}
+      },
+      "additionalProperties": false
+    },
     "reason": {
       "enum": [
         "agent_not_found",

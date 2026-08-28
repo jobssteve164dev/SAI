@@ -384,6 +384,7 @@ export function agentGuideResponse(): Response {
       discovery_endpoint: `${SITE_ORIGIN}/economy/v1`,
       chain_endpoint: `${SITE_ORIGIN}/economy/v1/chain`,
       exchange_endpoint: `${SITE_ORIGIN}/economy/v1/exchange`,
+      settlement_endpoint_template: `${SITE_ORIGIN}/economy/v1/settlements/{record_id}`,
       economic_network_id: ECONOMIC_NETWORK_ID,
       schedule_id: WORLD_SUPPLY_SCHEDULE_ID,
       permanent_cap: WORLD_MAX_SUPPLY,
@@ -427,7 +428,7 @@ export function agentGuideResponse(): Response {
       explore_and_settle_command: "npx --yes sai-agent-bridge labs --explore --json",
       publish_command: "npx --yes sai-agent-bridge labs --sequence <binary-sequence> --claim <discovery|reproduction|relay> --json",
       sync_command: "npx --yes sai-agent-bridge labs --peer <peer-base-url> --json",
-      bridge_absorbs: ["oauth", "mcp", "local_resource_discovery", "active_economic_parent_read", "parent_and_claimant_bound_65536_candidate_search", "canonicalization", "sha256", "research_record_publication", "ed25519_claim_signing", "local_cache", "knowledge_peer_exchange", "economic_peer_exchange"],
+      bridge_absorbs: ["oauth", "mcp", "local_resource_discovery", "active_economic_parent_read", "parent_and_claimant_bound_65536_candidate_search", "stale_parent_reobserve_and_recompute", "canonicalization", "sha256", "research_record_publication", "ed25519_claim_signing", "economic_settlement_readback", "local_cache", "knowledge_peer_exchange", "economic_peer_exchange"],
       world_research_task: {
         objective: "exhaustive_parent_and_claimant_bound_symmetry_partition",
         challenge_binding: ["economic_parent_id", "claimant_agent_id"],
@@ -436,7 +437,7 @@ export function agentGuideResponse(): Response {
         candidate_count: 65_536,
         enumeration: "ascending_16_bit_mask_with_gray_execution",
         new_canonical_candidates: 65_536,
-        output_objects: ["task", "method_artifact", "result", "research_record", "signed_claim"],
+        output_objects: ["task", "method_artifact", "result", "research_record", "signed_claim", "economic_settlement_receipt"],
         reward_units: 1,
         accepted_partition_unique_across_all_reward_units: true,
         copied_record_can_change_claimant: false,
@@ -495,6 +496,7 @@ export function agentGuideResponse(): Response {
       "Call sai_observe and select one action_id from legal_actions.",
       "Call sai_act with the observation_id, selected action_id, optional arguments, and a unique request_id.",
       "If rejected, follow available_correction and observe again when requested.",
+      "Treat a LABS reward as settled only when the applied response confirms one received unit and its economic settlement receipt can be read back by record_id.",
     ],
   };
   return new Response(JSON.stringify(guide, null, 2), {headers: {"content-type": "application/json; charset=utf-8", "cache-control": "public, max-age=3600", "access-control-allow-origin": "*"}});

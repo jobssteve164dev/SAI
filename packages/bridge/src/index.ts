@@ -1,7 +1,7 @@
 import {randomUUID} from "node:crypto";
 import {Client, StreamableHTTPClientTransport} from "@modelcontextprotocol/client";
 import {createClientAssertion, type AgentIdentity} from "../../identity/src/index.js";
-import {ECONOMIC_NETWORK_ID, syncWorldSupplyFromPeer, type ActInput, type ActResult, type Observation, type WorldSupplyObservation} from "../../kernel/src/index.js";
+import {ECONOMIC_NETWORK_ID, syncWorldSupplyFromPeer, worldSupplyBlockId, type ActInput, type ActResult, type EconomicSettlementReceipt, type Observation, type WorldSupplyBlock, type WorldSupplyObservation} from "../../kernel/src/index.js";
 import {verifyNodeDescriptor, type NodeDescriptor, type TransferCancellation, type TransferCredential, type TransferReceipt} from "../../federation/src/index.js";
 import {REFERENCE_FORK_ID, REFERENCE_RULESET_ID, createClaimBody, createLabsResult, executeLabsWorldResearch, signLabsClaim, verifyLabsResult, verifyLabsWorldSubmission, type LabsClaimType, type LabsFrontier, type LabsResult, type LabsRuleset, type LabsWorldBranch} from "../../labs/src/index.js";
 import {LabsRepository, MemoryLabsPersistence, syncLabsFromPeer, type LabsExchangeBundle, type LabsRegistryEntry, type LabsRegistrySnapshot} from "../../labs/src/store.js";
@@ -51,9 +51,10 @@ export class SaiBridge {
 
   async act(input: ActInput): Promise<ActResult> {
     let prepared = input;
-    let researchReceipt: LabsResearchReceipt | undefined;
+    let researchAttempt: Omit<LabsResearchReceipt, "reward_units" | "settlement"> | undefined;
     const action = this.lastObservation?.legal_actions.find((item) => item.action_id === input.action_id);
     if (action?.type === "research") {
+      this.lastResearchReceipt = undefined;
       const args = input.arguments as {operation?: string; evidence_ids?: string[]} | undefined;
       if (args?.operation !== "run_search" && args?.operation !== "solve_branch") throw new TypeError("LABS research 动作需要 operation=run_search");
       const resource = this.lastObservation?.nearby.find((item) => item.type === "resource" && item.id === action.target);
@@ -68,7 +69,7 @@ export class SaiBridge {
       const {signed_claim, claim_id} = signLabsClaim(createClaimBody(research.result_id, this.identity, claimType, evidence), this.identity);
       const settlement = {candidate_sequence: research.candidate_sequence, result: research.result, result_id: research.result_id, signed_claim, claim_id, research_task: research.task, task_id: research.task_id, method_artifact: research.artifact, artifact_id: research.artifact_id, research_record: research.record, record_id: research.record_id};
       verifyLabsWorldSubmission(ruleset, branch, settlement, this.identity.agentId, supply.active_tip_id);
-      researchReceipt = {
+      researchAttempt = {
         result_id: research.result_id,
         record_id: research.record_id,
         task_id: research.task_id,
@@ -78,7 +79,7 @@ export class SaiBridge {
         new_canonical_candidates: research.record.new_canonical_candidates,
         unit_index: branch.unit_index,
         economic_parent_id: supply.active_tip_id,
-        reward_units: research.record.reward_units,
+        resource_kind: branch.resource_kind,
         energy: research.result.energy,
         result_page: `${this.baseUrl.replace(/\/$/, "")}/research/${encodeURIComponent(research.result_id)}`,
         reproducibility_bundle: `${this.baseUrl.replace(/\/$/, "")}/labs/v1/results/${encodeURIComponent(research.result_id)}/bundle`,
@@ -88,7 +89,17 @@ export class SaiBridge {
     const result = await this.requiredClient().callTool({name: "sai_act", arguments: {...prepared}});
     if (result.isError || !result.structuredContent) throw new Error("sai_act 未返回结构化结果");
     const structured = result.structuredContent as unknown as ActResult;
-    if (researchReceipt) this.lastResearchReceipt = researchReceipt;
+    if (researchAttempt && structured.status === "applied") {
+      const settlement = structured.economic_settlement;
+      if (!settlement || settlement.agent_id !== this.identity.agentId || settlement.task_id !== researchAttempt.task_id || settlement.record_id !== researchAttempt.record_id || settlement.result_id !== researchAttempt.result_id || settlement.unit_index !== researchAttempt.unit_index || settlement.resource_kind !== researchAttempt.resource_kind || settlement.reward_units !== 1 || structured.received?.[settlement.resource_kind] !== 1) throw new Error("LABS 结算回执没有确认恰好 1 个对应资源单位");
+      const proof = await this.economySettlement(settlement.record_id);
+      if (proof.block_id !== settlement.block_id || proof.block.agent_id !== settlement.agent_id || proof.block.task_id !== settlement.task_id || proof.block.record_id !== settlement.record_id || proof.block.result_id !== settlement.result_id || proof.block.reward_amount !== 1) throw new Error("LABS 经济链回读与结算回执不一致");
+      this.lastResearchReceipt = {
+        ...researchAttempt,
+        reward_units: 1,
+        settlement: {...settlement, verification_url: `${this.baseUrl.replace(/\/$/, "")}/economy/v1/settlements/${encodeURIComponent(settlement.record_id)}`},
+      };
+    }
     return structured;
   }
 
@@ -112,6 +123,12 @@ export class SaiBridge {
 
   async economy(): Promise<{supply: WorldSupplyObservation}> {
     return expectJson(await fetch(`${this.baseUrl}/economy/v1`, {headers: {accept: "application/json"}}));
+  }
+
+  async economySettlement(recordId: string): Promise<EconomicSettlementProof> {
+    const proof = await expectJson<EconomicSettlementProof>(await fetch(`${this.baseUrl}/economy/v1/settlements/${encodeURIComponent(recordId)}`, {headers: {accept: "application/json"}}));
+    if (proof.protocol !== "sai-economic-settlement-proof/1" || proof.authority !== false || proof.block.record_id !== recordId || worldSupplyBlockId(proof.block) !== proof.block_id || proof.confirmations < 1) throw new Error("经济结算证明无效");
+    return proof;
   }
 
   async labsResult(resultId: string): Promise<{protocol: "sai-labs-result-detail/1"; authority: false; entry: LabsRegistryEntry}> {
@@ -203,8 +220,20 @@ export interface LabsResearchReceipt {
   new_canonical_candidates: 65536;
   unit_index: number;
   economic_parent_id: string;
+  resource_kind: string;
   reward_units: 1;
   energy: string;
   result_page: string;
   reproducibility_bundle: string;
+  settlement: EconomicSettlementReceipt & {verification_url: string};
+}
+
+export interface EconomicSettlementProof {
+  protocol: "sai-economic-settlement-proof/1";
+  authority: false;
+  economic_network_id: string;
+  block_id: string;
+  active_tip_id: string;
+  confirmations: number;
+  block: WorldSupplyBlock;
 }

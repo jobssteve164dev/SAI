@@ -1,3 +1,4 @@
+import {randomUUID} from "node:crypto";
 import {appendFile, mkdir, readFile, rename, writeFile} from "node:fs/promises";
 import {join} from "node:path";
 import {fromSnapshot, replay, toSnapshot, type ActResult, type ConformanceEvent, type RegionState, type Snapshot, type StoredObservation} from "../../../packages/kernel/src/index.js";
@@ -41,8 +42,8 @@ export class FileStore {
 
   private async atomicJson(name: string, value: unknown): Promise<void> {
     const target = this.path(name);
-    const temporary = this.path(`${name}.next`);
-    await writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, {encoding: "utf8", mode: 0o600});
+    const temporary = this.path(`${name}.${process.pid}.${randomUUID()}.next`);
+    await writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, {encoding: "utf8", mode: 0o600, flag: "wx"});
     await rename(temporary, target);
   }
 }

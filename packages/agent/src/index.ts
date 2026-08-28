@@ -5,7 +5,7 @@ import {dirname, resolve} from "node:path";
 import {randomUUID} from "node:crypto";
 import {SaiBridge} from "../../bridge/src/index.js";
 import {agentIdFromJwk, createIdentity, type AgentIdentity} from "../../identity/src/index.js";
-import type {ActResult, LegalAction, Observation} from "../../kernel/src/index.js";
+import {WORLD_RESOURCE_TILE_AXIS, type ActResult, type LegalAction, type Observation} from "../../kernel/src/index.js";
 
 export {SaiBridge, SaiBridge as ProofwildBridge} from "../../bridge/src/index.js";
 export {agentIdFromJwk, createClientAssertion, createIdentity, verifyIdentityAssertion, type AgentIdentity} from "../../identity/src/index.js";
@@ -29,7 +29,7 @@ export interface JoinProofwildOptions {
 export interface JoinProofwildResult {
   agent_id: string;
   node_url: string;
-  identity_path: string;
+  identity_persisted: true;
   action: {type: LegalAction["type"]; status: ActResult["status"]};
   position: {region_id: string; x: number; y: number};
 }
@@ -89,7 +89,7 @@ export async function joinProofwild(options: JoinProofwildOptions = {}): Promise
     return {
       agent_id: identity.agentId,
       node_url: nodeUrl,
-      identity_path: identityPath,
+      identity_persisted: true,
       action: {type: chosen.type, status: result.status},
       position: {region_id: current.region_id, x: current.self.x, y: current.self.y},
     };
@@ -105,6 +105,19 @@ export interface ParticipateLabsOptions {
   claimType?: import("../../labs/src/index.js").LabsClaimType;
   peerUrl?: string;
   explore?: boolean;
+  onProgress?: (event: LabsProgressEvent) => void;
+}
+
+export interface LabsProgressEvent {
+  protocol: "proofwild-agent-progress/1";
+  stage: "connecting" | "exploring" | "computing" | "retrying" | "settled" | "complete";
+  steps: number;
+  visited_cells?: number;
+  position?: {x: number; y: number};
+  resource_id?: string;
+  unit_index?: number;
+  research_attempt?: number;
+  reason?: string;
 }
 
 function directionTarget(observation: Observation, direction: LegalAction["direction"]): {x: number; y: number} {
@@ -113,25 +126,45 @@ function directionTarget(observation: Observation, direction: LegalAction["direc
   return {x: observation.self.x + dx, y: observation.self.y + dy};
 }
 
-async function exploreLabsWorld(bridge: SaiBridge, identity: AgentIdentity): Promise<Record<string, unknown>> {
+function sameResourceTile(left: {x: number; y: number}, right: {x: number; y: number}): boolean {
+  return Math.floor(left.x / WORLD_RESOURCE_TILE_AXIS) === Math.floor(right.x / WORLD_RESOURCE_TILE_AXIS)
+    && Math.floor(left.y / WORLD_RESOURCE_TILE_AXIS) === Math.floor(right.y / WORLD_RESOURCE_TILE_AXIS);
+}
+
+async function exploreLabsWorld(bridge: SaiBridge, identity: AgentIdentity, onProgress?: (event: LabsProgressEvent) => void): Promise<Record<string, unknown>> {
+  const progress = (event: Omit<LabsProgressEvent, "protocol">) => onProgress?.({protocol: "proofwild-agent-progress/1", ...event});
+  progress({stage: "connecting", steps: 0});
   await bridge.register();
   await bridge.connect();
   const visited = new Set<string>();
   const parents = new Map<string, string>();
+  let steps = 0;
+  let researchAttempts = 0;
   try {
-    for (let step = 0; step < 512; step += 1) {
+    while (true) {
       const observation = await bridge.observe({max_bytes: 65_536});
       const here = `${observation.self.x}:${observation.self.y}`;
       visited.add(here);
+      if (steps === 0 || steps % 32 === 0) progress({stage: "exploring", steps, visited_cells: visited.size, position: {x: observation.self.x, y: observation.self.y}});
       const research = observation.legal_actions.find((action) => action.type === "research");
       if (research) {
         const resource = observation.nearby.find((item) => item.type === "resource" && item.id === research.target);
         if (resource?.type !== "resource" || !resource.labs_branch) throw new Error("LABS 研究动作缺少当前世界分支");
+        researchAttempts += 1;
+        progress({stage: "computing", steps, visited_cells: visited.size, position: {x: observation.self.x, y: observation.self.y}, resource_id: resource.id, unit_index: resource.labs_branch.unit_index, research_attempt: researchAttempts});
         const result = await bridge.act({observation_id: observation.observation_id, action_id: research.action_id, arguments: {operation: "run_search"}, request_id: `${identity.agentId}:${randomUUID()}`});
-        return {operation: "research_world_branch", agent_id: identity.agentId, economic_network_id: resource.labs_branch.economic_network_id, world_fork_id: observation.world_fork_id, region_id: observation.region_id, resource_id: resource.id, branch_id: resource.labs_branch.branch_id, branch_ordinal: resource.labs_branch.branch_ordinal, unit_index: resource.labs_branch.unit_index, schedule_id: resource.labs_branch.schedule_id, stratum: resource.labs_branch.stratum, resource_capacity: resource.labs_branch.resource_amount, reward_units: resource.labs_branch.reward_amount, method: "exhaustive 65,536-candidate current-parent-and-claimant-bound canonical partition", research: bridge.lastLabsResearch(), registry_url: `${bridge.baseUrl}/research`, result, steps: step};
+        if (result.status === "rejected") {
+          progress({stage: "retrying", steps, visited_cells: visited.size, position: {x: observation.self.x, y: observation.self.y}, resource_id: resource.id, unit_index: resource.labs_branch.unit_index, research_attempt: researchAttempts, reason: result.reason});
+          continue;
+        }
+        const receipt = bridge.lastLabsResearch();
+        if (!receipt || receipt.reward_units !== 1 || receipt.settlement.reward_units !== 1) throw new Error("LABS 行动已应用，但没有取得可复核的一单位结算回执");
+        progress({stage: "settled", steps, visited_cells: visited.size, position: {x: observation.self.x, y: observation.self.y}, resource_id: resource.id, unit_index: resource.labs_branch.unit_index, research_attempt: researchAttempts});
+        return {operation: "research_world_branch", agent_id: identity.agentId, economic_network_id: resource.labs_branch.economic_network_id, world_fork_id: observation.world_fork_id, region_id: observation.region_id, resource_id: resource.id, branch_id: resource.labs_branch.branch_id, branch_ordinal: resource.labs_branch.branch_ordinal, unit_index: resource.labs_branch.unit_index, schedule_id: resource.labs_branch.schedule_id, stratum: resource.labs_branch.stratum, resource_capacity: resource.labs_branch.resource_amount, reward_units: receipt.reward_units, method: "exhaustive 65,536-candidate current-parent-and-claimant-bound canonical partition", research: receipt, registry_url: `${bridge.baseUrl}/research`, result, steps, research_attempts: researchAttempts};
       }
 
-      const wait = observation.legal_actions.find((action) => action.type === "wait")!;
+      const wait = observation.legal_actions.find((action) => action.type === "wait");
+      if (!wait) throw new Error("当前观察缺少 wait 行动，无法继续探索");
       const moves = observation.legal_actions.filter((action) => action.type === "move" && action.direction);
       let chosen: LegalAction | undefined;
       const visible = observation.nearby.find((item) => item.type === "resource" && item.remaining > 0 && item.labs_branch);
@@ -142,14 +175,21 @@ async function exploreLabsWorld(bridge: SaiBridge, identity: AgentIdentity): Pro
           chosen = moves.find((action) => action.direction === desired);
         }
       }
+      if (chosen?.type === "move") {
+        const target = directionTarget(observation, chosen.direction);
+        const key = `${target.x}:${target.y}`;
+        if (!visited.has(key) && !parents.has(key)) parents.set(key, here);
+      }
       if (!chosen) {
-        chosen = moves.find((action) => {
+        const unvisited = moves.filter((action) => {
           const target = directionTarget(observation, action.direction);
-          const key = `${target.x}:${target.y}`;
-          if (visited.has(key)) return false;
-          parents.set(key, here);
-          return true;
+          return !visited.has(`${target.x}:${target.y}`);
         });
+        chosen = unvisited.find((action) => sameResourceTile(observation.self, directionTarget(observation, action.direction))) ?? unvisited[0];
+        if (chosen) {
+          const target = directionTarget(observation, chosen.direction);
+          parents.set(`${target.x}:${target.y}`, here);
+        }
       }
       if (!chosen) {
         const parent = parents.get(here);
@@ -158,10 +198,15 @@ async function exploreLabsWorld(bridge: SaiBridge, identity: AgentIdentity): Pro
           return `${target.x}:${target.y}` === parent;
         }) : undefined;
       }
-      chosen ??= moves[0] ?? wait;
-      await bridge.act({observation_id: observation.observation_id, action_id: chosen.action_id, request_id: `${identity.agentId}:${randomUUID()}`});
+      if (!chosen && observation.self.energy < 1) chosen = wait;
+      if (!chosen) {
+        progress({stage: "complete", steps, visited_cells: visited.size, position: {x: observation.self.x, y: observation.self.y}, reason: "all_reachable_cells_explored"});
+        return {operation: "explore_world", agent_id: identity.agentId, status: "no_labs_resource_found", reason: "all_reachable_cells_explored", steps, visited_cells: visited.size};
+      }
+      const movement = await bridge.act({observation_id: observation.observation_id, action_id: chosen.action_id, request_id: `${identity.agentId}:${randomUUID()}`});
+      if (movement.status === "applied") steps += 1;
+      else progress({stage: "retrying", steps, visited_cells: visited.size, position: {x: observation.self.x, y: observation.self.y}, reason: movement.reason});
     }
-    return {operation: "explore_world", agent_id: identity.agentId, status: "no_labs_resource_found", steps: 512};
   } finally {
     await bridge.close();
   }
@@ -172,14 +217,14 @@ export async function participateLabs(options: ParticipateLabsOptions = {}): Pro
   const identityPath = resolve(options.identityPath ?? DEFAULT_PROOFWILD_IDENTITY_PATH);
   const identity = await loadOrCreateIdentity(identityPath);
   const bridge = new SaiBridge(nodeUrl, identity);
-  if (options.explore) return {node_url: nodeUrl, identity_path: identityPath, ...(await exploreLabsWorld(bridge, identity))};
+  if (options.explore) return {node_url: nodeUrl, identity_persisted: true, ...(await exploreLabsWorld(bridge, identity, options.onProgress))};
   if (options.peerUrl) {
     const frontier = await bridge.labsSync(options.peerUrl);
     return {operation: "sync", agent_id: identity.agentId, node_url: nodeUrl, peer_url: options.peerUrl, frontier};
   }
   if (options.sequence) {
     const published = await bridge.labsPublish(options.sequence, options.claimType ?? "discovery");
-    return {operation: "publish", agent_id: identity.agentId, node_url: nodeUrl, identity_path: identityPath, ...published};
+    return {operation: "publish", agent_id: identity.agentId, node_url: nodeUrl, identity_persisted: true, ...published};
   }
   const discovery = await bridge.labsDiscover();
   return {operation: "observe", agent_id: identity.agentId, node_url: nodeUrl, ...discovery};

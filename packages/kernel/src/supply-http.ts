@@ -1,4 +1,4 @@
-import {ECONOMIC_NETWORK_ID, WORLD_SUPPLY_MAX_EXCHANGE_BLOCKS, WORLD_SUPPLY_MAX_EXCHANGE_BYTES, WORLD_SUPPLY_SCHEDULE_ID, assertWorldSupplyChain, worldSupplyObservation} from "./supply.js";
+import {ECONOMIC_NETWORK_ID, WORLD_SUPPLY_MAX_EXCHANGE_BLOCKS, WORLD_SUPPLY_MAX_EXCHANGE_BYTES, WORLD_SUPPLY_SCHEDULE_ID, assertWorldSupplyChain, worldSupplyActiveTip, worldSupplyBlockId, worldSupplyObservation} from "./supply.js";
 import type {EcosystemWorldSupplyState, RegionState} from "./types.js";
 
 const CORS = {
@@ -43,8 +43,24 @@ export async function handleWorldSupplyRequest(request: Request, application: Wo
       schedule_id: WORLD_SUPPLY_SCHEDULE_ID,
       chain_url: "/economy/v1/chain",
       exchange_url: "/economy/v1/exchange",
+      settlement_url_template: "/economy/v1/settlements/{record_id}",
       supply: worldSupplyObservation(current),
     });
+    const settlementMatch = url.pathname.match(/^\/economy\/v1\/settlements\/(sha256(?::|%3A)[0-9a-f]{64})$/i);
+    if (settlementMatch && request.method === "GET") {
+      const recordId = decodeURIComponent(settlementMatch[1]!);
+      const block = current.supply.active_chain.find((item) => item.record_id === recordId);
+      if (!block) return json({error: "settlement_not_found"}, 404);
+      return json({
+        protocol: "sai-economic-settlement-proof/1",
+        authority: false,
+        economic_network_id: ECONOMIC_NETWORK_ID,
+        block_id: worldSupplyBlockId(block),
+        active_tip_id: worldSupplyActiveTip(current.supply),
+        confirmations: current.supply.active_chain.length - block.height + 1,
+        block,
+      });
+    }
     if (url.pathname === "/economy/v1/chain" && request.method === "GET") {
       if (current.supply.active_chain.length > WORLD_SUPPLY_MAX_EXCHANGE_BLOCKS) return json({error: "incremental_sync_required", max_blocks: WORLD_SUPPLY_MAX_EXCHANGE_BLOCKS}, 413);
       return json({state: current.supply});
