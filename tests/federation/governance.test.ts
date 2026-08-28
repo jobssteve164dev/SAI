@@ -56,11 +56,11 @@ describe("M1 资产证明与第三方见证", () => {
     const witnessBDescriptor = await createNodeDescriptor(witnessB, "https://witness-b.example", ["witness-b"], 1_000);
     const authorityDescriptor = await createNodeDescriptor(authority, "https://directory.example", ["directory"], 1_000);
     const identity = await createIdentity();
-    const world = createWorld("source", [{id: identity.agentId, x: 2, y: 2, energy: 5, inventory: {crystal: 2, fiber: 1}}]);
+    const world = createWorld("source", [{id: identity.agentId, x: 2, y: 2, energy: 5, inventory: {ore: 2, wood: 1}}]);
     const credential = await createTransferCredential({keys: source, descriptor: sourceDescriptor, sourceRegion: "source", targetNode: target.nodeId, targetRegion: "target", agent: world.agents[identity.agentId]!, agentPublicJwk: identity.publicJwk, sourceState: world, now: 1_000, nonce: "asset-proof"});
     const proof = await createTransferAssetProof({keys: source, credential});
     await verifyTransferAssetProof(proof, credential);
-    expect(proof.assets).toEqual([{asset_type: "crystal", quantity: 2}, {asset_type: "fiber", quantity: 1}]);
+    expect(proof.assets).toEqual([{asset_type: "ore", quantity: 2}, {asset_type: "wood", quantity: 1}]);
 
     const directory = await createTrustDirectory({keys: authority, descriptor: authorityDescriptor, sequence: 1, entries: [witnessA, witnessB].map((keys) => ({node_id: keys.nodeId, status: "admitted", reputation: 25, since: 1_000, incident_ids: []})), now: 1_000});
     const attestations = [
@@ -81,6 +81,7 @@ describe("M1 并发路由发布与协议升级", () => {
     const publisher = await createNodeKeyPair();
     const descriptor = await createNodeDescriptor(publisher, "https://routes.example", ["parent"], 1_000);
     const world = createWorld("parent", []);
+    delete world.supply;
     const manifestV1 = splitRegion(world, "x", 4, ["west", "east"]).manifest;
     const first = await createRoutePublication({keys: publisher, descriptor, manifest: manifestV1, now: 1_000, supportedProtocols: ["sai-federation/0.1.0", "sai-federation/0.2.0"]});
     const allowed = new Set([publisher.nodeId]);

@@ -15,6 +15,16 @@
     "height": {"type": "integer", "minimum": 1, "maximum": 65536},
     "agents": {"type": "object"},
     "resources": {"type": "object"},
+    "supply": {
+      "type": "object", "additionalProperties": false,
+      "required": ["protocol", "schedule_id", "research_height", "previous_settlement_id"],
+      "properties": {
+        "protocol": {"const": "sai-world-supply-state/1"},
+        "schedule_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "research_height": {"type": "integer", "minimum": 0, "maximum": 8400},
+        "previous_settlement_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+      }
+    },
     "messages": {"type": "array"},
     "state_hash": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"}
   },

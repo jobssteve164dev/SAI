@@ -1,5 +1,6 @@
 import {afterEach, describe, expect, it, vi} from "vitest";
 import {AGENT_JOIN_PROMPT, AGENT_JOIN_PROMPT_EN, agentGuideResponse, BRAND_ICON_SVG, faviconResponse, helpResponse, legalResponse, llmsResponse, renderHelpPage, renderSeasonPage, resolveLegalRoute, robotsResponse, seasonResponse, sitemapResponse} from "../../apps/cloudflare-worker/src/public-pages.js";
+import {PROTOCOL_SCHEMA_PATHS, protocolSchemaResponse} from "../../apps/cloudflare-worker/src/protocol-schemas.js";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -81,7 +82,10 @@ describe("SAI 公开帮助、GEO 与法律页面", () => {
     expect(guide.quick_start_command).toBe("npx --yes sai-agent-bridge join --json");
     expect(guide.labs.inspect_command).toBe("npx --yes sai-agent-bridge labs --json");
     expect(guide.labs.explore_and_settle_command).toBe("npx --yes sai-agent-bridge labs --explore --json");
-    expect(guide.labs.world_supply).toBe("finite_no_minting");
+    expect(guide.labs.world_supply).toBe("permanent_cap_no_minting");
+    expect(guide.world_supply).toEqual(expect.objectContaining({permanent_cap: 31_500, initial_subsidy: 8, halving_interval: 2_100, terminal_height: 8_400, season_reset: false}));
+    expect(guide.world_supply.schedule_schema).toBe("https://social.szlk.ai/spec/sai/0.3.0/world-supply-schedule.schema.json");
+    expect(guide.labs.schemas.world_branch).toBe("https://social.szlk.ai/spec/labs/3.0.0/world-branch.schema.json");
     expect(guide.labs.official_global_ranking).toBe(false);
     expect(guide.world_history.unique_official_history).toBe(false);
     expect(guide.current_season_url).toBe("https://social.szlk.ai/season");
@@ -92,12 +96,27 @@ describe("SAI 公开帮助、GEO 与法律页面", () => {
     expect((await llmsResponse().text())).toContain("npx --yes sai-agent-bridge join --json");
     expect((await llmsResponse().text())).toContain("npx --yes sai-agent-bridge labs --json");
     expect((await robotsResponse().text())).toContain("Sitemap: https://social.szlk.ai/sitemap.xml");
+    expect((await robotsResponse().text())).toContain("Allow: /spec/");
     const sitemap = await sitemapResponse().text();
     expect(sitemap).toContain("<loc>https://social.szlk.ai/help</loc>");
     expect(sitemap).toContain("<loc>https://social.szlk.ai/season</loc>");
     expect(sitemap).toContain("<loc>https://social.szlk.ai/legal-supplement</loc>");
     expect(sitemap).toContain("<loc>https://social.szlk.ai/en/help</loc>");
     expect(sitemap).toContain('hreflang="en" href="https://social.szlk.ai/en/season"');
+  });
+
+  it("公开当前 LABS 与世界发行 JSON Schema，并为正文使用不可变缓存", async () => {
+    expect(PROTOCOL_SCHEMA_PATHS).toHaveLength(7);
+    for (const path of PROTOCOL_SCHEMA_PATHS) {
+      const response = protocolSchemaResponse(path)!;
+      expect(response.status).toBe(200);
+      expect(response.headers.get("content-type")).toContain("application/schema+json");
+      expect(response.headers.get("cache-control")).toContain("immutable");
+      expect((await response.json() as Record<string, unknown>).$schema).toBe("https://json-schema.org/draft/2020-12/schema");
+      expect(await protocolSchemaResponse(path, "HEAD")!.text()).toBe("");
+    }
+    expect(protocolSchemaResponse("/spec/unknown.json")).toBeUndefined();
+    expect(protocolSchemaResponse(PROTOCOL_SCHEMA_PATHS[0]!, "POST")!.status).toBe(405);
   });
 
   it("当前赛季页把玩法创造权留给 Agent，同时只陈述已实现原语", async () => {
@@ -138,6 +157,7 @@ describe("SAI 公开帮助、GEO 与法律页面", () => {
     expect(response.status).toBe(200);
     expect(page).toContain("正式共享正文。");
     expect(page).toContain("正式来源 SZLKlaws");
+    expect(page).toContain("overflow-wrap:anywhere");
     expect(page).not.toContain("产品法律补充说明</h1>");
   });
 

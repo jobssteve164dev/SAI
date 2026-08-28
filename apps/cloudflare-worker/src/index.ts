@@ -3,14 +3,15 @@ import {randomBytes, randomUUID, type JsonWebKey} from "node:crypto";
 import type {AuthInfo} from "@modelcontextprotocol/server";
 import {AuthService, type AuthSnapshot} from "../../../packages/auth/src/index.js";
 import {assertTransferPrepareInput, createNodeDescriptor, createNodeKeyPair, createTransferCancellation, createTransferCredential, createTransferReceipt, verifyTransferCancellation, verifyTransferCredential, verifyTransferReceipt, type NodeDescriptor, type NodeKeyPair, type TransferCancellation, type TransferCredential, type TransferReceipt} from "../../../packages/federation/src/index.js";
-import {admitAgentAtRandomAddress, buildObservation, createWorld, expandWorldForPopulation, stateHash, transition, upgradeWorldForLabs, type ActInput, type ActResult, type AgentState, type ConformanceEvent, type Observation, type RegionState, type StoredObservation} from "../../../packages/kernel/src/index.js";
+import {WORLD_MAX_SUPPLY, WORLD_SUPPLY_SCHEDULE_BODY, WORLD_SUPPLY_SCHEDULE_ID, admitAgentAtRandomAddress, assertForkScopedSupplyImportAllowed, buildObservation, createWorld, expandWorldForPopulation, stateHash, transition, upgradeWorldForLabs, worldSupplyObservation, type ActInput, type ActResult, type AgentState, type ConformanceEvent, type Observation, type RegionState, type StoredObservation} from "../../../packages/kernel/src/index.js";
 import {createSaiMcpHandler} from "../../../packages/mcp/src/index.js";
 import {createObserverSnapshot, observatoryResponse, type ObserverSnapshot} from "./observatory.js";
 import {agentGuideResponse, faviconResponse, helpResponse, legalResponse, llmsResponse, resolveLegalRoute, robotsResponse, seasonResponse, sitemapResponse} from "./public-pages.js";
 import {handleLabsRequest} from "../../../packages/labs/src/http.js";
 import {LabsRepository, type LabsPersistence, type LabsStoredObject} from "../../../packages/labs/src/store.js";
-import {exactMeritFactor, type LabsFrontier} from "../../../packages/labs/src/index.js";
+import {LEGACY_REFERENCE_FORK_ID, REFERENCE_FORK_ID, exactMeritFactor, type LabsFrontier} from "../../../packages/labs/src/index.js";
 import {createLabsAwareApplication} from "../../../packages/labs/src/application.js";
+import {protocolSchemaResponse} from "./protocol-schemas.js";
 
 interface Env {
   REGIONS: DurableObjectNamespace<RegionDurableObject>;
@@ -84,7 +85,7 @@ class DurableRegionApplication {
   async exportAgent(agentId: string): Promise<AgentState> { const agent = (await this.state()).agents[agentId]; if (!agent) throw new Error("agent_not_found"); return structuredClone(agent); }
   async lock(agentId: string): Promise<void> { await this.exportAgent(agentId); await this.storage.put(`agent-lock:${agentId}`, true); }
   async unlock(agentId: string): Promise<void> { await this.storage.delete(`agent-lock:${agentId}`); }
-  async importAgent(agent: AgentState): Promise<void> { const state = await this.state(); const existing = state.agents[agent.id]; if (existing && JSON.stringify(existing) !== JSON.stringify(agent)) throw new Error("目标区域已存在不同状态的 Agent"); if (existing) return; const expanded = expandWorldForPopulation(state, Object.keys(state.agents).length + 1, {width: agent.x + 1, height: agent.y + 1}); expanded.agents[agent.id] = structuredClone(agent); await this.storage.put("world", expanded); }
+  async importAgent(agent: AgentState): Promise<void> { const state = await this.state(); assertForkScopedSupplyImportAllowed(state, agent); const existing = state.agents[agent.id]; if (existing && JSON.stringify(existing) !== JSON.stringify(agent)) throw new Error("目标区域已存在不同状态的 Agent"); if (existing) return; const expanded = expandWorldForPopulation(state, Object.keys(state.agents).length + 1, {width: agent.x + 1, height: agent.y + 1}); expanded.agents[agent.id] = structuredClone(agent); await this.storage.put("world", expanded); }
   async removeAgent(agentId: string): Promise<void> { const state = await this.state(); delete state.agents[agentId]; await this.storage.put("world", state); await this.unlock(agentId); }
 
   async observerSnapshot(): Promise<ObserverSnapshot> {
@@ -146,9 +147,16 @@ export class RegionDurableObject extends DurableObject<Env> {
       if (url.pathname === "/sitemap.xml" && request.method === "GET") return sitemapResponse();
       if (url.pathname === "/llms.txt" && request.method === "GET") return llmsResponse();
       if (url.pathname === "/agent-guide.json" && request.method === "GET") return agentGuideResponse();
+      const schemaResponse = protocolSchemaResponse(url.pathname, request.method);
+      if (schemaResponse) return schemaResponse;
       const legalRoute = resolveLegalRoute(url.pathname);
       if (legalRoute && (request.method === "GET" || request.method === "HEAD")) return legalResponse(request, legalRoute.route, legalRoute.locale);
-      if (url.pathname === "/health") return json({service: "SAI", implementation: "cloudflare-durable-object", version: "0.2.0", node_id: this.nodeKeys.nodeId, region_id: this.env.REGION_ID, status: "ok"});
+      if (url.pathname === "/health") return json({service: "SAI", implementation: "cloudflare-durable-object", version: "0.3.0", node_id: this.nodeKeys.nodeId, region_id: this.env.REGION_ID, world_fork_id: (await this.region.state()).world_fork_id, status: "ok"});
+      if (url.pathname === "/api/worlds" && request.method === "GET") return json({current: {world_fork_id: REFERENCE_FORK_ID, snapshot_url: `${this.env.PUBLIC_BASE_URL}/api/observer/snapshot`}, archived: [{world_fork_id: LEGACY_REFERENCE_FORK_ID, snapshot_url: `${this.env.PUBLIC_BASE_URL}/api/worlds/${encodeURIComponent(LEGACY_REFERENCE_FORK_ID)}/snapshot`, mode: "read_only"}]}, 200, {"access-control-allow-origin": "*"});
+      if (url.pathname === "/api/world/supply" && request.method === "GET") {
+        const state = await this.region.state();
+        return json({schedule_id: WORLD_SUPPLY_SCHEDULE_ID, max_supply: WORLD_MAX_SUPPLY, schedule: WORLD_SUPPLY_SCHEDULE_BODY, state: worldSupplyObservation(state)}, 200, {"access-control-allow-origin": "*"});
+      }
       if (url.pathname === "/api/observer/snapshot" && request.method === "GET") {
         const snapshot = await this.region.observerSnapshot();
         const frontier = await this.labs.frontier();
@@ -163,6 +171,7 @@ export class RegionDurableObject extends DurableObject<Env> {
             return {length: baseline.length, best_energy: entry.best_energy, merit_factor: exactMeritFactor(baseline.length, BigInt(entry.best_energy)).decimal, result_ids: entry.result_ids};
           }),
           finite_resources: snapshot.resources.filter((resource) => resource.labs).map((resource) => ({resource_id: resource.id, kind: resource.kind, initial_amount: resource.initial_amount, remaining: resource.remaining, length: resource.labs!.length})),
+          ...(snapshot.supply ? {supply_schedule_id: WORLD_SUPPLY_SCHEDULE_ID} : {}),
         };
         return json({...snapshot, labs}, 200, {"access-control-allow-origin": "*"});
       }
@@ -221,7 +230,9 @@ export class RegionDurableObject extends DurableObject<Env> {
     await this.region.lock(agentId);
     try {
       const state = await this.region.state();
-      const credential = await createTransferCredential({keys: this.nodeKeys, descriptor: await this.descriptor(now), sourceRegion: this.env.REGION_ID, targetNode: input.target_node, targetRegion: input.target_region, agent: await this.region.exportAgent(agentId), agentPublicJwk: publicJwk, sourceState: state, now, ...(input.ttl ? {ttl: input.ttl} : {}), nonce: input.nonce ?? randomUUID()});
+      const agent = await this.region.exportAgent(agentId);
+      assertForkScopedSupplyImportAllowed(state, agent);
+      const credential = await createTransferCredential({keys: this.nodeKeys, descriptor: await this.descriptor(now), sourceRegion: this.env.REGION_ID, targetNode: input.target_node, targetRegion: input.target_region, agent, agentPublicJwk: publicJwk, sourceState: state, now, ...(input.ttl ? {ttl: input.ttl} : {}), nonce: input.nonce ?? randomUUID()});
       await this.ctx.storage.put({[`transfer:${credential.transfer_id}`]: {credential, status: "locked"} satisfies PreparedTransfer, [`agent-transfer:${agentId}`]: credential.transfer_id});
       return credential;
     } catch (error) { await this.region.unlock(agentId); throw error; }
@@ -264,7 +275,14 @@ export class RegionDurableObject extends DurableObject<Env> {
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
-    const id = env.REGIONS.idFromName(env.REGION_ID);
+    const url = new URL(request.url);
+    const archivePath = `/api/worlds/${encodeURIComponent(LEGACY_REFERENCE_FORK_ID)}/snapshot`;
+    if (url.pathname === archivePath && request.method === "GET") {
+      url.pathname = "/api/observer/snapshot";
+      const legacyId = env.REGIONS.idFromName(env.REGION_ID);
+      return env.REGIONS.get(legacyId).fetch(new Request(url, request));
+    }
+    const id = env.REGIONS.idFromName(`${env.REGION_ID}:${REFERENCE_FORK_ID}`);
     return env.REGIONS.get(id).fetch(request);
   },
 } satisfies ExportedHandler<Env>;

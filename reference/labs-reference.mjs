@@ -80,18 +80,43 @@ export function referenceWorldBranch(ruleset, scope) {
   const baseline = ruleset.baselines.find((item) => item.length === scope.length);
   if (!baseline) throw new RangeError("unknown LABS branch length");
   const variants = referenceSymmetries(baseline.sequence);
-  const candidate = variants[scope.unit_ordinal % variants.length];
-  const prefixLength = Math.min(candidate.length, 64 + Math.floor(scope.unit_ordinal / variants.length) * 16);
+  const candidate = variants[scope.research_height % variants.length];
+  const prefixLength = Math.min(candidate.length, 64 + Math.floor(scope.research_height / variants.length) * 16);
   const body = {
-    protocol: "sai-labs-world-branch/1",
+    protocol: "sai-labs-world-branch/2",
     world_fork_id: scope.world_fork_id,
     region_id: scope.region_id,
     resource_id: scope.resource_id,
-    unit_ordinal: scope.unit_ordinal,
+    schedule_id: scope.schedule_id,
+    research_height: scope.research_height,
+    subsidy: scope.subsidy,
+    previous_settlement_id: scope.previous_settlement_id,
     ruleset_id: referenceRulesetId(ruleset),
     length: scope.length,
     energy_at_most: scope.energy_at_most ?? baseline.energy,
     sequence_prefix: candidate.slice(0, prefixLength),
   };
   return {...body, branch_id: referenceContentId(body)};
+}
+
+export function referenceSupplyScheduleId(schedule) {
+  return referenceContentId(schedule);
+}
+
+export function referenceSubsidyAtHeight(height, schedule) {
+  if (!Number.isSafeInteger(height) || height < 0) throw new RangeError("invalid research height");
+  const epoch = Math.floor(height / schedule.halving_interval);
+  const terminalEpoch = schedule.terminal_height / schedule.halving_interval;
+  return epoch >= terminalEpoch ? 0 : schedule.initial_subsidy / (2 ** epoch);
+}
+
+export function referenceSupplyAtHeight(height, schedule) {
+  const bounded = Math.min(height, schedule.terminal_height);
+  let issued = 0;
+  for (let cursor = 0; cursor < bounded;) {
+    const epochEnd = Math.min(bounded, (Math.floor(cursor / schedule.halving_interval) + 1) * schedule.halving_interval);
+    issued += (epochEnd - cursor) * referenceSubsidyAtHeight(cursor, schedule);
+    cursor = epochEnd;
+  }
+  return issued;
 }

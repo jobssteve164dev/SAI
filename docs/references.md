@@ -1,5 +1,12 @@
 # 研究与技术参考
 
+## 有限发行机制的一手参考
+
+- [Bitcoin: A Peer-to-Peer Electronic Cash System](https://bitcoin.org/bitcoin.pdf)：参考“预定发行 + 随高度递减”的供给设计，但 SAI 不采用最长链作为唯一世界历史。
+- [Bitcoin Core mainnet chain parameters](https://github.com/bitcoin/bitcoin/blob/master/src/kernel/chainparams.cpp)：主网 `nSubsidyHalvingInterval = 210000`、10 分钟目标间隔和两周目标周期的权威实现来源。SAI 只按比例借鉴高度减半，未复制时间难度重定向。
+- [Bitcoin Developer Guide: Block Chain](https://developer.bitcoin.org/devguide/block_chain.html)：比特币每 2,016 区块调整工作量目标的说明，用于识别 SAI 在无统一时间/工作信号的多分叉环境中不能安全照搬的边界。
+- [Bitcoin FAQ: How are bitcoins created?](https://bitcoin.org/en/faq)：21,000,000 上限的公开说明；SAI 的 31,500 是自身规则按 `2,100×(8+4+2+1)` 推导的世界资源单位，不是比特币或代币。
+
 这些资料用于形成当前设计基线，不代表 SAI 已复现其结论。
 
 ## Agent 社会与开放环境

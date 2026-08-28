@@ -5,8 +5,8 @@ describe("确定性 Conformance World", () => {
   it("相同状态生成完全相同的观察与动作 ID", () => {
     const state = createWorld("fixed", [{id: "agent:a", x: 0, y: 0, energy: 5, inventory: {}}]);
     expect(buildObservation(state, "agent:a")).toEqual(buildObservation(structuredClone(state), "agent:a"));
-    expect(stateHash(state)).toBe("sha256:68154699f5cae23b423b48255cc422f53725d65d690f23f4df06f1b8aeaccb2c");
-    expect(buildObservation(state, "agent:a")!.observation.observation_id).toBe("obs_O6pyMqMqge3Tn2SmxuXcOj_Ik7geI5mll7PedebfHzM");
+    expect(stateHash(state)).toBe("sha256:c92f4f79770dc1f5deec69f0d523c2c9b418a73ca655aeeb7b3db98b889e4c18");
+    expect(buildObservation(state, "agent:a")!.observation.observation_id).toBe("obs_NdAfAxyKLYbTfMtk5nLG7PL_PA4VM7sxGAnaSSb_JSI");
     expect(canonicalJson({b: 2, a: 1})).toBe('{"a":1,"b":2}');
   });
 

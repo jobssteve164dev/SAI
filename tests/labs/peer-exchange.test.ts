@@ -70,8 +70,8 @@ describe("LABS direct exchange", () => {
     const result = await bridge.act({observation_id: observation.observation_id, action_id: research.action_id, arguments: {operation: "solve_branch", sequence, claim_type: "reproduction"}, request_id: "labs-observe-act"});
     expect(result.status).toBe("applied");
     const after = participant.region.currentState();
-    expect(after.resources[research.target!]!.remaining).toBe(before.resources[research.target!]!.remaining - 1);
-    expect(after.agents[identity.agentId]!.inventory.crystal).toBe(1);
+    expect(after.resources[research.target!]!.remaining).toBe(before.resources[research.target!]!.remaining - 8);
+    expect(after.agents[identity.agentId]!.inventory.crystal).toBe(8);
     expect(Object.values(after.resources).reduce((sum, item) => sum + item.remaining, 0) + Object.values(after.agents).reduce((sum, item) => sum + Object.values(item.inventory).reduce((total, value) => total + value, 0), 0)).toBe(Object.values(before.resources).reduce((sum, item) => sum + item.remaining, 0) + Object.values(before.agents).reduce((sum, item) => sum + Object.values(item.inventory).reduce((total, value) => total + value, 0), 0));
     await bridge.close();
   });
@@ -139,7 +139,7 @@ describe("LABS direct exchange", () => {
     ]);
     expect(outcomes.map((item) => item.status).sort()).toEqual(["applied", "rejected"]);
     const state = participant.region.currentState();
-    expect(state.resources["resource-alpha"]!.remaining).toBe(7);
-    expect((state.agents[a.agentId]!.inventory.crystal ?? 0) + (state.agents[b.agentId]!.inventory.crystal ?? 0)).toBe(1);
+    expect(state.resources["resource-alpha"]!.remaining).toBe(10_492);
+    expect((state.agents[a.agentId]!.inventory.crystal ?? 0) + (state.agents[b.agentId]!.inventory.crystal ?? 0)).toBe(8);
   });
 });

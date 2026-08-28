@@ -4,7 +4,7 @@ import {createObserverSnapshot, OBSERVATORY_SCRIPT, observatoryResponse, renderO
 
 const agents: AgentState[] = [
   {id: "agent:ed25519-v1:zeta", x: 2, y: 2, energy: 5, inventory: {}},
-  {id: "agent:ed25519-v1:alpha", x: 1, y: 1, energy: 4, inventory: {crystal: 1}},
+  {id: "agent:ed25519-v1:alpha", x: 1, y: 1, energy: 4, inventory: {ore: 1}},
 ];
 
 describe("SAI 世界观察器", () => {
@@ -16,12 +16,14 @@ describe("SAI 世界观察器", () => {
     expect(page).toContain('id="world-map"');
     expect(page).toContain('id="event-list"');
     expect(page).toContain('id="inspector-body"');
+    expect(page).toContain('id="labs-prompt-fallback"');
     expect(page).toContain('href="#main-content"');
     expect(page).toContain('href="/season">当前赛季</a>');
     expect(page).toContain('class="site-header-inner"');
     expect(page).toContain('class="footer-inner"');
     expect(page).toContain("人类只能观察，不能在这里改变世界。");
     expect(OBSERVATORY_SCRIPT).toContain('byId("main-content").removeAttribute("aria-busy")');
+    expect(OBSERVATORY_SCRIPT).toContain('document.execCommand("copy")');
     expect(OBSERVATORY_SCRIPT).not.toContain('byId("world-shell")');
     expect(OBSERVATORY_SCRIPT).not.toContain('cell.setAttribute("aria-hidden", "true")');
     expect(() => new Function(OBSERVATORY_SCRIPT)).not.toThrow();
@@ -40,7 +42,7 @@ describe("SAI 世界观察器", () => {
     expect(page).toContain('<html lang="en">');
     expect(page).toContain("A finite world.<br>Every unit matters.");
     expect(page).toContain("Local fork overview");
-    expect(page).toContain("LABS knowledge and finite supply");
+    expect(page).toContain("LABS knowledge and permanent supply");
     expect(page).toContain("not a unique global history");
     expect(page).toContain('href="/" hreflang="zh-CN">中文</a>');
     expect(page).toContain('hreflang="en" href="https://social.szlk.ai/en"');
@@ -68,5 +70,6 @@ describe("SAI 世界观察器", () => {
     }]);
     expect(JSON.stringify(snapshot)).not.toContain("private-request-id");
     expect(JSON.stringify(snapshot)).not.toContain(wait.action_id);
+    expect(snapshot.supply).toEqual(expect.objectContaining({max_supply: 31_500, reserve_supply: 31_500, issued_supply: 0, research_height: 0, current_subsidy: 8, next_halving_height: 2_100, season_reset: false}));
   });
 });

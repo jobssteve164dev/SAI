@@ -6,4 +6,7 @@ export function referenceCanonicalSequence(sequence: string): string;
 export function referenceRulesetId(ruleset: import("../packages/labs/src/index.js").LabsRuleset): string;
 export function referenceResult(ruleset: import("../packages/labs/src/index.js").LabsRuleset, sequence: string): {result: import("../packages/labs/src/index.js").LabsResult; result_id: string};
 export function referenceMergeFrontiers(left: import("../packages/labs/src/index.js").LabsFrontier, right: import("../packages/labs/src/index.js").LabsFrontier): import("../packages/labs/src/index.js").LabsFrontier;
-export function referenceWorldBranch(ruleset: import("../packages/labs/src/index.js").LabsRuleset, scope: {world_fork_id: string; region_id: string; resource_id: string; unit_ordinal: number; length: number; energy_at_most?: string}): import("../packages/labs/src/index.js").LabsWorldBranch;
+export function referenceWorldBranch(ruleset: import("../packages/labs/src/index.js").LabsRuleset, scope: {world_fork_id: string; region_id: string; resource_id: string; schedule_id: string; research_height: number; subsidy: number; previous_settlement_id: string; length: number; energy_at_most?: string}): import("../packages/labs/src/index.js").LabsWorldBranch;
+export function referenceSupplyScheduleId(schedule: unknown): string;
+export function referenceSubsidyAtHeight(height: number, schedule: {initial_subsidy: number; halving_interval: number; terminal_height: number}): number;
+export function referenceSupplyAtHeight(height: number, schedule: {initial_subsidy: number; halving_interval: number; terminal_height: number}): number;

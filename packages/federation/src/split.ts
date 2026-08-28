@@ -2,6 +2,7 @@ import {stateHash, type RegionState} from "../../kernel/src/index.js";
 import {FEDERATION_PROTOCOL, type RouteManifest} from "./types.js";
 
 export function splitRegion(state: RegionState, axis: "x" | "y", coordinate: number, children: [string, string]): {states: [RegionState, RegionState]; manifest: RouteManifest} {
+  if (state.supply) throw new Error("fork_scoped_supply_split_requires_new_schedule");
   const limit = axis === "x" ? state.width : state.height;
   if (!Number.isSafeInteger(coordinate) || coordinate <= 0 || coordinate >= limit) throw new Error("拆分坐标必须位于区域内部");
   const make = (regionId: string, second: boolean): RegionState => ({

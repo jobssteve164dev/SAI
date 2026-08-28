@@ -1,5 +1,5 @@
-import {randomBytes} from "node:crypto";
-import {admitAgentAtRandomAddress, buildObservation, createWorld, expandWorldForPopulation, transition, type ActInput, type ActResult, type AgentState, type ConformanceEvent, type Observation, type RegionState, type StoredObservation} from "../../../packages/kernel/src/index.js";
+import {randomBytes, randomUUID} from "node:crypto";
+import {admitAgentAtRandomAddress, assertForkScopedSupplyImportAllowed, buildObservation, createWorld, expandWorldForPopulation, transition, type ActInput, type ActResult, type AgentState, type ConformanceEvent, type Observation, type RegionState, type StoredObservation} from "../../../packages/kernel/src/index.js";
 import {FileStore} from "./store.js";
 
 export class RegionService {
@@ -12,7 +12,7 @@ export class RegionService {
   private constructor(readonly store: FileStore, state: RegionState) { this.state = state; }
 
   static async open(store: FileStore, regionId = "local"): Promise<RegionService> {
-    const loaded = await store.loadState(createWorld(regionId));
+    const loaded = await store.loadState(createWorld(regionId, [], `fork:sai-local:${randomUUID()}`));
     const service = new RegionService(store, loaded.state);
     for (const stored of await store.loadObservations()) service.observations.set(stored.observation.observation_id, stored);
     for (const event of loaded.events) service.requests.set(service.requestKey(event.agent_id, event.request_id), event.result);
@@ -28,6 +28,7 @@ export class RegionService {
 
   async importAgent(agent: AgentState): Promise<void> {
     await this.serial(async () => {
+      assertForkScopedSupplyImportAllowed(this.state, agent);
       const existing = this.state.agents[agent.id];
       if (existing && JSON.stringify(existing) !== JSON.stringify(agent)) throw new Error("目标区域已存在不同状态的 Agent");
       if (existing) return;

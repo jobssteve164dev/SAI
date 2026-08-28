@@ -5,9 +5,10 @@ import {createWorld} from "../../packages/kernel/src/index.js";
 describe("热区域拆分原型", () => {
   it("按空间边界确定性拆分，主体与资源不复制也不丢失", () => {
     const state = createWorld("parent", [
-      {id: "agent:left", x: 1, y: 2, energy: 5, inventory: {crystal: 2}},
-      {id: "agent:right", x: 6, y: 2, energy: 4, inventory: {fiber: 1}},
+      {id: "agent:left", x: 1, y: 2, energy: 5, inventory: {ore: 2}},
+      {id: "agent:right", x: 6, y: 2, energy: 4, inventory: {wood: 1}},
     ]);
+    delete state.supply;
     const first = splitRegion(state, "x", 4, ["west", "east"]);
     const second = splitRegion(structuredClone(state), "x", 4, ["west", "east"]);
     expect(first).toEqual(second);
@@ -21,6 +22,7 @@ describe("热区域拆分原型", () => {
 
   it("拒绝区域外和边界上的无效拆分坐标", () => {
     const state = createWorld("parent", []);
+    delete state.supply;
     for (const coordinate of [0, state.width, 1.5]) expect(() => splitRegion(state, "x", coordinate, ["a", "b"])).toThrow();
   });
 
@@ -35,6 +37,7 @@ describe("热区域拆分原型", () => {
     expect(shouldSplitRegion(samples, policy)).toBe(true);
 
     const state = createWorld("parent", []);
+    delete state.supply;
     const manifest = splitRegion(state, "x", 4, ["west", "east"]).manifest;
     let cutover = planSplitCutover(manifest, 100, 1, 30);
     expect(routeDuringSplit(cutover, 6, 2)).toEqual({status: "serve_parent", region_id: "parent", route_version: 0});
@@ -47,5 +50,9 @@ describe("热区域拆分原型", () => {
     cutover = retireSplitParent(cutover, 131);
     expect(cutover.status).toBe("retired");
     expect(routeDuringSplit(cutover, 1, 2).status).toBe("redirect");
+  });
+
+  it("拒绝把同一有限供给发行高度机械复制到两个子区域", () => {
+    expect(() => splitRegion(createWorld("finite-supply"), "x", 4, ["west", "east"])).toThrow("fork_scoped_supply_split_requires_new_schedule");
   });
 });

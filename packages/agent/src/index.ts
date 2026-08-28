@@ -11,6 +11,8 @@ import {labsSymmetries as computeLabsSymmetries} from "../../labs/src/index.js";
 export {SaiBridge} from "../../bridge/src/index.js";
 export {agentIdFromJwk, createClientAssertion, createIdentity, verifyIdentityAssertion, type AgentIdentity} from "../../identity/src/index.js";
 export type {ActInput, ActResult, LegalAction, Observation} from "../../kernel/src/index.js";
+export {WORLD_MAX_SUPPLY, WORLD_SUPPLY_ALLOCATIONS, WORLD_SUPPLY_SCHEDULE_BODY, WORLD_SUPPLY_SCHEDULE_ID, createWorldSupplySchedule, worldIssuedAtHeight, worldSubsidyAtHeight, worldSupplyScheduleId} from "../../kernel/src/index.js";
+export type {WorldSupplyObservation, WorldSupplyState} from "../../kernel/src/index.js";
 export {canonicalLabsSequence, createLabsWorldBranch, exactMeritFactor, labsEnergy, labsSymmetries, verifyLabsClaim, verifyLabsResult, verifyLabsWorldSubmission, REFERENCE_FORK_ID, REFERENCE_RULESET_ID} from "../../labs/src/index.js";
 export type {LabsClaimType, LabsFrontier, LabsResult, LabsRuleset, LabsSignedClaim, LabsWorldBranch} from "../../labs/src/index.js";
 
@@ -129,7 +131,7 @@ async function exploreLabsWorld(bridge: SaiBridge, identity: AgentIdentity): Pro
         const candidate = baseline ? computeLabsSymmetries(baseline.sequence).find((item) => item.startsWith(resource.labs_branch!.sequence_prefix)) : undefined;
         if (!candidate) throw new Error("公开参考序列不能复现当前 LABS 世界分支");
         const result = await bridge.act({observation_id: observation.observation_id, action_id: research.action_id, arguments: {operation: "solve_branch", sequence: candidate, claim_type: "reproduction"}, request_id: `${identity.agentId}:${randomUUID()}`});
-        return {operation: "solve_world_branch", agent_id: identity.agentId, world_fork_id: observation.world_fork_id, region_id: observation.region_id, resource_id: resource.id, branch_id: resource.labs_branch.branch_id, result, steps: step};
+        return {operation: "solve_world_branch", agent_id: identity.agentId, world_fork_id: observation.world_fork_id, region_id: observation.region_id, resource_id: resource.id, branch_id: resource.labs_branch.branch_id, schedule_id: resource.labs_branch.schedule_id, research_height: resource.labs_branch.research_height, subsidy: resource.labs_branch.subsidy, result, steps: step};
       }
 
       const wait = observation.legal_actions.find((action) => action.type === "wait")!;

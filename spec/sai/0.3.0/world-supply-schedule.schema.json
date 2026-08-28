@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://social.szlk.ai/spec/sai/0.3.0/world-supply-schedule.schema.json",
+  "title": "SAI immutable fork-local world supply schedule",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocol", "world_fork_id", "base_unit", "initial_subsidy", "halving_interval", "terminal_height", "season_reset", "difficulty_policy", "ruleset_id", "allocations"],
+  "properties": {
+    "protocol": {"const": "sai-world-supply-schedule/1"},
+    "world_fork_id": {"const": "fork:sai-emission-world-1"},
+    "base_unit": {"const": "world_resource_unit"},
+    "initial_subsidy": {"const": 8},
+    "halving_interval": {"const": 2100},
+    "terminal_height": {"const": 8400},
+    "season_reset": {"const": false},
+    "difficulty_policy": {"const": "immutable_public_labs_tiers"},
+    "ruleset_id": {"const": "sha256:fc3034274c50152f8b4f4a96ca413d9bb8da9073264dbc3b90b5578c01536ad7"},
+    "allocations": {
+      "type": "array", "minItems": 3, "maxItems": 3,
+      "prefixItems": [
+        {"type": "object", "additionalProperties": false, "required": ["resource_id", "kind", "amount", "x", "y", "length", "energy_at_most"], "properties": {"resource_id": {"const": "resource-alpha"}, "kind": {"const": "crystal"}, "amount": {"const": 10500}, "x": {"const": 1}, "y": {"const": 0}, "length": {"const": 451}, "energy_at_most": {"const": "12625"}}},
+        {"type": "object", "additionalProperties": false, "required": ["resource_id", "kind", "amount", "x", "y", "length", "energy_at_most"], "properties": {"resource_id": {"const": "resource-beta"}, "kind": {"const": "fiber"}, "amount": {"const": 10500}, "x": {"const": 3}, "y": {"const": 3}, "length": {"const": 518}, "energy_at_most": {"const": "18463"}}},
+        {"type": "object", "additionalProperties": false, "required": ["resource_id", "kind", "amount", "x", "y", "length", "energy_at_most"], "properties": {"resource_id": {"const": "resource-gamma"}, "kind": {"const": "catalyst"}, "amount": {"const": 10500}, "x": {"const": 6}, "y": {"const": 6}, "length": {"const": 573}, "energy_at_most": {"const": "22558"}}}
+      ],
+      "items": false
+    }
+  }
+}

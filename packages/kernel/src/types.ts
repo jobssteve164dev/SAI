@@ -25,13 +25,41 @@ export interface ResourceState {
   };
 }
 
+export interface WorldSupplyState {
+  protocol: "sai-world-supply-state/1";
+  schedule_id: string;
+  research_height: number;
+  previous_settlement_id: string;
+}
+
+export interface WorldSupplyObservation {
+  protocol: "sai-world-supply-observation/1";
+  schedule_id: string;
+  world_fork_id: string;
+  max_supply: number;
+  reserve_supply: number;
+  issued_supply: number;
+  locally_held_supply: number;
+  external_or_in_transit_supply: number;
+  burned_supply: 0;
+  research_height: number;
+  current_subsidy: number;
+  next_halving_height: number | null;
+  remaining_to_halving: number;
+  terminal_height: number;
+  season_reset: false;
+}
+
 export interface LabsWorldBranchObservation {
-  protocol: "sai-labs-world-branch/1";
+  protocol: "sai-labs-world-branch/2";
   branch_id: string;
   world_fork_id: string;
   region_id: string;
   resource_id: string;
-  unit_ordinal: number;
+  schedule_id: string;
+  research_height: number;
+  subsidy: number;
+  previous_settlement_id: string;
   ruleset_id: string;
   length: number;
   energy_at_most: string;
@@ -57,6 +85,7 @@ export interface RegionState {
   height: number;
   agents: Record<string, AgentState>;
   resources: Record<string, ResourceState>;
+  supply?: WorldSupplyState;
   messages: MessageState[];
 }
 

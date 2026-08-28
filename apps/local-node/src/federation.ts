@@ -1,7 +1,7 @@
 import {randomUUID} from "node:crypto";
 import type {AuthService} from "../../../packages/auth/src/index.js";
 import {createNodeDescriptor, createNodeKeyPair, createTransferCancellation, createTransferCredential, createTransferReceipt, verifyTransferCancellation, verifyTransferCredential, verifyTransferReceipt, type NodeDescriptor, type NodeKeyPair, type TransferCancellation, type TransferCredential, type TransferReceipt} from "../../../packages/federation/src/index.js";
-import {stateHash} from "../../../packages/kernel/src/index.js";
+import {assertForkScopedSupplyImportAllowed, stateHash} from "../../../packages/kernel/src/index.js";
 import type {RegionService} from "./service.js";
 import type {FileStore} from "./store.js";
 
@@ -28,7 +28,10 @@ export class LocalFederationService {
     if (!publicJwk) throw new Error("Agent 身份未注册");
     this.region.lockAgent(agentId);
     try {
-      const credential = await createTransferCredential({keys: this.keys, descriptor: await this.descriptor(now), sourceRegion: this.regionId, targetNode: input.target_node, targetRegion: input.target_region, agent: this.region.exportAgent(agentId), agentPublicJwk: publicJwk, sourceState: this.region.currentState(), now, ...(input.ttl ? {ttl: input.ttl} : {}), nonce: input.nonce ?? randomUUID()});
+      const state = this.region.currentState();
+      const agent = this.region.exportAgent(agentId);
+      assertForkScopedSupplyImportAllowed(state, agent);
+      const credential = await createTransferCredential({keys: this.keys, descriptor: await this.descriptor(now), sourceRegion: this.regionId, targetNode: input.target_node, targetRegion: input.target_region, agent, agentPublicJwk: publicJwk, sourceState: state, now, ...(input.ttl ? {ttl: input.ttl} : {}), nonce: input.nonce ?? randomUUID()});
       this.prepared[credential.transfer_id] = {credential, status: "locked"};
       await this.persist();
       return credential;

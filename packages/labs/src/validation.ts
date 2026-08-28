@@ -1,6 +1,6 @@
 import {Ajv2020, type ValidateFunction} from "ajv/dist/2020.js";
 import rulesetSchema from "../../../spec/labs/2.0.0/ruleset.schema.json" with {type: "json"};
-import worldBranchSchema from "../../../spec/labs/2.0.0/world-branch.schema.json" with {type: "json"};
+import worldBranchSchema from "../../../spec/labs/3.0.0/world-branch.schema.json" with {type: "json"};
 import resultSchema from "../../../spec/labs/1.0.0/result.schema.json" with {type: "json"};
 import claimSchema from "../../../spec/labs/1.0.0/claim.schema.json" with {type: "json"};
 import frontierSchema from "../../../spec/labs/1.0.0/frontier.schema.json" with {type: "json"};

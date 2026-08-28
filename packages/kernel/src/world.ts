@@ -24,6 +24,7 @@ import {
   type StoredObservation,
   type TransitionResult,
 } from "./types.js";
+import {WORLD_MAX_SUPPLY, WORLD_SUPPLY_ALLOCATIONS, WORLD_SUPPLY_TERMINAL_HEIGHT, createWorldSupplyState, worldIssuedAtHeight, worldSubsidyAtHeight, worldSupplyScheduleId} from "./supply.js";
 
 const MAX_ENERGY = 10;
 export const MAX_WORLD_ADDRESSES = 2 ** 32;
@@ -47,34 +48,33 @@ const RESEARCH_SCHEMA = {
   additionalProperties: false,
 };
 
-export function createWorld(regionId = "local", agents: AgentState[] = []): RegionState {
-  return {
+export function createWorld(regionId = "local", agents: AgentState[] = [], worldForkId = REFERENCE_FORK_ID): RegionState {
+  const state: RegionState = {
     protocol: PROTOCOL,
     rules_version: RULES_VERSION,
-    world_fork_id: REFERENCE_FORK_ID,
+    world_fork_id: worldForkId,
     region_id: regionId,
     event_seq: 0,
     logical_tick: 0,
     width: INITIAL_WORLD_AXIS,
     height: INITIAL_WORLD_AXIS,
     agents: Object.fromEntries(agents.map((agent) => [agent.id, structuredClone(agent)])),
-    resources: {
-      "resource-alpha": {id: "resource-alpha", kind: "crystal", x: 1, y: 0, initial_amount: 8, remaining: 8, labs: {ruleset_id: REFERENCE_RULESET_ID, length: 451, energy_at_most: "12625"}},
-      "resource-beta": {id: "resource-beta", kind: "fiber", x: 3, y: 3, initial_amount: 5, remaining: 5, labs: {ruleset_id: REFERENCE_RULESET_ID, length: 518, energy_at_most: "18463"}},
-    },
+    resources: Object.fromEntries(WORLD_SUPPLY_ALLOCATIONS.map((allocation) => [allocation.resource_id, {id: allocation.resource_id, kind: allocation.kind, x: allocation.x, y: allocation.y, initial_amount: allocation.amount, remaining: allocation.amount, labs: {ruleset_id: REFERENCE_RULESET_ID, length: allocation.length, energy_at_most: allocation.energy_at_most}}])),
+    supply: createWorldSupplyState(worldForkId),
     messages: [],
   };
+  validateState(state);
+  return state;
 }
 
 export function upgradeWorldForLabs(state: RegionState): RegionState {
   const next = structuredClone(state);
   next.world_fork_id ||= REFERENCE_FORK_ID;
-  const bindings = {
-    "resource-alpha": {initial_amount: 8, length: 451, energy_at_most: "12625"},
-    "resource-beta": {initial_amount: 5, length: 518, energy_at_most: "18463"},
-  } as const;
+  const bindings: Record<string, {initial_amount: number; length: number; energy_at_most: string}> = next.supply
+    ? Object.fromEntries(WORLD_SUPPLY_ALLOCATIONS.map((allocation) => [allocation.resource_id, {initial_amount: allocation.amount, length: allocation.length, energy_at_most: allocation.energy_at_most}]))
+    : {"resource-alpha": {initial_amount: 8, length: 451, energy_at_most: "12625"}, "resource-beta": {initial_amount: 5, length: 518, energy_at_most: "18463"}};
   for (const resource of Object.values(next.resources)) {
-    const known = bindings[resource.id as keyof typeof bindings];
+    const known = bindings[resource.id];
     resource.initial_amount ??= known?.initial_amount ?? resource.remaining;
     if (known && !resource.labs) resource.labs = {ruleset_id: REFERENCE_RULESET_ID, length: known.length, energy_at_most: known.energy_at_most};
   }
@@ -144,6 +144,18 @@ export function validateState(state: RegionState): void {
   if (!/^fork:[A-Za-z0-9._:-]{1,120}$/.test(state.world_fork_id)) throw new TypeError("世界分叉标识无效");
   if (Object.values(state.resources).some((resource) => resource.remaining > resource.initial_amount)) throw new TypeError("资源余额不能超过创世存量");
   if (Object.values(state.resources).some((resource) => resource.labs && (resource.labs.ruleset_id !== REFERENCE_RULESET_ID || !REFERENCE_RULESET.baselines.some((item) => item.length === resource.labs?.length) || !/^(0|[1-9][0-9]*)$/.test(resource.labs.energy_at_most)))) throw new TypeError("资源 LABS 分支绑定无效");
+  if (state.supply) {
+    if (state.supply.protocol !== "sai-world-supply-state/1" || state.supply.schedule_id !== worldSupplyScheduleId(state.world_fork_id) || !/^sha256:[0-9a-f]{64}$/.test(state.supply.previous_settlement_id)) throw new TypeError("世界发行状态无效");
+    if (!Number.isSafeInteger(state.supply.research_height) || state.supply.research_height < 0 || state.supply.research_height > WORLD_SUPPLY_TERMINAL_HEIGHT) throw new TypeError("世界研究高度无效");
+    for (const allocation of WORLD_SUPPLY_ALLOCATIONS) {
+      const resource = state.resources[allocation.resource_id];
+      if (!resource || resource.kind !== allocation.kind || resource.initial_amount !== allocation.amount || resource.labs?.length !== allocation.length) throw new TypeError("世界资源分配与发行规则不匹配");
+      const locallyHeld = Object.values(state.agents).reduce((sum, agent) => sum + (agent.inventory[allocation.kind] ?? 0), 0);
+      if (locallyHeld > allocation.amount - resource.remaining) throw new TypeError("Agent 库存超过该资源已释放存量");
+    }
+    const reserve = WORLD_SUPPLY_ALLOCATIONS.reduce((sum, allocation) => sum + (state.resources[allocation.resource_id]?.remaining ?? 0), 0);
+    if (reserve + worldIssuedAtHeight(state.supply.research_height) !== WORLD_MAX_SUPPLY) throw new TypeError("世界资源总量与发行高度不守恒");
+  }
 }
 
 function actionId(seed: unknown): string {
@@ -166,12 +178,17 @@ function addAction(commands: Record<string, ActionCommand>, agent: AgentState, a
 }
 
 function labsBranch(state: RegionState, resource: RegionState["resources"][string]) {
-  if (!resource.labs || resource.remaining < 1) return undefined;
+  if (!resource.labs || !state.supply) return undefined;
+  const subsidy = worldSubsidyAtHeight(state.supply.research_height);
+  if (subsidy < 1 || resource.remaining < subsidy) return undefined;
   return createLabsWorldBranch(REFERENCE_RULESET, {
     world_fork_id: state.world_fork_id,
     region_id: state.region_id,
     resource_id: resource.id,
-    unit_ordinal: resource.initial_amount - resource.remaining,
+    schedule_id: state.supply.schedule_id,
+    research_height: state.supply.research_height,
+    subsidy,
+    previous_settlement_id: state.supply.previous_settlement_id,
     length: resource.labs.length,
     energy_at_most: resource.labs.energy_at_most,
   });
@@ -290,11 +307,15 @@ export function transition(state: RegionState, agentId: string, requestId: strin
     const settlement = argumentsValue as LabsSettlementArguments;
     try { verifyLabsWorldSubmission(REFERENCE_RULESET, branch, settlement, agentId); }
     catch { return {status: "rejected", state, result: reject(requestId, "arguments_invalid")}; }
-    resource.remaining -= 1;
+    const subsidy = branch.subsidy;
+    if (!next.supply || next.supply.research_height !== branch.research_height || next.supply.schedule_id !== branch.schedule_id || next.supply.previous_settlement_id !== branch.previous_settlement_id || resource.remaining < subsidy) return {status: "rejected", state, result: reject(requestId, "target_unavailable")};
+    resource.remaining -= subsidy;
     agent.energy -= 1;
     cost.energy = 1;
-    agent.inventory[resource.kind] = (agent.inventory[resource.kind] ?? 0) + 1;
-    received[resource.kind] = 1;
+    agent.inventory[resource.kind] = (agent.inventory[resource.kind] ?? 0) + subsidy;
+    received[resource.kind] = subsidy;
+    next.supply.research_height += 1;
+    next.supply.previous_settlement_id = `sha256:${sha256({schedule_id: branch.schedule_id, research_height: branch.research_height, branch_id: branch.branch_id, result_id: settlement.result_id, agent_id: agentId})}`;
   }
   if (command.type === "message") {
     const target = command.target ? next.agents[command.target] : undefined;
@@ -306,6 +327,7 @@ export function transition(state: RegionState, agentId: string, requestId: strin
   next.event_seq += 1;
   next.logical_tick += 1;
   if (command.type === "message") next.messages.push({id: `message:${next.event_seq}`, from: agentId, to: command.target!, content: argumentsValue.content as string, event_seq: next.event_seq});
+  validateState(next);
   const hash = stateHash(next);
   const result: ActResult = {request_id: requestId, status: "applied", event_id: `${next.region_id}:${next.event_seq}`, state_hash: hash};
   if (Object.keys(cost).length) result.cost = cost;

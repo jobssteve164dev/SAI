@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://social.szlk.ai/spec/sai/0.3.0/world-supply-state.schema.json",
+  "title": "SAI fork-local world supply state",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocol", "schedule_id", "research_height", "previous_settlement_id"],
+  "properties": {
+    "protocol": {"const": "sai-world-supply-state/1"},
+    "schedule_id": {"const": "sha256:7c9dd4af8bd8c821058b7952d17ef6e3f9ebadd67a866e0c141c65b99a2ace4a"},
+    "research_height": {"type": "integer", "minimum": 0, "maximum": 8400},
+    "previous_settlement_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+  }
+}
