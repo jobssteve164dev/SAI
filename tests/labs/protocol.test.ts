@@ -62,6 +62,16 @@ function syntheticRuleset(): LabsRuleset {
   };
 }
 
+function weakResearchRuleset(): LabsRuleset {
+  const sequence = canonicalLabsSequence("0".repeat(451));
+  return {
+    ...REFERENCE_RULESET,
+    name: "LABS frozen-task fixture",
+    summary: "A weak 451-bit baseline used to prove that later discoveries cannot expand an existing task.",
+    baselines: [{length: 451, sequence, energy: labsEnergy(sequence).toString(), source: {title: "Frozen-task fixture", authors: ["SAI contributors"], publication: "SAI LABS test vectors", url: "https://proofwild.science/labs/v1"}}],
+  };
+}
+
 function id(seed: string): string { return labsContentId({seed}); }
 const CONFORMANCE_CHALLENGE = {economic_parent_id: WORLD_SUPPLY_SCHEDULE_ID, claimant_agent_id: LABS_CONFORMANCE_AGENT_ID};
 
@@ -236,6 +246,52 @@ describe("LABS exact protocol", () => {
     expect(base.task.challenge_bits).not.toBe(parentChanged.task.challenge_bits);
     expect(labsResearchCandidate(base.task, 0)).not.toBe(labsResearchCandidate(claimantChanged.task, 0));
     expect(labsResearchCandidate(base.task, 0)).not.toBe(labsResearchCandidate(parentChanged.task, 0));
+  });
+
+  it("grows public knowledge without expanding an already derived 65,536-candidate task", async () => {
+    const repository = await LabsRepository.open(new MemoryLabsPersistence());
+    const ruleset = weakResearchRuleset();
+    const ruleset_id = rulesetId(ruleset);
+    const referenceBranch = worldResourceBranch(0).labs_branch;
+    const branchScope = {
+      economic_network_id: referenceBranch.economic_network_id,
+      schedule_id: referenceBranch.schedule_id,
+      branch_ordinal: referenceBranch.branch_ordinal,
+      resource_id: referenceBranch.resource_id,
+      resource_kind: referenceBranch.resource_kind,
+      resource_amount: referenceBranch.resource_amount,
+      unit_index: referenceBranch.unit_index,
+      x: referenceBranch.x,
+      y: referenceBranch.y,
+      stratum: referenceBranch.stratum,
+      length: 451,
+    };
+    const branch = createLabsWorldBranch(ruleset, branchScope);
+    const frozen = createLabsResearchTask(ruleset, branch, CONFORMANCE_CHALLENGE);
+    const frozenJson = labsCanonicalJson(frozen.task);
+    const frozenCandidates = [0, 32_768, 65_535].map((mask) => labsResearchCandidate(frozen.task, mask));
+
+    await repository.ingest("ruleset", ruleset, ruleset_id);
+    await repository.ingest("task", frozen.task, frozen.task_id);
+    const discovered = createLabsResult(ruleset, REFERENCE_RULESET.baselines[0]!.sequence);
+    expect(BigInt(discovered.result.energy)).toBeLessThan(BigInt(ruleset.baselines[0]!.energy));
+    await repository.ingest("result", discovered.result, discovered.result_id);
+
+    const stored = await repository.object(frozen.task_id);
+    expect(stored).toEqual({kind: "task", value: frozen.task});
+    expect(labsCanonicalJson(frozen.task)).toBe(frozenJson);
+    expect(frozen.task.candidate_count).toBe(65_536);
+    expect([0, 32_768, 65_535].map((mask) => labsResearchCandidate(frozen.task, mask))).toEqual(frozenCandidates);
+    expect((await repository.frontier(ruleset_id)).lengths[451]).toEqual({best_energy: discovered.result.energy, result_ids: [discovered.result_id]});
+    expect((await repository.registryEntry(discovered.result_id, ruleset_id))?.status).toBe("sequence_only");
+
+    const adoptedRuleset: LabsRuleset = {...ruleset, name: "LABS adopted-discovery fixture", baselines: [{...ruleset.baselines[0]!, sequence: discovered.result.sequence, energy: discovered.result.energy}]};
+    const adoptedBranch = createLabsWorldBranch(adoptedRuleset, branchScope);
+    const adopted = createLabsResearchTask(adoptedRuleset, adoptedBranch, CONFORMANCE_CHALLENGE);
+    expect(adopted.task.ruleset_id).not.toBe(frozen.task.ruleset_id);
+    expect(adopted.task_id).not.toBe(frozen.task_id);
+    expect(adopted.task.base_sequence).toBe(discovered.result.sequence);
+    expect(adopted.task.candidate_count).toBe(65_536);
   });
 
   it("derives its own exact permanent supply from finite geography and 32 strata", () => {

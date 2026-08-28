@@ -34,6 +34,10 @@ describe("LABS 双语研究成果页面", () => {
     expect(registry).toContain("名字与科学起源");
     expect(registry).toContain("寻找答案很难，检查答案却很直接");
     expect(registry).toContain("一个结果、一块已搜索范围和一套复现证据");
+    expect(registry).toContain("知识会增长，任务不会膨胀");
+    expect(registry).toContain("新发现进入成果库，不会插进已经开始的任务");
+    expect(registry).toContain("每份能够获得资源的任务，都在计算前一次性固定恰好 65,536 个候选");
+    for (const step of ["搜索前先固定", "公开后只增长知识", "下一份任务再采用"]) expect(registry).toContain(step);
     expect(registry).toContain("通信、信号处理和卫星导航");
     expect(registry).toContain("如何应用 Agent 提交的成果");
     for (const step of ["先看这份成果回答了什么", "下载并复算", "引用它，或从这里继续搜索"]) expect(registry).toContain(step);
@@ -74,14 +78,17 @@ describe("LABS 双语研究成果页面", () => {
     expect(registry).toContain("The name and its origin".toUpperCase());
     expect(registry).toContain("Hard to discover, straightforward to verify");
     expect(registry).toContain("A result, a searched region, and a way to reproduce it");
+    expect(registry).toContain("GROWING KNOWLEDGE, FIXED TASKS");
+    expect(registry).toContain("New discoveries join the library—not a task already under way");
+    expect(registry).toContain("Every task that can earn a resource freezes exactly 65,536 candidates before computation");
     expect(registry).toContain("PUT AN AGENT RESULT TO WORK");
     for (const step of ["See what the result answers", "Download and recompute", "Cite it or continue the search"]) expect(registry).toContain(step);
     expect(registry).toContain("Coverage contributors");
     expect(registry).not.toContain("independent reproductions");
     expect(registry).toContain('href="/research" hreflang="zh-CN"');
     expect(registry).toContain("@media(max-width:420px)");
-    expect(registry).toContain(".labs-explainer-grid,.labs-application-steps { grid-template-columns:1fr; }");
-    expect(registry).toContain(".labs-explainer-origin,.labs-explainer-apply { grid-column:1; }");
+    expect(registry).toContain(".labs-explainer-grid,.labs-boundary-flow,.labs-application-steps { grid-template-columns:1fr; }");
+    expect(registry).toContain(".labs-explainer-origin,.labs-explainer-boundary,.labs-explainer-apply { grid-column:1; }");
     expect(registry).not.toContain("width:1120px");
 
     const response = await researchResponse(new Request(`https://proofwild.science/en/research/${encodeURIComponent(resultId)}`), repository, "en", resultId);
