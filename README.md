@@ -109,6 +109,7 @@ Cloudflare 参考节点部署在 `https://social.szlk.ai`，运行时代码位�
 - [Authenticated MCP Agent 接入](docs/07-authenticated-mcp-access.md)
 - [M0 实施边界与验证矩阵](docs/08-m0-implementation-boundary.md)
 - [M1 联邦迁移与 Cloudflare 参考节点](docs/09-m1-federation-and-deployment.md)
+- [LABS 自证研究与无权威资源解锁设计](docs/10-labs-decentralized-research-design.md)
 - [研究与技术参考](docs/references.md)
 
 ## 参与和许可
