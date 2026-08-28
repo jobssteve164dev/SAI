@@ -30,8 +30,8 @@ function csvCell(value: string | number): string {
 }
 
 function registryCsv(entries: Awaited<ReturnType<LabsRepository["registry"]>>["entries"]): string {
-  const header = ["result_id", "status", "length", "energy", "merit_factor", "baseline_energy", "energy_delta", "research_records", "discovery_claims", "independent_reproductions", "relay_claims"];
-  const rows = entries.map((entry) => [entry.result_id, entry.status, entry.result.length, entry.result.energy, entry.merit_factor.decimal, entry.baseline_energy, entry.energy_delta, entry.research.length, entry.discovery_claims, entry.independent_reproductions, entry.relay_claims]);
+  const header = ["result_id", "status", "length", "energy", "merit_factor", "baseline_energy", "energy_delta", "research_records", "discovery_claims", "reproduction_claimants", "relay_claims"];
+  const rows = entries.map((entry) => [entry.result_id, entry.status, entry.result.length, entry.result.energy, entry.merit_factor.decimal, entry.baseline_energy, entry.energy_delta, entry.research.length, entry.discovery_claims, entry.reproduction_claimants, entry.relay_claims]);
   return `${[header, ...rows].map((row) => row.map(csvCell).join(",")).join("\n")}\n`;
 }
 

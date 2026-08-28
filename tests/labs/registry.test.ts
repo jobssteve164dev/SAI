@@ -38,6 +38,8 @@ describe("LABS public research registry", () => {
     expect(entry.research[0]!.artifacts[0]!.artifact.artifact_type).toBe("method");
     expect(entry.claims).toHaveLength(1);
     expect(registry.totals.research_records).toBe(1);
+    expect(entry.reproduction_claimants).toBe(1);
+    expect(registry.totals.reproduction_claimants).toBe(1);
   });
 
   it("serves registry, reproducibility bundle, sequence, CSV, and BibTeX without authentication", async () => {
@@ -63,7 +65,7 @@ describe("LABS public research registry", () => {
 
     const csv = await request(repository, "/labs/v1/registry.csv");
     expect(csv.headers.get("content-type")).toContain("text/csv");
-    expect(await csv.text()).toContain(resultId);
+    expect(await csv.text()).toContain(`reproduction_claimants`);
   });
 
   it("rejects oversized public objects before JSON parsing", async () => {

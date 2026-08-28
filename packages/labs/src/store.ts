@@ -47,7 +47,7 @@ export interface LabsRegistryEntry {
   claims: Array<{claim_id: string; signed_claim: LabsSignedClaim}>;
   research: Array<{record_id: string; record: LabsResearchRecord; task: LabsResearchTask; artifacts: Array<{artifact_id: string; artifact: LabsResearchArtifact}>}>;
   discovery_claims: number;
-  independent_reproductions: number;
+  reproduction_claimants: number;
   relay_claims: number;
 }
 
@@ -57,7 +57,7 @@ export interface LabsRegistrySnapshot {
   role: "derived-local-index";
   authority: false;
   entries: LabsRegistryEntry[];
-  totals: {results: number; research_records: number; frontier_improvements: number; search_coverage_records: number; independent_reproductions: number};
+  totals: {results: number; research_records: number; frontier_improvements: number; search_coverage_records: number; reproduction_claimants: number};
 }
 
 export interface LabsPersistence {
@@ -248,7 +248,7 @@ export class LabsRepository {
         claims: resultClaims,
         research: resultRecords,
         discovery_claims: resultClaims.filter(({signed_claim}) => signed_claim.claim.claim_type === "discovery").length,
-        independent_reproductions: reproductionAgents.size,
+        reproduction_claimants: reproductionAgents.size,
         relay_claims: resultClaims.filter(({signed_claim}) => signed_claim.claim.claim_type === "relay").length,
       });
     }
@@ -271,7 +271,7 @@ export class LabsRepository {
         research_records: researchRecords.length,
         frontier_improvements: researchRecords.filter((record) => record.contribution_type === "frontier_improvement").length,
         search_coverage_records: researchRecords.filter((record) => record.contribution_type === "search_coverage").length,
-        independent_reproductions: entries.reduce((sum, entry) => sum + entry.independent_reproductions, 0),
+        reproduction_claimants: entries.reduce((sum, entry) => sum + entry.reproduction_claimants, 0),
       },
     };
   }

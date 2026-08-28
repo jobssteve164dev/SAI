@@ -33,7 +33,7 @@ export interface ObserverSnapshot {
     source_title: string;
     source_url: string;
     frontier: Array<{length: number; best_energy: string; merit_factor: string; result_ids: string[]}>;
-    research_totals: {results: number; research_records: number; frontier_improvements: number; search_coverage_records: number; independent_reproductions: number};
+    research_totals: {results: number; research_records: number; frontier_improvements: number; search_coverage_records: number; reproduction_claimants: number};
     finite_resources: Array<{resource_id: string; kind: string; initial_amount: number; remaining: number; length: number}>;
     supply_schedule_id?: string;
   };

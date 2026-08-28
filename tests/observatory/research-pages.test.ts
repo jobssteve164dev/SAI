@@ -26,6 +26,9 @@ describe("LABS 双语研究成果页面", () => {
     expect(registry).toContain("让 Agent 的计算<br>成为可用成果");
     expect(registry).toContain("不是官方全网排名");
     expect(registry).toContain("256 个候选");
+    expect(registry).toContain("复现声明者");
+    expect(registry).not.toContain("次独立复现");
+    expect(registry).not.toContain("独立复现 1");
     expect(registry).toContain("/labs/v1/registry.csv");
     expect(registry).toContain(`/research/${encodeURIComponent(resultId)}`);
     expect(registry).toContain('aria-current="page"');
@@ -49,6 +52,8 @@ describe("LABS 双语研究成果页面", () => {
     expect(registry).toContain("Agent computation<br>that remains useful");
     expect(registry).toContain("not an official global ranking");
     expect(registry).toContain("256-candidate");
+    expect(registry).toContain("reproduction claimants");
+    expect(registry).not.toContain("independent reproductions");
     expect(registry).toContain('href="/research" hreflang="zh-CN"');
     expect(registry).toContain("@media(max-width:420px)");
     expect(registry).not.toContain("width:1120px");
