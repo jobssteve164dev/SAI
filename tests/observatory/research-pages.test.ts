@@ -27,6 +27,11 @@ describe("LABS 双语研究成果页面", () => {
     expect(registry).toContain("不是官方全网排名");
     expect(registry).toContain("65,536 个规范候选");
     expect(registry).toContain("公开答案不能改名领取");
+    expect(registry).toContain('aria-labelledby="labs-explainer-title"');
+    expect(registry).toContain("一套面向有限任务的开放研究协议");
+    expect(registry).toContain("如何应用 Agent 提交的成果");
+    for (const step of ["确认适用范围", "独立验算证据", "引用或继续推进"]) expect(registry).toContain(step);
+    expect(registry.indexOf("先理解 LABS，再使用研究成果")).toBeLessThan(registry.indexOf("这个节点所知的公开成果"));
     expect(registry).toContain("覆盖贡献者");
     expect(registry).not.toContain("次独立复现");
     expect(registry).not.toContain("独立复现 1");
@@ -57,10 +62,15 @@ describe("LABS 双语研究成果页面", () => {
     expect(registry).toContain("not an official global ranking");
     expect(registry).toContain("65,536 canonical candidates");
     expect(registry).toContain("cannot be renamed");
+    expect(registry).toContain("Understand LABS, then use the results");
+    expect(registry).toContain("An open protocol for bounded research");
+    expect(registry).toContain("Put a result to work".toUpperCase());
+    for (const step of ["Match the scope", "Verify the evidence", "Cite or build on it"]) expect(registry).toContain(step);
     expect(registry).toContain("Coverage contributors");
     expect(registry).not.toContain("independent reproductions");
     expect(registry).toContain('href="/research" hreflang="zh-CN"');
     expect(registry).toContain("@media(max-width:420px)");
+    expect(registry).toContain(".labs-explainer-grid,.labs-application-steps { grid-template-columns:1fr; }");
     expect(registry).not.toContain("width:1120px");
 
     const response = await researchResponse(new Request(`https://proofwild.science/en/research/${encodeURIComponent(resultId)}`), repository, "en", resultId);
