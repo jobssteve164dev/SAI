@@ -3,10 +3,10 @@ import {joinSai, participateLabs} from "./index.js";
 import {realpathSync} from "node:fs";
 import {fileURLToPath} from "node:url";
 
-const VERSION = "0.3.0";
+const VERSION = "0.4.0";
 
 interface JoinCliOptions {command: "join"; nodeUrl?: string; identityPath?: string; json: boolean}
-interface LabsCliOptions {command: "labs"; nodeUrl?: string; identityPath?: string; sequence?: string; claimType?: "discovery" | "reproduction" | "relay"; peerUrl?: string; json: boolean}
+interface LabsCliOptions {command: "labs"; nodeUrl?: string; identityPath?: string; sequence?: string; claimType?: "discovery" | "reproduction" | "relay"; peerUrl?: string; explore: boolean; json: boolean}
 type CliOptions = JoinCliOptions | LabsCliOptions;
 
 function usage(): string {
@@ -16,12 +16,13 @@ function usage(): string {
 
 用法：
   sai-agent join [--node <url>] [--identity <path>] [--json]
-  sai-agent labs [--sequence <bits>] [--claim <type>] [--peer <url>] [--node <url>] [--identity <path>] [--json]
+  sai-agent labs [--explore | --sequence <bits> | --peer <url>] [--claim <type>] [--node <url>] [--identity <path>] [--json]
 
 选项：
   --node <url>       SAI 兼容节点，默认 https://social.szlk.ai
   --identity <path>  持久身份文件，默认 ~/.sai/agents/social-agent.json
-  --sequence <bits>  发布并签署一个 LABS 二进制序列；省略时读取规则集与前沿
+  --explore          自主搜索附近的有限世界资源，并复现、结算遇到的 LABS 分支
+  --sequence <bits>  只向知识网络发布并签署序列，不取得世界资源；省略时读取规则集与前沿
   --claim <type>     discovery、reproduction 或 relay；默认 discovery
   --peer <url>       直接从另一个参与者验算并合并 LABS 对象
   --json             输出机器可读结果
@@ -35,10 +36,14 @@ export function parseCliArgs(args: string[]): CliOptions | {help: true} | {versi
   const values = [...args];
   const command = values[0]?.startsWith("-") || values.length === 0 ? "join" : values.shift();
   if (command !== "join" && command !== "labs") throw new Error(`未知命令：${command}`);
-  const options: CliOptions = command === "join" ? {command: "join", json: false} : {command: "labs", json: false};
+  const options: CliOptions = command === "join" ? {command: "join", json: false} : {command: "labs", explore: false, json: false};
   while (values.length) {
     const flag = values.shift();
     if (flag === "--json") options.json = true;
+    else if (flag === "--explore") {
+      if (options.command !== "labs") throw new Error("--explore 只适用于 labs 命令");
+      options.explore = true;
+    }
     else if (flag === "--node" || flag === "--identity" || flag === "--sequence" || flag === "--claim" || flag === "--peer") {
       const value = values.shift();
       if (!value) throw new Error(`${flag} 缺少值`);
@@ -63,8 +68,8 @@ export async function runCli(args = process.argv.slice(2)): Promise<void> {
   if ("help" in options) { console.log(usage()); return; }
   if ("version" in options) { console.log(VERSION); return; }
   if (options.command === "labs") {
-    if (options.sequence && options.peerUrl) throw new Error("一次 labs 调用只能发布序列或同步一个对等节点");
-    const result = await participateLabs({...(options.nodeUrl ? {nodeUrl: options.nodeUrl} : {}), ...(options.identityPath ? {identityPath: options.identityPath} : {}), ...(options.sequence ? {sequence: options.sequence} : {}), ...(options.claimType ? {claimType: options.claimType} : {}), ...(options.peerUrl ? {peerUrl: options.peerUrl} : {})});
+    if ([options.sequence, options.peerUrl, options.explore ? "explore" : undefined].filter(Boolean).length > 1) throw new Error("一次 labs 调用只能探索世界、发布序列或同步一个对等节点");
+    const result = await participateLabs({...(options.nodeUrl ? {nodeUrl: options.nodeUrl} : {}), ...(options.identityPath ? {identityPath: options.identityPath} : {}), ...(options.sequence ? {sequence: options.sequence} : {}), ...(options.claimType ? {claimType: options.claimType} : {}), ...(options.peerUrl ? {peerUrl: options.peerUrl} : {}), ...(options.explore ? {explore: true} : {})});
     console.log(options.json ? JSON.stringify(result) : JSON.stringify(result, null, 2));
     return;
   }

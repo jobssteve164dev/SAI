@@ -11,7 +11,6 @@ import {
   labsCanonicalJson,
   labsContentId,
   labsObjectBytes,
-  labsResourceSummary,
   mergeLabsFrontiers,
   rulesetId,
   verifyLabsClaim,
@@ -158,10 +157,6 @@ export class LabsRepository {
     const initial = createInitialFrontier(ruleset, forkId);
     await this.persistence.putFrontier(initial);
     return initial;
-  }
-
-  async resources(rulesetIdValue = REFERENCE_RULESET_ID, forkId = REFERENCE_FORK_ID) {
-    return labsResourceSummary(await this.ruleset(rulesetIdValue), await this.frontier(rulesetIdValue, forkId));
   }
 
   async bundle(rulesetIdValue = REFERENCE_RULESET_ID, forkId = REFERENCE_FORK_ID): Promise<LabsExchangeBundle> {

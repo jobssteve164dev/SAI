@@ -76,18 +76,22 @@ export function referenceMergeFrontiers(left, right) {
   return {protocol: "sai-labs-frontier/1", ruleset_id: left.ruleset_id, fork_id: left.fork_id, lengths};
 }
 
-export function referenceResources(ruleset, frontier) {
-  let total = 0n;
-  const byLength = {};
-  for (const baseline of ruleset.baselines) {
-    const best = BigInt(frontier.lengths[String(baseline.length)].best_energy);
-    const start = BigInt(baseline.energy);
-    const multiplier = BigInt(baseline.resource_multiplier);
-    const cap = BigInt(baseline.resource_cap);
-    const unlocked = best < start ? (start - best) * multiplier : 0n;
-    const bounded = unlocked > cap ? cap : unlocked;
-    byLength[String(baseline.length)] = bounded.toString();
-    total += bounded;
-  }
-  return {by_length: byLength, total_unlocked: total.toString()};
+export function referenceWorldBranch(ruleset, scope) {
+  const baseline = ruleset.baselines.find((item) => item.length === scope.length);
+  if (!baseline) throw new RangeError("unknown LABS branch length");
+  const variants = referenceSymmetries(baseline.sequence);
+  const candidate = variants[scope.unit_ordinal % variants.length];
+  const prefixLength = Math.min(candidate.length, 64 + Math.floor(scope.unit_ordinal / variants.length) * 16);
+  const body = {
+    protocol: "sai-labs-world-branch/1",
+    world_fork_id: scope.world_fork_id,
+    region_id: scope.region_id,
+    resource_id: scope.resource_id,
+    unit_ordinal: scope.unit_ordinal,
+    ruleset_id: referenceRulesetId(ruleset),
+    length: scope.length,
+    energy_at_most: scope.energy_at_most ?? baseline.energy,
+    sequence_prefix: candidate.slice(0, prefixLength),
+  };
+  return {...body, branch_id: referenceContentId(body)};
 }

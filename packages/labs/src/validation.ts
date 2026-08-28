@@ -1,9 +1,10 @@
 import {Ajv2020, type ValidateFunction} from "ajv/dist/2020.js";
-import rulesetSchema from "../../../spec/labs/1.0.0/ruleset.schema.json" with {type: "json"};
+import rulesetSchema from "../../../spec/labs/2.0.0/ruleset.schema.json" with {type: "json"};
+import worldBranchSchema from "../../../spec/labs/2.0.0/world-branch.schema.json" with {type: "json"};
 import resultSchema from "../../../spec/labs/1.0.0/result.schema.json" with {type: "json"};
 import claimSchema from "../../../spec/labs/1.0.0/claim.schema.json" with {type: "json"};
 import frontierSchema from "../../../spec/labs/1.0.0/frontier.schema.json" with {type: "json"};
-import type {LabsFrontier, LabsResult, LabsRuleset, LabsSignedClaim} from "./index.js";
+import type {LabsFrontier, LabsResult, LabsRuleset, LabsSignedClaim, LabsWorldBranch} from "./index.js";
 
 const ajv = new Ajv2020({strict: true, formats: {uri: /^(https?):\/\/[^\s]+$/}});
 const validators = {
@@ -11,6 +12,7 @@ const validators = {
   result: ajv.compile(resultSchema),
   claim: ajv.compile(claimSchema),
   frontier: ajv.compile(frontierSchema),
+  worldBranch: ajv.compile(worldBranchSchema),
 };
 
 function assertWith<T>(validator: ValidateFunction, value: unknown, label: string): asserts value is T {
@@ -21,3 +23,4 @@ export function assertLabsRuleset(value: unknown): asserts value is LabsRuleset 
 export function assertLabsResult(value: unknown): asserts value is LabsResult { assertWith<LabsResult>(validators.result, value, "LABS result"); }
 export function assertLabsClaim(value: unknown): asserts value is LabsSignedClaim { assertWith<LabsSignedClaim>(validators.claim, value, "LABS claim"); }
 export function assertLabsFrontier(value: unknown): asserts value is LabsFrontier { assertWith<LabsFrontier>(validators.frontier, value, "LABS frontier"); }
+export function assertLabsWorldBranch(value: unknown): asserts value is LabsWorldBranch { assertWith<LabsWorldBranch>(validators.worldBranch, value, "LABS world branch"); }

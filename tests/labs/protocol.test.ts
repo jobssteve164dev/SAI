@@ -9,12 +9,11 @@ import {
   createClaimBody,
   createInitialFrontier,
   createLabsResult,
+  createLabsWorldBranch,
   exactMeritFactor,
   labsCanonicalJson,
   labsContentId,
   labsEnergy,
-  labsResourceId,
-  labsResourceSummary,
   labsSymmetries,
   mergeLabsFrontiers,
   rulesetId,
@@ -32,7 +31,7 @@ import {
   referenceContentId,
   referenceEnergy,
   referenceMergeFrontiers,
-  referenceResources,
+  referenceWorldBranch,
   referenceResult,
   referenceRulesetId,
   referenceSymmetries,
@@ -45,7 +44,7 @@ function syntheticRuleset(): LabsRuleset {
     ...REFERENCE_RULESET,
     name: "LABS conformance fixture",
     summary: "A deliberately weak public baseline used only by deterministic conformance tests.",
-    baselines: [{length: 11, sequence, energy, resource_multiplier: "2", resource_cap: (BigInt(energy) * 2n).toString(), source: {title: "Deterministic conformance fixture", authors: ["SAI contributors"], publication: "SAI LABS test vectors", url: "https://social.szlk.ai/labs/v1"}}],
+    baselines: [{length: 11, sequence, energy, source: {title: "Deterministic conformance fixture", authors: ["SAI contributors"], publication: "SAI LABS test vectors", url: "https://social.szlk.ai/labs/v1"}}],
   };
 }
 
@@ -100,18 +99,12 @@ describe("LABS exact protocol", () => {
     expect(mergeLabsFrontiers(a, b).lengths[451]?.result_ids).toEqual([id("a"), id("b")].sort());
   });
 
-  it("unlocks fork-local public resources monotonically, without duplication or overflow", () => {
+  it("derives a world-scoped finite-resource branch without minting resources", () => {
     const ruleset = syntheticRuleset();
-    const initial = createInitialFrontier(ruleset, "fork:resource-test");
-    const improved = createLabsResult(ruleset, "00011101101");
-    const advanced = addResultToFrontier(initial, improved.result, improved.result_id);
-    const first = labsResourceSummary(ruleset, advanced);
-    const repeated = labsResourceSummary(ruleset, mergeLabsFrontiers(advanced, advanced));
-    expect(BigInt(first.total_unlocked)).toBeGreaterThan(0n);
-    expect(repeated).toEqual(first);
-    expect(BigInt(first.total_unlocked)).toBeLessThanOrEqual(BigInt(first.total_cap));
-    expect(labsResourceId(ruleset, advanced, 11, improved.result.energy, "0")).toBe(labsResourceId(ruleset, advanced, 11, improved.result.energy, "0"));
-    expect(labsResourceSummary(ruleset, initial).total_unlocked).toBe("0");
+    const scope = {world_fork_id: "fork:resource-test", region_id: "region-a", resource_id: "resource-a", unit_ordinal: 0, length: 11};
+    const branch = createLabsWorldBranch(ruleset, scope);
+    expect(branch).toEqual(referenceWorldBranch(ruleset, scope));
+    expect(createLabsWorldBranch(ruleset, {...scope, unit_ordinal: 1}).branch_id).not.toBe(branch.branch_id);
   });
 
   it("retains every equal-energy result received concurrently", async () => {
@@ -142,8 +135,8 @@ describe("LABS exact protocol", () => {
     }
     expect(referenceContentId(REFERENCE_FRONTIER)).toBe(labsContentId(REFERENCE_FRONTIER));
     expect(referenceMergeFrontiers(REFERENCE_FRONTIER, REFERENCE_FRONTIER)).toEqual(mergeLabsFrontiers(REFERENCE_FRONTIER, REFERENCE_FRONTIER));
-    const production = labsResourceSummary(REFERENCE_RULESET, REFERENCE_FRONTIER);
-    expect(referenceResources(REFERENCE_RULESET, REFERENCE_FRONTIER)).toEqual({by_length: Object.fromEntries(Object.entries(production.by_length).map(([length, value]) => [length, value.unlocked])), total_unlocked: production.total_unlocked});
+    const scope = {world_fork_id: REFERENCE_FRONTIER.fork_id, region_id: "public", resource_id: "resource-alpha", unit_ordinal: 0, length: 451};
+    expect(referenceWorldBranch(REFERENCE_RULESET, scope)).toEqual(createLabsWorldBranch(REFERENCE_RULESET, scope));
   });
 
   it("rejects forged energy, oversized input, worse-than-baseline spam, and malicious frontiers", async () => {

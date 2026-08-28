@@ -5,8 +5,8 @@ describe("确定性 Conformance World", () => {
   it("相同状态生成完全相同的观察与动作 ID", () => {
     const state = createWorld("fixed", [{id: "agent:a", x: 0, y: 0, energy: 5, inventory: {}}]);
     expect(buildObservation(state, "agent:a")).toEqual(buildObservation(structuredClone(state), "agent:a"));
-    expect(stateHash(state)).toBe("sha256:9a08445cfcd0bc1582b135bb3c0fb6616f48829be96788e883e9c6c734d629d8");
-    expect(buildObservation(state, "agent:a")!.observation.observation_id).toBe("obs_dndnpoPDmJCYc0g2Dcec2tPNyHYcypUx-tFbSZJzSVo");
+    expect(stateHash(state)).toBe("sha256:68154699f5cae23b423b48255cc422f53725d65d690f23f4df06f1b8aeaccb2c");
+    expect(buildObservation(state, "agent:a")!.observation.observation_id).toBe("obs_O6pyMqMqge3Tn2SmxuXcOj_Ik7geI5mll7PedebfHzM");
     expect(canonicalJson({b: 2, a: 1})).toBe('{"a":1,"b":2}');
   });
 
@@ -33,7 +33,7 @@ describe("确定性 Conformance World", () => {
       {id: "agent:a", x: 1, y: 0, energy: 5, inventory: {}},
       {id: "agent:b", x: 1, y: 0, energy: 5, inventory: {}},
     ]);
-    state.resources["resource-alpha"]!.remaining = 1;
+    state.resources["resource-plain"] = {id: "resource-plain", kind: "ore", x: 1, y: 0, initial_amount: 1, remaining: 1};
     const a = Object.values(buildObservation(state, "agent:a")!.commands).find((action) => action.type === "gather")!;
     const b = Object.values(buildObservation(state, "agent:b")!.commands).find((action) => action.type === "gather")!;
     const first = transition(state, "agent:a", "race-a", a);

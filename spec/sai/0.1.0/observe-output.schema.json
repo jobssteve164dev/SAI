@@ -3,10 +3,11 @@
   "$id": "https://sai.world/spec/0.1.0/observe-output.schema.json",
   "title": "SAI Observe Output",
   "type": "object",
-  "required": ["protocol", "observation_id", "region_id", "cursor", "self", "nearby", "legal_actions"],
+  "required": ["protocol", "observation_id", "world_fork_id", "region_id", "cursor", "self", "nearby", "legal_actions"],
   "properties": {
     "protocol": {"const": "sai/0.1.0"},
     "observation_id": {"type": "string", "pattern": "^obs_[A-Za-z0-9_-]+$"},
+    "world_fork_id": {"type": "string", "pattern": "^fork:[A-Za-z0-9._:-]{1,120}$"},
     "region_id": {"type": "string", "minLength": 1, "maxLength": 128},
     "cursor": {"type": "string", "minLength": 1, "maxLength": 160},
     "self": {
@@ -42,14 +43,32 @@
           },
           {
             "type": "object",
-            "required": ["id", "type", "kind", "x", "y", "remaining"],
+            "required": ["id", "type", "kind", "x", "y", "initial_amount", "remaining"],
             "properties": {
               "id": {"type": "string"},
               "type": {"const": "resource"},
               "kind": {"type": "string", "pattern": "^[a-z][a-z0-9_-]{0,63}$"},
               "x": {"type": "integer", "minimum": 0, "maximum": 65535},
               "y": {"type": "integer", "minimum": 0, "maximum": 65535},
-              "remaining": {"type": "integer", "minimum": 0}
+              "initial_amount": {"type": "integer", "minimum": 0},
+              "remaining": {"type": "integer", "minimum": 0},
+              "labs_branch": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["protocol", "branch_id", "world_fork_id", "region_id", "resource_id", "unit_ordinal", "ruleset_id", "length", "energy_at_most", "sequence_prefix"],
+                "properties": {
+                  "protocol": {"const": "sai-labs-world-branch/1"},
+                  "branch_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+                  "world_fork_id": {"type": "string", "pattern": "^fork:[A-Za-z0-9._:-]{1,120}$"},
+                  "region_id": {"type": "string", "minLength": 1, "maxLength": 128},
+                  "resource_id": {"type": "string", "minLength": 1, "maxLength": 256},
+                  "unit_ordinal": {"type": "integer", "minimum": 0},
+                  "ruleset_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+                  "length": {"type": "integer", "minimum": 2, "maximum": 4096},
+                  "energy_at_most": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"},
+                  "sequence_prefix": {"type": "string", "pattern": "^[01]+$", "maxLength": 4096}
+                }
+              }
             },
             "additionalProperties": false
           }
@@ -86,21 +105,6 @@
           "arguments_schema": {"type": "object"}
         },
         "additionalProperties": false
-      }
-    },
-    "research": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["topic", "optional", "ruleset_id", "fork_id", "frontier", "public_resources_unlocked", "result_truth", "branch_boundary"],
-      "properties": {
-        "topic": {"const": "LABS"},
-        "optional": {"const": true},
-        "ruleset_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
-        "fork_id": {"type": "string", "pattern": "^fork:[A-Za-z0-9._:-]{1,120}$"},
-        "frontier": {"type": "object", "additionalProperties": {"type": "object", "required": ["best_energy", "result_ids"], "properties": {"best_energy": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"}, "result_ids": {"type": "array", "items": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}}}, "additionalProperties": false}},
-        "public_resources_unlocked": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"},
-        "result_truth": {"const": "sequence_and_deterministic_formula"},
-        "branch_boundary": {"const": "knowledge_merges_assets_do_not"}
       }
     }
   },

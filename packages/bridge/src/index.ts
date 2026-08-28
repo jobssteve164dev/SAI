@@ -3,7 +3,7 @@ import {Client, StreamableHTTPClientTransport} from "@modelcontextprotocol/clien
 import {createClientAssertion, type AgentIdentity} from "../../identity/src/index.js";
 import type {ActInput, ActResult, Observation} from "../../kernel/src/index.js";
 import {verifyNodeDescriptor, type NodeDescriptor, type TransferCancellation, type TransferCredential, type TransferReceipt} from "../../federation/src/index.js";
-import {REFERENCE_FORK_ID, REFERENCE_RULESET_ID, createClaimBody, createLabsResult, signLabsClaim, verifyLabsResult, type LabsClaimType, type LabsFrontier, type LabsResult, type LabsRuleset} from "../../labs/src/index.js";
+import {REFERENCE_FORK_ID, REFERENCE_RULESET_ID, createClaimBody, createLabsResult, signLabsClaim, verifyLabsResult, verifyLabsWorldSubmission, type LabsClaimType, type LabsFrontier, type LabsResult, type LabsRuleset, type LabsWorldBranch} from "../../labs/src/index.js";
 import {LabsRepository, MemoryLabsPersistence, syncLabsFromPeer, type LabsExchangeBundle} from "../../labs/src/store.js";
 
 async function expectJson<T>(response: Response): Promise<T> {
@@ -50,20 +50,24 @@ export class SaiBridge {
     const action = this.lastObservation?.legal_actions.find((item) => item.action_id === input.action_id);
     if (action?.type === "research") {
       const args = input.arguments as {operation?: string; sequence?: string; claim_type?: LabsClaimType; evidence_ids?: string[]} | undefined;
-      if (args?.operation !== "publish" || typeof args.sequence !== "string") throw new TypeError("LABS research 动作需要 operation=publish 和 sequence");
-      const rulesetId = this.lastObservation?.research?.ruleset_id ?? REFERENCE_RULESET_ID;
-      const forkId = this.lastObservation?.research?.fork_id ?? REFERENCE_FORK_ID;
-      const {ruleset} = await this.labsRuleset(rulesetId);
+      if (args?.operation !== "solve_branch" || typeof args.sequence !== "string") throw new TypeError("LABS research 动作需要 operation=solve_branch 和 sequence");
+      const resource = this.lastObservation?.nearby.find((item) => item.type === "resource" && item.id === action.target);
+      const branch = resource?.type === "resource" ? resource.labs_branch as LabsWorldBranch | undefined : undefined;
+      if (!branch || branch.world_fork_id !== this.lastObservation?.world_fork_id) throw new TypeError("当前观察中没有可结算的 LABS 世界分支");
+      const {ruleset} = await this.labsRuleset(branch.ruleset_id);
       const {result: labsResult, result_id} = createLabsResult(ruleset, args.sequence);
-      const {signed_claim, claim_id} = signLabsClaim(createClaimBody(result_id, this.identity, args.claim_type ?? "discovery", args.evidence_ids ?? []), this.identity);
-      prepared = {...input, arguments: {operation: "publish", result: labsResult, result_id, signed_claim, claim_id, fork_id: forkId}};
+      const claimType = args.claim_type ?? "reproduction";
+      const {signed_claim, claim_id} = signLabsClaim(createClaimBody(result_id, this.identity, claimType, [...(args.evidence_ids ?? []), branch.branch_id]), this.identity);
+      const settlement = {candidate_sequence: args.sequence, result: labsResult, result_id, signed_claim, claim_id};
+      verifyLabsWorldSubmission(ruleset, branch, settlement, this.identity.agentId);
+      prepared = {...input, arguments: {operation: "settle_branch", branch_id: branch.branch_id, world_fork_id: branch.world_fork_id, ...settlement}};
     }
     const result = await this.requiredClient().callTool({name: "sai_act", arguments: {...prepared}});
     if (result.isError || !result.structuredContent) throw new Error("sai_act 未返回结构化结果");
     return result.structuredContent as unknown as ActResult;
   }
 
-  async labsDiscover(): Promise<{reference_ruleset_id: string; fork_id: string; frontier: LabsFrontier; resources: unknown}> {
+  async labsDiscover(): Promise<{reference_ruleset_id: string; world_fork_id: string; frontier: LabsFrontier}> {
     return expectJson(await fetch(`${this.baseUrl}/labs/v1`, {headers: {accept: "application/json"}}));
   }
 
@@ -71,7 +75,7 @@ export class SaiBridge {
     return expectJson(await fetch(`${this.baseUrl}/labs/v1/rulesets/${encodeURIComponent(id)}`, {headers: {accept: "application/json"}}));
   }
 
-  async labsFrontier(rulesetId = REFERENCE_RULESET_ID, forkId = REFERENCE_FORK_ID): Promise<{frontier: LabsFrontier; resources: unknown}> {
+  async labsFrontier(rulesetId = REFERENCE_RULESET_ID, forkId = REFERENCE_FORK_ID): Promise<{frontier: LabsFrontier}> {
     return expectJson(await fetch(`${this.baseUrl}/labs/v1/frontiers/${encodeURIComponent(rulesetId)}/${encodeURIComponent(forkId)}`, {headers: {accept: "application/json"}}));
   }
 

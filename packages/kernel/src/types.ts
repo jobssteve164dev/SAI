@@ -16,7 +16,26 @@ export interface ResourceState {
   kind: string;
   x: number;
   y: number;
+  initial_amount: number;
   remaining: number;
+  labs?: {
+    ruleset_id: string;
+    length: number;
+    energy_at_most: string;
+  };
+}
+
+export interface LabsWorldBranchObservation {
+  protocol: "sai-labs-world-branch/1";
+  branch_id: string;
+  world_fork_id: string;
+  region_id: string;
+  resource_id: string;
+  unit_ordinal: number;
+  ruleset_id: string;
+  length: number;
+  energy_at_most: string;
+  sequence_prefix: string;
 }
 
 export interface MessageState {
@@ -30,6 +49,7 @@ export interface MessageState {
 export interface RegionState {
   protocol: typeof PROTOCOL;
   rules_version: typeof RULES_VERSION;
+  world_fork_id: string;
   region_id: string;
   event_seq: number;
   logical_tick: number;
@@ -55,30 +75,22 @@ export interface ActionCommand extends LegalAction {
   observed_x: number;
   observed_y: number;
   observed_target_remaining?: number;
+  observed_branch_id?: string;
 }
 
 export interface Observation {
   protocol: typeof PROTOCOL;
   observation_id: string;
+  world_fork_id: string;
   region_id: string;
   cursor: string;
   self: Omit<AgentState, "id"> & {agent_id: string};
   nearby: Array<
     | {id: string; type: "agent"; x: number; y: number}
-    | {id: string; type: "resource"; kind: string; x: number; y: number; remaining: number}
+    | {id: string; type: "resource"; kind: string; x: number; y: number; initial_amount: number; remaining: number; labs_branch?: LabsWorldBranchObservation}
   >;
   messages: MessageState[];
   legal_actions: LegalAction[];
-  research?: {
-    topic: "LABS";
-    optional: true;
-    ruleset_id: string;
-    fork_id: string;
-    frontier: Record<string, {best_energy: string; result_ids: string[]}>;
-    public_resources_unlocked: string;
-    result_truth: "sequence_and_deterministic_formula";
-    branch_boundary: "knowledge_merges_assets_do_not";
-  };
 }
 
 export interface StoredObservation {

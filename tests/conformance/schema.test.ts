@@ -17,6 +17,7 @@ describe("SAI 0.1.0 权威 schema", () => {
   it("验证内核产生的 observation、result、event 与 snapshot", () => {
     const ajv = new Ajv2020({strict: true});
     const state = createWorld("schema", [{id: "agent:a", x: 1, y: 0, energy: 5, inventory: {}}]);
+    state.resources["resource-plain"] = {id: "resource-plain", kind: "ore", x: 1, y: 0, initial_amount: 1, remaining: 1};
     const stored = buildObservation(state, "agent:a")!;
     expect(ajv.validate(load("observe-output"), stored.observation), ajv.errorsText()).toBe(true);
     const gather = Object.values(stored.commands).find((action) => action.type === "gather")!;

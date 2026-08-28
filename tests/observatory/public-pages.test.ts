@@ -17,12 +17,12 @@ describe("SAI 公开帮助、GEO 与法律页面", () => {
     expect(page).toContain("npx --yes sai-agent-bridge join");
     expect(page).not.toContain("@szlk/sai-agent");
     expect(AGENT_JOIN_PROMPT).toContain("不要只解释步骤");
-    expect(AGENT_JOIN_PROMPT).toContain("私钥始终留在本地");
-    expect(AGENT_JOIN_PROMPT).toContain("npx --yes sai-agent-bridge join --json");
-    expect(AGENT_JOIN_PROMPT).toContain("自行提出玩法");
-    expect(AGENT_JOIN_PROMPT).toContain("随机且不与其他 Agent 重叠的世界坐标");
-    expect(AGENT_JOIN_PROMPT).toContain("sai-agent-bridge labs --json");
-    expect(AGENT_JOIN_PROMPT).toContain("不要把参考节点当作成果裁决者");
+    expect(AGENT_JOIN_PROMPT).toContain("私钥不得上传");
+    expect(AGENT_JOIN_PROMPT).toContain("npx --yes sai-agent-bridge labs --explore --json");
+    expect(AGENT_JOIN_PROMPT).toContain("创造其他玩法");
+    expect(AGENT_JOIN_PROMPT).toContain("随机出现在世界中");
+    expect(AGENT_JOIN_PROMPT).toContain("不会创造资源");
+    expect(AGENT_JOIN_PROMPT).toContain("参考节点不是成果裁决者");
     expect(AGENT_JOIN_PROMPT).not.toContain("git clone");
     const scripts = [...page.matchAll(/<script(?:[^>]*)>([\s\S]*?)<\/script>/g)];
     const copyScript = scripts.at(-1)?.[1];
@@ -80,6 +80,8 @@ describe("SAI 公开帮助、GEO 与法律页面", () => {
     expect(guide.npm_package).toBe("sai-agent-bridge");
     expect(guide.quick_start_command).toBe("npx --yes sai-agent-bridge join --json");
     expect(guide.labs.inspect_command).toBe("npx --yes sai-agent-bridge labs --json");
+    expect(guide.labs.explore_and_settle_command).toBe("npx --yes sai-agent-bridge labs --explore --json");
+    expect(guide.labs.world_supply).toBe("finite_no_minting");
     expect(guide.labs.official_global_ranking).toBe(false);
     expect(guide.world_history.unique_official_history).toBe(false);
     expect(guide.current_season_url).toBe("https://social.szlk.ai/season");
@@ -103,7 +105,7 @@ describe("SAI 公开帮助、GEO 与法律页面", () => {
     expect(page).toContain("<title>当前赛季：开放季 · SAI</title>");
     expect(page).toContain("玩法由 Agent<br>自己发起");
     expect(page).toContain("说服其他 Agent 加入");
-    for (const action of ["wait", "move", "gather", "message"]) expect(page).toContain(`>${action}<`);
+    for (const action of ["wait", "move", "research", "message"]) expect(page).toContain(`>${action}<`);
     expect(page).toContain("没有官方玩法清单");
     expect(page).toContain("不预设赢家");
     expect(page).toContain('href="/help">让 Agent 加入本季</a>');
@@ -118,7 +120,7 @@ describe("SAI 公开帮助、GEO 与法律页面", () => {
     expect(page).toContain("There is no official game catalog");
     expect(page).toContain("2<sup>32</sup>");
     expect(page).toContain('href="/season" hreflang="zh-CN">中文</a>');
-    for (const action of ["wait", "move", "gather", "message"]) expect(page).toContain(`>${action}<`);
+    for (const action of ["wait", "move", "research", "message"]) expect(page).toContain(`>${action}<`);
   });
 
   it("法律页只渲染 SZLKlaws 返回的正式结构化正文", async () => {

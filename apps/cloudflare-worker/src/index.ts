@@ -3,7 +3,7 @@ import {randomBytes, randomUUID, type JsonWebKey} from "node:crypto";
 import type {AuthInfo} from "@modelcontextprotocol/server";
 import {AuthService, type AuthSnapshot} from "../../../packages/auth/src/index.js";
 import {assertTransferPrepareInput, createNodeDescriptor, createNodeKeyPair, createTransferCancellation, createTransferCredential, createTransferReceipt, verifyTransferCancellation, verifyTransferCredential, verifyTransferReceipt, type NodeDescriptor, type NodeKeyPair, type TransferCancellation, type TransferCredential, type TransferReceipt} from "../../../packages/federation/src/index.js";
-import {admitAgentAtRandomAddress, buildObservation, createWorld, expandWorldForPopulation, stateHash, transition, type ActInput, type ActResult, type AgentState, type ConformanceEvent, type Observation, type RegionState, type StoredObservation} from "../../../packages/kernel/src/index.js";
+import {admitAgentAtRandomAddress, buildObservation, createWorld, expandWorldForPopulation, stateHash, transition, upgradeWorldForLabs, type ActInput, type ActResult, type AgentState, type ConformanceEvent, type Observation, type RegionState, type StoredObservation} from "../../../packages/kernel/src/index.js";
 import {createSaiMcpHandler} from "../../../packages/mcp/src/index.js";
 import {createObserverSnapshot, observatoryResponse, type ObserverSnapshot} from "./observatory.js";
 import {agentGuideResponse, faviconResponse, helpResponse, legalResponse, llmsResponse, resolveLegalRoute, robotsResponse, seasonResponse, sitemapResponse} from "./public-pages.js";
@@ -37,8 +37,9 @@ function json(value: unknown, status = 200, headers: Record<string, string> = {}
 }
 
 class DurableRegionApplication {
+  private queue: Promise<void> = Promise.resolve();
   constructor(private readonly storage: DurableObjectStorage, readonly regionId: string) {}
-  async state(): Promise<RegionState> { return await this.storage.get<RegionState>("world") ?? createWorld(this.regionId); }
+  async state(): Promise<RegionState> { return upgradeWorldForLabs(await this.storage.get<RegionState>("world") ?? createWorld(this.regionId)); }
 
   async admit(agentId: string): Promise<void> {
     const state = await this.state();
@@ -56,26 +57,28 @@ class DurableRegionApplication {
   }
 
   async act(agentId: string, input: ActInput): Promise<ActResult> {
-    const requestKey = `request:${agentId}:${this.regionId}:${input.request_id}`;
-    const known = await this.storage.get<ActResult>(requestKey);
-    if (known) return known;
-    let result: ActResult;
-    if (await this.storage.get(`agent-lock:${agentId}`)) result = {request_id: input.request_id, status: "rejected", reason: "target_unavailable", available_correction: "observe_again"};
-    else {
-      const stored = await this.storage.get<StoredObservation>(`observation:${input.observation_id}`);
-      if (!stored || stored.agent_id !== agentId) result = {request_id: input.request_id, status: "rejected", reason: "observation_unknown", available_correction: "observe_again"};
+    return this.serial(async () => {
+      const requestKey = `request:${agentId}:${this.regionId}:${input.request_id}`;
+      const known = await this.storage.get<ActResult>(requestKey);
+      if (known) return known;
+      let result: ActResult;
+      if (await this.storage.get(`agent-lock:${agentId}`)) result = {request_id: input.request_id, status: "rejected", reason: "target_unavailable", available_correction: "observe_again"};
       else {
-        const command = stored.commands[input.action_id];
-        if (!command) result = {request_id: input.request_id, status: "rejected", reason: "action_not_found", available_correction: "choose_another_action"};
+        const stored = await this.storage.get<StoredObservation>(`observation:${input.observation_id}`);
+        if (!stored || stored.agent_id !== agentId) result = {request_id: input.request_id, status: "rejected", reason: "observation_unknown", available_correction: "observe_again"};
         else {
-          const outcome = transition(await this.state(), agentId, input.request_id, command, input.arguments ?? {});
-          result = outcome.result;
-          if (outcome.status === "applied") await this.storage.put({world: outcome.state, [`event:${outcome.event.event_seq}`]: outcome.event});
+          const command = stored.commands[input.action_id];
+          if (!command) result = {request_id: input.request_id, status: "rejected", reason: "action_not_found", available_correction: "choose_another_action"};
+          else {
+            const outcome = transition(await this.state(), agentId, input.request_id, command, input.arguments ?? {});
+            result = outcome.result;
+            if (outcome.status === "applied") await this.storage.put({world: outcome.state, [`event:${outcome.event.event_seq}`]: outcome.event});
+          }
         }
       }
-    }
-    await this.storage.put(requestKey, result);
-    return result;
+      await this.storage.put(requestKey, result);
+      return result;
+    });
   }
 
   async exportAgent(agentId: string): Promise<AgentState> { const agent = (await this.state()).agents[agentId]; if (!agent) throw new Error("agent_not_found"); return structuredClone(agent); }
@@ -92,6 +95,14 @@ class DurableRegionApplication {
     const events = keys.map((key) => stored.get(key)).filter((event): event is ConformanceEvent => event !== undefined);
     return createObserverSnapshot(state, stateHash(state), events);
   }
+
+  private async serial<T>(operation: () => Promise<T>): Promise<T> {
+    const previous = this.queue;
+    let release!: () => void;
+    this.queue = new Promise<void>((resolve) => { release = resolve; });
+    await previous;
+    try { return await operation(); } finally { release(); }
+  }
 }
 
 export class RegionDurableObject extends DurableObject<Env> {
@@ -106,7 +117,8 @@ export class RegionDurableObject extends DurableObject<Env> {
     super(ctx, env);
     this.ready = ctx.blockConcurrencyWhile(async () => {
       const world = await ctx.storage.get<RegionState>("world");
-      if (!world) await ctx.storage.put("world", createWorld(env.REGION_ID));
+      const currentWorld = upgradeWorldForLabs(world ?? createWorld(env.REGION_ID));
+      if (!world || stateHash(world) !== stateHash(currentWorld)) await ctx.storage.put("world", currentWorld);
       this.region = new DurableRegionApplication(ctx.storage, env.REGION_ID);
       this.auth = new AuthService({baseUrl: env.PUBLIC_BASE_URL, region: env.REGION_ID, ...((await ctx.storage.get<AuthSnapshot>("auth")) ? {snapshot: await ctx.storage.get<AuthSnapshot>("auth") as AuthSnapshot} : {})});
       this.nodeKeys = await ctx.storage.get<NodeKeyPair>("node-keys") ?? await createNodeKeyPair();
@@ -140,19 +152,17 @@ export class RegionDurableObject extends DurableObject<Env> {
       if (url.pathname === "/api/observer/snapshot" && request.method === "GET") {
         const snapshot = await this.region.observerSnapshot();
         const frontier = await this.labs.frontier();
-        const resources = await this.labs.resources();
         const ruleset = await this.labs.ruleset(frontier.ruleset_id);
         const labs = {
           ruleset_id: frontier.ruleset_id,
-          fork_id: frontier.fork_id,
+          world_fork_id: frontier.fork_id,
           source_title: ruleset.baselines[0]?.source.title ?? ruleset.name,
           source_url: ruleset.baselines[0]?.source.url ?? `${this.env.PUBLIC_BASE_URL}/labs/v1`,
           frontier: ruleset.baselines.map((baseline) => {
             const entry = frontier.lengths[String(baseline.length)]!;
             return {length: baseline.length, best_energy: entry.best_energy, merit_factor: exactMeritFactor(baseline.length, BigInt(entry.best_energy)).decimal, result_ids: entry.result_ids};
           }),
-          public_resources_unlocked: resources.total_unlocked,
-          public_resources_cap: resources.total_cap,
+          finite_resources: snapshot.resources.filter((resource) => resource.labs).map((resource) => ({resource_id: resource.id, kind: resource.kind, initial_amount: resource.initial_amount, remaining: resource.remaining, length: resource.labs!.length})),
         };
         return json({...snapshot, labs}, 200, {"access-control-allow-origin": "*"});
       }

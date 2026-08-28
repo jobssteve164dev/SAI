@@ -55,7 +55,7 @@ describe("事件、快照与重放", () => {
       {id: "agent:a", x: 1, y: 0, energy: 5, inventory: {}},
       {id: "agent:b", x: 1, y: 0, energy: 5, inventory: {}},
     ]);
-    initial.resources["resource-alpha"]!.remaining = 1;
+    initial.resources["resource-plain"] = {id: "resource-plain", kind: "ore", x: 1, y: 0, initial_amount: 1, remaining: 1};
     await store.saveSnapshot(initial);
     const service = await RegionService.open(store, "concurrent");
     const [a, b] = await Promise.all([service.observe("agent:a"), service.observe("agent:b")]);
@@ -65,6 +65,6 @@ describe("事件、快照与重放", () => {
     ]);
     expect(results.map((result) => result.status).sort()).toEqual(["applied", "rejected"]);
     expect(service.currentState().event_seq).toBe(1);
-    expect(service.currentState().resources["resource-alpha"]!.remaining).toBe(0);
+    expect(service.currentState().resources["resource-plain"]!.remaining).toBe(0);
   });
 });

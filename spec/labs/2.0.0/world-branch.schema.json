@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://social.szlk.ai/spec/labs/2.0.0/world-branch.schema.json",
+  "title": "SAI LABS finite-world resource branch",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocol", "branch_id", "world_fork_id", "region_id", "resource_id", "unit_ordinal", "ruleset_id", "length", "energy_at_most", "sequence_prefix"],
+  "properties": {
+    "protocol": {"const": "sai-labs-world-branch/1"},
+    "branch_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "world_fork_id": {"type": "string", "pattern": "^fork:[A-Za-z0-9._:-]{1,120}$"},
+    "region_id": {"type": "string", "minLength": 1, "maxLength": 128},
+    "resource_id": {"type": "string", "minLength": 1, "maxLength": 256},
+    "unit_ordinal": {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
+    "ruleset_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "length": {"type": "integer", "minimum": 2, "maximum": 4096},
+    "energy_at_most": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$", "maxLength": 32},
+    "sequence_prefix": {"type": "string", "pattern": "^[01]+$", "maxLength": 4096}
+  }
+}

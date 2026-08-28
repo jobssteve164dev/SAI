@@ -1,5 +1,14 @@
 import {compactId, sha256} from "./canonical.js";
 import {
+  REFERENCE_FORK_ID,
+  REFERENCE_RULESET,
+  REFERENCE_RULESET_ID,
+  createLabsWorldBranch,
+  verifyLabsWorldSubmission,
+  type LabsResult,
+  type LabsSignedClaim,
+} from "../../labs/src/index.js";
+import {
   PROTOCOL,
   RULES_VERSION,
   type ActResult,
@@ -26,11 +35,23 @@ const MESSAGE_SCHEMA = {
   properties: {content: {type: "string", minLength: 1, maxLength: 160}},
   additionalProperties: false,
 };
+const RESEARCH_SCHEMA = {
+  type: "object",
+  required: ["operation", "sequence"],
+  properties: {
+    operation: {const: "solve_branch"},
+    sequence: {type: "string", pattern: "^[01]+$", maxLength: 4096},
+    claim_type: {enum: ["discovery", "reproduction"]},
+    evidence_ids: {type: "array", maxItems: 128, uniqueItems: true, items: {type: "string", pattern: "^sha256:[0-9a-f]{64}$"}},
+  },
+  additionalProperties: false,
+};
 
 export function createWorld(regionId = "local", agents: AgentState[] = []): RegionState {
   return {
     protocol: PROTOCOL,
     rules_version: RULES_VERSION,
+    world_fork_id: REFERENCE_FORK_ID,
     region_id: regionId,
     event_seq: 0,
     logical_tick: 0,
@@ -38,11 +59,27 @@ export function createWorld(regionId = "local", agents: AgentState[] = []): Regi
     height: INITIAL_WORLD_AXIS,
     agents: Object.fromEntries(agents.map((agent) => [agent.id, structuredClone(agent)])),
     resources: {
-      "resource-alpha": {id: "resource-alpha", kind: "crystal", x: 1, y: 0, remaining: 8},
-      "resource-beta": {id: "resource-beta", kind: "fiber", x: 3, y: 3, remaining: 5},
+      "resource-alpha": {id: "resource-alpha", kind: "crystal", x: 1, y: 0, initial_amount: 8, remaining: 8, labs: {ruleset_id: REFERENCE_RULESET_ID, length: 451, energy_at_most: "12625"}},
+      "resource-beta": {id: "resource-beta", kind: "fiber", x: 3, y: 3, initial_amount: 5, remaining: 5, labs: {ruleset_id: REFERENCE_RULESET_ID, length: 518, energy_at_most: "18463"}},
     },
     messages: [],
   };
+}
+
+export function upgradeWorldForLabs(state: RegionState): RegionState {
+  const next = structuredClone(state);
+  next.world_fork_id ||= REFERENCE_FORK_ID;
+  const bindings = {
+    "resource-alpha": {initial_amount: 8, length: 451, energy_at_most: "12625"},
+    "resource-beta": {initial_amount: 5, length: 518, energy_at_most: "18463"},
+  } as const;
+  for (const resource of Object.values(next.resources)) {
+    const known = bindings[resource.id as keyof typeof bindings];
+    resource.initial_amount ??= known?.initial_amount ?? resource.remaining;
+    if (known && !resource.labs) resource.labs = {ruleset_id: REFERENCE_RULESET_ID, length: known.length, energy_at_most: known.energy_at_most};
+  }
+  validateState(next);
+  return next;
 }
 
 export function worldAddressCapacity(state: Pick<RegionState, "width" | "height">): number {
@@ -92,19 +129,21 @@ export function toSnapshot(state: RegionState): Snapshot {
 export function fromSnapshot(snapshot: Snapshot): RegionState {
   const {state_hash, ...state} = snapshot;
   if (stateHash(state) !== state_hash) throw new Error("snapshot state_hash 不匹配");
-  validateState(state);
-  return state;
+  return upgradeWorldForLabs(state);
 }
 
 export function validateState(state: RegionState): void {
   const integers = [state.event_seq, state.logical_tick, state.width, state.height];
   for (const agent of Object.values(state.agents)) integers.push(agent.x, agent.y, agent.energy, ...Object.values(agent.inventory));
-  for (const resource of Object.values(state.resources)) integers.push(resource.x, resource.y, resource.remaining);
+  for (const resource of Object.values(state.resources)) integers.push(resource.x, resource.y, resource.initial_amount, resource.remaining);
   if (integers.some((value) => !Number.isSafeInteger(value) || value < 0)) throw new TypeError("世界状态含非法整数");
   if (state.width < 1 || state.height < 1) throw new TypeError("世界尺寸必须为正整数");
   if (state.width > MAX_WORLD_AXIS || state.height > MAX_WORLD_AXIS || worldAddressCapacity(state) > MAX_WORLD_ADDRESSES) throw new TypeError("世界地址空间不能超过 2^32");
   if (Object.values(state.agents).some((agent) => agent.x >= state.width || agent.y >= state.height)) throw new TypeError("Agent 坐标超出世界边界");
   if (Object.values(state.resources).some((resource) => resource.x >= state.width || resource.y >= state.height)) throw new TypeError("资源坐标超出世界边界");
+  if (!/^fork:[A-Za-z0-9._:-]{1,120}$/.test(state.world_fork_id)) throw new TypeError("世界分叉标识无效");
+  if (Object.values(state.resources).some((resource) => resource.remaining > resource.initial_amount)) throw new TypeError("资源余额不能超过创世存量");
+  if (Object.values(state.resources).some((resource) => resource.labs && (resource.labs.ruleset_id !== REFERENCE_RULESET_ID || !REFERENCE_RULESET.baselines.some((item) => item.length === resource.labs?.length) || !/^(0|[1-9][0-9]*)$/.test(resource.labs.energy_at_most)))) throw new TypeError("资源 LABS 分支绑定无效");
 }
 
 function actionId(seed: unknown): string {
@@ -126,6 +165,18 @@ function addAction(commands: Record<string, ActionCommand>, agent: AgentState, a
   commands[id] = {action_id: id, ...action, observed_x: agent.x, observed_y: agent.y};
 }
 
+function labsBranch(state: RegionState, resource: RegionState["resources"][string]) {
+  if (!resource.labs || resource.remaining < 1) return undefined;
+  return createLabsWorldBranch(REFERENCE_RULESET, {
+    world_fork_id: state.world_fork_id,
+    region_id: state.region_id,
+    resource_id: resource.id,
+    unit_ordinal: resource.initial_amount - resource.remaining,
+    length: resource.labs.length,
+    energy_at_most: resource.labs.energy_at_most,
+  });
+}
+
 export function buildObservation(state: RegionState, agentId: string): StoredObservation | undefined {
   const agent = state.agents[agentId];
   if (!agent) return undefined;
@@ -138,9 +189,15 @@ export function buildObservation(state: RegionState, agentId: string): StoredObs
     }
   }
   for (const resource of Object.values(state.resources).sort((a, b) => a.id.localeCompare(b.id))) {
-    if (agent.energy > 0 && resource.remaining > 0 && resource.x === agent.x && resource.y === agent.y) {
+    if (!resource.labs && agent.energy > 0 && resource.remaining > 0 && resource.x === agent.x && resource.y === agent.y) {
       const action: Omit<ActionCommand, "action_id" | "observed_x" | "observed_y"> = {type: "gather", target: resource.id, observed_target_remaining: resource.remaining};
       const id = actionId({agent: agent.id, x: agent.x, y: agent.y, type: action.type, target: action.target, remaining: resource.remaining});
+      commands[id] = {action_id: id, observed_x: agent.x, observed_y: agent.y, ...action};
+    }
+    const branch = labsBranch(state, resource);
+    if (branch && agent.energy > 0 && resource.x === agent.x && resource.y === agent.y) {
+      const action = {type: "research" as const, target: resource.id, observed_target_remaining: resource.remaining, observed_branch_id: branch.branch_id, arguments_schema: RESEARCH_SCHEMA};
+      const id = actionId({agent: agent.id, x: agent.x, y: agent.y, type: action.type, target: action.target, branch_id: branch.branch_id});
       commands[id] = {action_id: id, observed_x: agent.x, observed_y: agent.y, ...action};
     }
   }
@@ -149,18 +206,22 @@ export function buildObservation(state: RegionState, agentId: string): StoredObs
   }
   const nearby: Observation["nearby"] = [
     ...Object.values(state.agents).filter((item) => item.id !== agent.id && distance(agent, item) <= 2).map((item) => ({id: item.id, type: "agent" as const, x: item.x, y: item.y})),
-    ...Object.values(state.resources).filter((item) => distance(agent, item) <= 2).map((item) => ({id: item.id, type: "resource" as const, kind: item.kind, x: item.x, y: item.y, remaining: item.remaining})),
+    ...Object.values(state.resources).filter((item) => distance(agent, item) <= 2).map((item) => {
+      const branch = labsBranch(state, item);
+      return {id: item.id, type: "resource" as const, kind: item.kind, x: item.x, y: item.y, initial_amount: item.initial_amount, remaining: item.remaining, ...(branch ? {labs_branch: branch} : {})};
+    }),
   ].sort((a, b) => a.id.localeCompare(b.id));
   const messages = state.messages
     .filter((message) => message.from === agent.id || message.to === agent.id)
     .slice(-24)
     .map((message) => structuredClone(message));
   const cursor = `seq:${state.event_seq}`;
-  const legal_actions = Object.values(commands).map(({observed_x: _x, observed_y: _y, observed_target_remaining: _r, ...publicAction}) => publicAction);
-  const observationSeed = {region: state.region_id, agent: agent.id, cursor, self: agent, nearby, messages, legal_actions};
+  const legal_actions = Object.values(commands).map(({observed_x: _x, observed_y: _y, observed_target_remaining: _r, observed_branch_id: _b, ...publicAction}) => publicAction);
+  const observationSeed = {world_fork_id: state.world_fork_id, region: state.region_id, agent: agent.id, cursor, self: agent, nearby, messages, legal_actions};
   const observation: Observation = {
     protocol: PROTOCOL,
     observation_id: compactId("obs", observationSeed),
+    world_fork_id: state.world_fork_id,
     region_id: state.region_id,
     cursor,
     self: {agent_id: agent.id, x: agent.x, y: agent.y, energy: agent.energy, inventory: structuredClone(agent.inventory)},
@@ -179,13 +240,28 @@ function validMessage(argumentsValue: Record<string, unknown>): argumentsValue i
   return Object.keys(argumentsValue).length === 1 && typeof argumentsValue.content === "string" && argumentsValue.content.length >= 1 && argumentsValue.content.length <= 160;
 }
 
+type LabsSettlementArguments = {
+  operation: "settle_branch";
+  branch_id: string;
+  candidate_sequence: string;
+  result: LabsResult;
+  result_id: string;
+  signed_claim: LabsSignedClaim;
+  claim_id: string;
+};
+
+function labsSettlementArguments(value: Record<string, unknown>): value is LabsSettlementArguments {
+  return value.operation === "settle_branch" && typeof value.branch_id === "string" && typeof value.candidate_sequence === "string" && typeof value.result === "object" && value.result !== null && typeof value.result_id === "string" && typeof value.signed_claim === "object" && value.signed_claim !== null && typeof value.claim_id === "string";
+}
+
 export function transition(state: RegionState, agentId: string, requestId: string, command: ActionCommand, argumentsValue: Record<string, unknown> = {}): TransitionResult {
   const current = state.agents[agentId];
   if (!current) return {status: "rejected", state, result: reject(requestId, "agent_not_found")};
   if (current.x !== command.observed_x || current.y !== command.observed_y) return {status: "rejected", state, result: reject(requestId, "position_changed")};
   if (command.type !== "wait" && current.energy < 1) return {status: "rejected", state, result: reject(requestId, "insufficient_energy")};
-  if (command.type !== "message" && Object.keys(argumentsValue).length > 0) return {status: "rejected", state, result: reject(requestId, "arguments_invalid")};
+  if (command.type !== "message" && command.type !== "research" && Object.keys(argumentsValue).length > 0) return {status: "rejected", state, result: reject(requestId, "arguments_invalid")};
   if (command.type === "message" && !validMessage(argumentsValue)) return {status: "rejected", state, result: reject(requestId, "arguments_invalid")};
+  if (command.type === "research" && !labsSettlementArguments(argumentsValue)) return {status: "rejected", state, result: reject(requestId, "arguments_invalid")};
 
   const next = structuredClone(state);
   const agent = next.agents[agentId]!;
@@ -200,10 +276,25 @@ export function transition(state: RegionState, agentId: string, requestId: strin
   }
   if (command.type === "gather") {
     const resource = command.target ? next.resources[command.target] : undefined;
-    if (!resource || resource.remaining < 1 || resource.remaining !== command.observed_target_remaining) return {status: "rejected", state, result: reject(requestId, "target_unavailable")};
+    if (!resource || resource.labs || resource.remaining < 1 || resource.remaining !== command.observed_target_remaining) return {status: "rejected", state, result: reject(requestId, "target_unavailable")};
     if (resource.x !== agent.x || resource.y !== agent.y) return {status: "rejected", state, result: reject(requestId, "target_out_of_range")};
     resource.remaining -= 1; agent.energy -= 1; cost.energy = 1;
     agent.inventory[resource.kind] = (agent.inventory[resource.kind] ?? 0) + 1; received[resource.kind] = 1;
+  }
+  if (command.type === "research") {
+    const resource = command.target ? next.resources[command.target] : undefined;
+    if (!resource || resource.remaining < 1 || resource.remaining !== command.observed_target_remaining) return {status: "rejected", state, result: reject(requestId, "target_unavailable")};
+    if (resource.x !== agent.x || resource.y !== agent.y) return {status: "rejected", state, result: reject(requestId, "target_out_of_range")};
+    const branch = labsBranch(next, resource);
+    if (!branch || branch.branch_id !== command.observed_branch_id || branch.branch_id !== argumentsValue.branch_id) return {status: "rejected", state, result: reject(requestId, "target_unavailable")};
+    const settlement = argumentsValue as LabsSettlementArguments;
+    try { verifyLabsWorldSubmission(REFERENCE_RULESET, branch, settlement, agentId); }
+    catch { return {status: "rejected", state, result: reject(requestId, "arguments_invalid")}; }
+    resource.remaining -= 1;
+    agent.energy -= 1;
+    cost.energy = 1;
+    agent.inventory[resource.kind] = (agent.inventory[resource.kind] ?? 0) + 1;
+    received[resource.kind] = 1;
   }
   if (command.type === "message") {
     const target = command.target ? next.agents[command.target] : undefined;

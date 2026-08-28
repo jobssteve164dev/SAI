@@ -37,12 +37,11 @@ export async function handleLabsRequest(request: Request, repository: LabsReposi
         role: "cache-index-forwarder",
         authority: false,
         reference_ruleset_id: REFERENCE_RULESET_ID,
-        fork_id: REFERENCE_FORK_ID,
+        world_fork_id: REFERENCE_FORK_ID,
         ruleset_url: `/labs/v1/rulesets/${REFERENCE_RULESET_ID}`,
         frontier_url: `/labs/v1/frontiers/${REFERENCE_RULESET_ID}/${REFERENCE_FORK_ID}`,
         exchange_url: `/labs/v1/exchange/${REFERENCE_RULESET_ID}/${REFERENCE_FORK_ID}`,
         frontier,
-        resources: await repository.resources(),
       });
     }
     if (parts[2] === "rulesets" && parts[3] && parts.length === 4 && request.method === "GET") return json({ruleset_id: parts[3], ruleset: await repository.ruleset(parts[3])}, 200, {etag: `"${parts[3]}"`, "cache-control": "public, max-age=31536000, immutable"});
@@ -56,7 +55,7 @@ export async function handleLabsRequest(request: Request, repository: LabsReposi
       const id = await repository.ingest(body.kind, body.value, body.id, body.fork_id ?? REFERENCE_FORK_ID);
       return json({status: "stored", id}, 201);
     }
-    if (parts[2] === "frontiers" && parts[3] && parts[4] && parts.length === 5 && request.method === "GET") return json({frontier: await repository.frontier(parts[3], parts[4]), resources: await repository.resources(parts[3], parts[4])});
+    if (parts[2] === "frontiers" && parts[3] && parts[4] && parts.length === 5 && request.method === "GET") return json({frontier: await repository.frontier(parts[3], parts[4])});
     if (parts[2] === "exchange" && parts[3] && parts[4] && parts.length === 5 && request.method === "GET") return json(await repository.bundle(parts[3], parts[4]));
     if (parts[2] === "exchange" && parts.length === 3 && request.method === "POST") {
       const bundle = await boundedJson(request) as LabsExchangeBundle;
@@ -68,4 +67,3 @@ export async function handleLabsRequest(request: Request, repository: LabsReposi
     return json({error: "invalid_labs_object", error_description: error instanceof Error ? error.message : "LABS request failed"}, error instanceof RangeError ? 413 : 400);
   }
 }
-

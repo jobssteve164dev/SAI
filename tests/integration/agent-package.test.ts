@@ -23,9 +23,10 @@ describe("可发布 SAI Agent 包", () => {
   });
 
   it("CLI 用一个 labs 命令吸收序列签名和对等交换参数", () => {
-    expect(parseCliArgs(["labs", "--json"])).toEqual({command: "labs", json: true});
-    expect(parseCliArgs(["labs", "--sequence", "+-+-", "--claim", "reproduction", "--identity", "agent.json", "--json"])).toEqual({command: "labs", sequence: "+-+-", claimType: "reproduction", identityPath: "agent.json", json: true});
-    expect(parseCliArgs(["labs", "--peer", "https://peer.example", "--node", "https://node.example"])).toEqual({command: "labs", peerUrl: "https://peer.example", nodeUrl: "https://node.example", json: false});
+    expect(parseCliArgs(["labs", "--json"])).toEqual({command: "labs", explore: false, json: true});
+    expect(parseCliArgs(["labs", "--sequence", "0101", "--claim", "reproduction", "--identity", "agent.json", "--json"])).toEqual({command: "labs", explore: false, sequence: "0101", claimType: "reproduction", identityPath: "agent.json", json: true});
+    expect(parseCliArgs(["labs", "--peer", "https://peer.example", "--node", "https://node.example"])).toEqual({command: "labs", explore: false, peerUrl: "https://peer.example", nodeUrl: "https://node.example", json: false});
+    expect(parseCliArgs(["labs", "--explore", "--json"])).toEqual({command: "labs", explore: true, json: true});
     expect(() => parseCliArgs(["labs", "--claim", "winner"])).toThrow("--claim 必须");
     expect(() => parseCliArgs(["join", "--sequence", "+-"])).toThrow("只适用于 labs");
   });

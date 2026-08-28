@@ -1,14 +1,14 @@
 import {createHash, createPrivateKey, createPublicKey, sign, verify, type JsonWebKey} from "node:crypto";
 import {agentIdFromJwk, type AgentIdentity} from "../../identity/src/index.js";
-import {assertLabsClaim, assertLabsFrontier, assertLabsResult, assertLabsRuleset} from "./validation.js";
+import {assertLabsClaim, assertLabsFrontier, assertLabsResult, assertLabsRuleset, assertLabsWorldBranch} from "./validation.js";
 
-export const LABS_RULESET_PROTOCOL = "sai-labs-ruleset/1" as const;
+export const LABS_RULESET_PROTOCOL = "sai-labs-ruleset/2" as const;
 export const LABS_RESULT_PROTOCOL = "sai-labs-result/1" as const;
 export const LABS_CLAIM_PROTOCOL = "sai-labs-claim/1" as const;
 export const LABS_FRONTIER_PROTOCOL = "sai-labs-frontier/1" as const;
 export const LABS_MAX_OBJECT_BYTES = 131_072;
 export const LABS_MAX_SEQUENCE_LENGTH = 4_096;
-export const REFERENCE_FORK_ID = "fork:sai-public-labs-1";
+export const REFERENCE_FORK_ID = "fork:sai-public-world-1";
 
 export type LabsClaimType = "discovery" | "reproduction" | "relay";
 
@@ -23,8 +23,6 @@ export interface LabsBaseline {
   length: number;
   sequence: string;
   energy: string;
-  resource_multiplier: string;
-  resource_cap: string;
   source: LabsSource;
 }
 
@@ -37,7 +35,6 @@ export interface LabsRuleset {
   symmetry: "complement_reverse_alternating_group_8";
   energy_formula: "sum_k_1_to_L_minus_1(sum_i_1_to_L_minus_k(s_i*s_i_plus_k))^2";
   merit_factor_formula: "L^2/(2E)";
-  resource_kind: "labs-public-research-unit";
   max_object_bytes: number;
   max_sequence_length: number;
   baselines: LabsBaseline[];
@@ -77,13 +74,17 @@ export interface LabsFrontier {
   lengths: Record<string, LabsFrontierEntry>;
 }
 
-export interface LabsResourceSummary {
+export interface LabsWorldBranch {
+  protocol: "sai-labs-world-branch/1";
+  branch_id: string;
+  world_fork_id: string;
+  region_id: string;
+  resource_id: string;
+  unit_ordinal: number;
   ruleset_id: string;
-  fork_id: string;
-  kind: LabsRuleset["resource_kind"];
-  by_length: Record<string, {baseline_energy: string; best_energy: string; multiplier: string; unlocked: string; cap: string}>;
-  total_unlocked: string;
-  total_cap: string;
+  length: number;
+  energy_at_most: string;
+  sequence_prefix: string;
 }
 
 function normalize(value: unknown): unknown {
@@ -189,8 +190,6 @@ function assertRuleset(ruleset: LabsRuleset): void {
     if (canonicalLabsSequence(baseline.sequence) !== baseline.sequence) throw new TypeError(`长度 ${baseline.length} 的基线不是规范序列`);
     const energy = assertDecimal(baseline.energy, "baseline.energy");
     if (labsEnergy(baseline.sequence) !== energy) throw new TypeError(`长度 ${baseline.length} 的基线能量不匹配`);
-    const multiplier = assertDecimal(baseline.resource_multiplier, "resource_multiplier");
-    if (multiplier <= 0n || assertDecimal(baseline.resource_cap, "resource_cap") !== energy * multiplier) throw new TypeError("LABS 资源上限必须在创世时固定为基线能量乘以倍率");
   }
   if (ruleset.baselines.length === 0) throw new TypeError("LABS 规则集至少需要一个基线");
 }
@@ -303,40 +302,44 @@ export function addResultToFrontier(frontier: LabsFrontier, result: LabsResult, 
   return mergeLabsFrontiers(frontier, candidate);
 }
 
-export function labsResourceSummary(ruleset: LabsRuleset, frontier: LabsFrontier): LabsResourceSummary {
-  assertLabsFrontier(frontier);
-  if (rulesetId(ruleset) !== frontier.ruleset_id) throw new TypeError("LABS 资源计算的规则集与前沿不匹配");
-  let totalUnlocked = 0n;
-  let totalCap = 0n;
-  const byLength: LabsResourceSummary["by_length"] = {};
-  for (const baseline of ruleset.baselines) {
-    const entry = frontier.lengths[String(baseline.length)];
-    if (!entry) throw new TypeError("LABS 前沿缺少规则集长度");
-    const baselineEnergy = assertDecimal(baseline.energy, "baseline.energy");
-    const bestEnergy = assertDecimal(entry.best_energy, "frontier.best_energy");
-    const multiplier = assertDecimal(baseline.resource_multiplier, "resource_multiplier");
-    const cap = assertDecimal(baseline.resource_cap, "resource_cap");
-    const unlocked = bestEnergy < baselineEnergy ? (baselineEnergy - bestEnergy) * multiplier : 0n;
-    const bounded = unlocked > cap ? cap : unlocked;
-    byLength[String(baseline.length)] = {baseline_energy: baseline.energy, best_energy: bestEnergy.toString(), multiplier: multiplier.toString(), unlocked: bounded.toString(), cap: cap.toString()};
-    totalUnlocked += bounded;
-    totalCap += cap;
-  }
-  return {ruleset_id: frontier.ruleset_id, fork_id: frontier.fork_id, kind: ruleset.resource_kind, by_length: byLength, total_unlocked: totalUnlocked.toString(), total_cap: totalCap.toString()};
+export function createLabsWorldBranch(ruleset: LabsRuleset, scope: {world_fork_id: string; region_id: string; resource_id: string; unit_ordinal: number; length: number; energy_at_most?: string}): LabsWorldBranch {
+  const baseline = ruleset.baselines.find((item) => item.length === scope.length);
+  if (!baseline) throw new RangeError("LABS 世界分支长度不在规则集内");
+  if (!/^fork:[A-Za-z0-9._:-]{1,120}$/.test(scope.world_fork_id)) throw new TypeError("LABS world_fork_id 无效");
+  if (!Number.isSafeInteger(scope.unit_ordinal) || scope.unit_ordinal < 0) throw new RangeError("LABS 世界分支序号无效");
+  const energyAtMost = assertDecimal(scope.energy_at_most ?? baseline.energy, "energy_at_most");
+  if (energyAtMost > BigInt(baseline.energy)) throw new RangeError("LABS 世界分支门槛不能弱于公开基线");
+  const variants = labsSymmetries(baseline.sequence);
+  const candidate = variants[scope.unit_ordinal % variants.length] as string;
+  const prefixLength = Math.min(candidate.length, 64 + Math.floor(scope.unit_ordinal / variants.length) * 16);
+  const body = {
+    protocol: "sai-labs-world-branch/1" as const,
+    world_fork_id: scope.world_fork_id,
+    region_id: scope.region_id,
+    resource_id: scope.resource_id,
+    unit_ordinal: scope.unit_ordinal,
+    ruleset_id: rulesetId(ruleset),
+    length: scope.length,
+    energy_at_most: energyAtMost.toString(),
+    sequence_prefix: candidate.slice(0, prefixLength),
+  };
+  const branch = {...body, branch_id: labsContentId(body)};
+  assertLabsWorldBranch(branch);
+  if (labsObjectBytes(branch) > LABS_MAX_OBJECT_BYTES) throw new RangeError("LABS 世界分支超过对象大小上限");
+  return branch;
 }
 
-export function labsResourceId(ruleset: LabsRuleset, frontier: LabsFrontier, length: number, energyThreshold: string, unitOrdinal: string): string {
-  const summary = labsResourceSummary(ruleset, frontier);
-  const baseline = ruleset.baselines.find((item) => item.length === length);
-  const current = summary.by_length[String(length)];
-  if (!baseline || !current) throw new RangeError("LABS 资源长度无效");
-  const threshold = assertDecimal(energyThreshold, "energy_threshold");
-  const ordinal = assertDecimal(unitOrdinal, "unit_ordinal");
-  const baseEnergy = assertDecimal(baseline.energy, "baseline.energy");
-  const bestEnergy = assertDecimal(current.best_energy, "best_energy");
-  const multiplier = assertDecimal(baseline.resource_multiplier, "resource_multiplier");
-  if (threshold < bestEnergy || threshold >= baseEnergy || ordinal >= multiplier) throw new RangeError("LABS 公共资源单元尚未解锁");
-  return labsContentId({protocol: "sai-labs-resource/1", ruleset_id: frontier.ruleset_id, fork_id: frontier.fork_id, length, energy_threshold: threshold.toString(), unit_ordinal: ordinal.toString()});
+export function verifyLabsWorldSubmission(ruleset: LabsRuleset, branch: LabsWorldBranch, submission: {candidate_sequence: string; result: LabsResult; result_id: string; signed_claim: LabsSignedClaim; claim_id: string}, agentId: string): void {
+  assertLabsWorldBranch(branch);
+  const expected = createLabsWorldBranch(ruleset, branch);
+  if (labsCanonicalJson(expected) !== labsCanonicalJson(branch)) throw new TypeError("LABS 世界分支与当前资源状态不匹配");
+  if (submission.candidate_sequence.length !== branch.length || !submission.candidate_sequence.startsWith(branch.sequence_prefix)) throw new TypeError("LABS 序列不属于当前世界分支");
+  const created = createLabsResult(ruleset, submission.candidate_sequence);
+  if (created.result_id !== submission.result_id || labsCanonicalJson(created.result) !== labsCanonicalJson(submission.result)) throw new TypeError("LABS 世界结算结果与候选序列不匹配");
+  if (BigInt(submission.result.energy) > BigInt(branch.energy_at_most)) throw new RangeError("LABS 结果未达到当前世界分支能量门槛");
+  verifyLabsResult(ruleset, submission.result, submission.result_id);
+  verifyLabsClaim(submission.signed_claim, submission.claim_id);
+  if (submission.signed_claim.claim.agent_id !== agentId || submission.signed_claim.claim.result_id !== submission.result_id || submission.signed_claim.claim.claim_type === "relay" || !submission.signed_claim.claim.evidence_ids.includes(branch.branch_id)) throw new TypeError("LABS 世界结算声明的身份、结果或分支绑定无效");
 }
 
 function bitsFromHex(hex: string, length: number): string {
@@ -353,7 +356,7 @@ const REFERENCE_SOURCE: LabsSource = {
 
 function referenceBaseline(length: number, hex: string, energy: string): LabsBaseline {
   const sequence = canonicalLabsSequence(bitsFromHex(hex, length));
-  return {length, sequence, energy, resource_multiplier: "1", resource_cap: energy, source: REFERENCE_SOURCE};
+  return {length, sequence, energy, source: REFERENCE_SOURCE};
 }
 
 export const REFERENCE_RULESET: LabsRuleset = {
@@ -365,7 +368,6 @@ export const REFERENCE_RULESET: LabsRuleset = {
   symmetry: "complement_reverse_alternating_group_8",
   energy_formula: "sum_k_1_to_L_minus_1(sum_i_1_to_L_minus_k(s_i*s_i_plus_k))^2",
   merit_factor_formula: "L^2/(2E)",
-  resource_kind: "labs-public-research-unit",
   max_object_bytes: LABS_MAX_OBJECT_BYTES,
   max_sequence_length: LABS_MAX_SEQUENCE_LENGTH,
   baselines: [
