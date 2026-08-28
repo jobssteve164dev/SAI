@@ -7,6 +7,10 @@ import {admitAgentAtRandomAddress, buildObservation, createWorld, expandWorldFor
 import {createSaiMcpHandler} from "../../../packages/mcp/src/index.js";
 import {createObserverSnapshot, observatoryResponse, type ObserverSnapshot} from "./observatory.js";
 import {agentGuideResponse, faviconResponse, helpResponse, legalResponse, llmsResponse, resolveLegalRoute, robotsResponse, seasonResponse, sitemapResponse} from "./public-pages.js";
+import {handleLabsRequest} from "../../../packages/labs/src/http.js";
+import {LabsRepository, type LabsPersistence, type LabsStoredObject} from "../../../packages/labs/src/store.js";
+import {exactMeritFactor, type LabsFrontier} from "../../../packages/labs/src/index.js";
+import {createLabsAwareApplication} from "../../../packages/labs/src/application.js";
 
 interface Env {
   REGIONS: DurableObjectNamespace<RegionDurableObject>;
@@ -15,6 +19,18 @@ interface Env {
 }
 
 interface PreparedTransfer {credential: TransferCredential; status: "locked" | "completed" | "recovered"; receipt?: TransferReceipt}
+
+class DurableLabsPersistence implements LabsPersistence {
+  constructor(private readonly storage: DurableObjectStorage) {}
+  async getObject(id: string): Promise<LabsStoredObject | undefined> { return this.storage.get<LabsStoredObject>(`labs-object:${id}`); }
+  async putObject(id: string, object: LabsStoredObject): Promise<void> { await this.storage.put(`labs-object:${id}`, object); }
+  async listObjects(): Promise<Array<{id: string; object: LabsStoredObject}>> {
+    const stored = await this.storage.list<LabsStoredObject>({prefix: "labs-object:"});
+    return [...stored.entries()].map(([key, object]) => ({id: key.slice("labs-object:".length), object})).sort((a, b) => a.id.localeCompare(b.id));
+  }
+  async getFrontier(rulesetId: string, forkId: string): Promise<LabsFrontier | undefined> { return this.storage.get<LabsFrontier>(`labs-frontier:${rulesetId}:${forkId}`); }
+  async putFrontier(frontier: LabsFrontier): Promise<void> { await this.storage.put(`labs-frontier:${frontier.ruleset_id}:${frontier.fork_id}`, frontier); }
+}
 
 function json(value: unknown, status = 200, headers: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(value), {status, headers: {"content-type": "application/json; charset=utf-8", "cache-control": "no-store", ...headers}});
@@ -84,6 +100,7 @@ export class RegionDurableObject extends DurableObject<Env> {
   private auth!: AuthService;
   private nodeKeys!: NodeKeyPair;
   private mcp!: ReturnType<typeof createSaiMcpHandler>;
+  private labs!: LabsRepository;
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -94,7 +111,8 @@ export class RegionDurableObject extends DurableObject<Env> {
       this.auth = new AuthService({baseUrl: env.PUBLIC_BASE_URL, region: env.REGION_ID, ...((await ctx.storage.get<AuthSnapshot>("auth")) ? {snapshot: await ctx.storage.get<AuthSnapshot>("auth") as AuthSnapshot} : {})});
       this.nodeKeys = await ctx.storage.get<NodeKeyPair>("node-keys") ?? await createNodeKeyPair();
       await ctx.storage.put({auth: this.auth.snapshot(), "node-keys": this.nodeKeys});
-      this.mcp = createSaiMcpHandler(this.region);
+      this.labs = await LabsRepository.open(new DurableLabsPersistence(ctx.storage));
+      this.mcp = createSaiMcpHandler(createLabsAwareApplication(this.region, this.labs));
     });
   }
 
@@ -102,6 +120,8 @@ export class RegionDurableObject extends DurableObject<Env> {
     await this.ready;
     const url = new URL(request.url);
     try {
+      const labsResponse = await handleLabsRequest(request, this.labs);
+      if (labsResponse) return labsResponse;
       if (url.pathname === "/" && (request.method === "GET" || request.method === "HEAD")) return observatoryResponse(request.method);
       if (url.pathname === "/en" && (request.method === "GET" || request.method === "HEAD")) return observatoryResponse(request.method, "en");
       if (url.pathname === "/") return json({error: "method_not_allowed"}, 405, {allow: "GET, HEAD"});
@@ -117,7 +137,25 @@ export class RegionDurableObject extends DurableObject<Env> {
       const legalRoute = resolveLegalRoute(url.pathname);
       if (legalRoute && (request.method === "GET" || request.method === "HEAD")) return legalResponse(request, legalRoute.route, legalRoute.locale);
       if (url.pathname === "/health") return json({service: "SAI", implementation: "cloudflare-durable-object", version: "0.2.0", node_id: this.nodeKeys.nodeId, region_id: this.env.REGION_ID, status: "ok"});
-      if (url.pathname === "/api/observer/snapshot" && request.method === "GET") return json(await this.region.observerSnapshot(), 200, {"access-control-allow-origin": "*"});
+      if (url.pathname === "/api/observer/snapshot" && request.method === "GET") {
+        const snapshot = await this.region.observerSnapshot();
+        const frontier = await this.labs.frontier();
+        const resources = await this.labs.resources();
+        const ruleset = await this.labs.ruleset(frontier.ruleset_id);
+        const labs = {
+          ruleset_id: frontier.ruleset_id,
+          fork_id: frontier.fork_id,
+          source_title: ruleset.baselines[0]?.source.title ?? ruleset.name,
+          source_url: ruleset.baselines[0]?.source.url ?? `${this.env.PUBLIC_BASE_URL}/labs/v1`,
+          frontier: ruleset.baselines.map((baseline) => {
+            const entry = frontier.lengths[String(baseline.length)]!;
+            return {length: baseline.length, best_energy: entry.best_energy, merit_factor: exactMeritFactor(baseline.length, BigInt(entry.best_energy)).decimal, result_ids: entry.result_ids};
+          }),
+          public_resources_unlocked: resources.total_unlocked,
+          public_resources_cap: resources.total_cap,
+        };
+        return json({...snapshot, labs}, 200, {"access-control-allow-origin": "*"});
+      }
       if (url.pathname === "/api/observer/snapshot" && request.method === "OPTIONS") return new Response(null, {status: 204, headers: {allow: "GET, OPTIONS", "access-control-allow-origin": "*", "access-control-allow-methods": "GET, OPTIONS"}});
       if (url.pathname === "/api/observer/snapshot") return json({error: "method_not_allowed"}, 405, {allow: "GET, OPTIONS", "access-control-allow-origin": "*"});
       if (url.pathname === "/.well-known/sai-node") return json(await this.descriptor());

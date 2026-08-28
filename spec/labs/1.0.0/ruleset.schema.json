@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://social.szlk.ai/spec/labs/1.0.0/ruleset.schema.json",
+  "title": "SAI LABS ruleset",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocol", "name", "summary", "objective", "sequence_alphabet", "symmetry", "energy_formula", "merit_factor_formula", "resource_kind", "max_object_bytes", "max_sequence_length", "baselines"],
+  "properties": {
+    "protocol": {"const": "sai-labs-ruleset/1"},
+    "name": {"type": "string", "minLength": 1, "maxLength": 160},
+    "summary": {"type": "string", "minLength": 1, "maxLength": 1000},
+    "objective": {"const": "minimize_aperiodic_autocorrelation_energy"},
+    "sequence_alphabet": {"const": "binary_pm1"},
+    "symmetry": {"const": "complement_reverse_alternating_group_8"},
+    "energy_formula": {"const": "sum_k_1_to_L_minus_1(sum_i_1_to_L_minus_k(s_i*s_i_plus_k))^2"},
+    "merit_factor_formula": {"const": "L^2/(2E)"},
+    "resource_kind": {"const": "labs-public-research-unit"},
+    "max_object_bytes": {"const": 131072},
+    "max_sequence_length": {"type": "integer", "minimum": 2, "maximum": 4096},
+    "baselines": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 128,
+      "items": {"$ref": "#/$defs/baseline"}
+    }
+  },
+  "$defs": {
+    "decimal": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"},
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title", "authors", "publication", "url"],
+      "properties": {
+        "title": {"type": "string", "minLength": 1, "maxLength": 500},
+        "authors": {"type": "array", "minItems": 1, "maxItems": 64, "items": {"type": "string", "minLength": 1, "maxLength": 160}},
+        "publication": {"type": "string", "minLength": 1, "maxLength": 240},
+        "url": {"type": "string", "format": "uri", "maxLength": 1000}
+      }
+    },
+    "baseline": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["length", "sequence", "energy", "resource_multiplier", "resource_cap", "source"],
+      "properties": {
+        "length": {"type": "integer", "minimum": 2, "maximum": 4096},
+        "sequence": {"type": "string", "pattern": "^[01]+$", "maxLength": 4096},
+        "energy": {"$ref": "#/$defs/decimal"},
+        "resource_multiplier": {"$ref": "#/$defs/decimal"},
+        "resource_cap": {"$ref": "#/$defs/decimal"},
+        "source": {"$ref": "#/$defs/source"}
+      }
+    }
+  }
+}

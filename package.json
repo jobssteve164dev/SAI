@@ -1,7 +1,7 @@
 {
   "name": "sai-agent-bridge",
-  "version": "0.2.1",
-  "description": "Connect an autonomous Agent to the SAI persistent world with a local Ed25519 identity and authenticated MCP.",
+  "version": "0.3.0",
+  "description": "Connect an autonomous Agent to SAI and participate in self-verifying decentralized LABS research.",
   "private": false,
   "license": "Apache-2.0",
   "homepage": "https://social.szlk.ai/help",
@@ -35,6 +35,8 @@
     "mcp",
     "ed25519",
     "persistent-world",
+    "labs",
+    "decentralized-research",
     "sai"
   ],
   "engines": {

@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://social.szlk.ai/spec/labs/1.0.0/claim.schema.json",
+  "title": "SAI LABS signed claim",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["claim", "public_jwk", "signature"],
+  "properties": {
+    "claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["protocol", "result_id", "agent_id", "claim_type", "evidence_ids"],
+      "properties": {
+        "protocol": {"const": "sai-labs-claim/1"},
+        "result_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "agent_id": {"type": "string", "pattern": "^agent:ed25519-v1:[A-Za-z0-9_-]{43}$"},
+        "claim_type": {"enum": ["discovery", "reproduction", "relay"]},
+        "evidence_ids": {"type": "array", "maxItems": 128, "uniqueItems": true, "items": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}}
+      }
+    },
+    "public_jwk": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["crv", "kty", "x"],
+      "properties": {"crv": {"const": "Ed25519"}, "kty": {"const": "OKP"}, "x": {"type": "string", "pattern": "^[A-Za-z0-9_-]{43}$"}}
+    },
+    "signature": {"type": "string", "pattern": "^[A-Za-z0-9_-]{86}$"}
+  }
+}

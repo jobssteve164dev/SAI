@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://social.szlk.ai/spec/labs/1.0.0/result.schema.json",
+  "title": "SAI LABS result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocol", "ruleset_id", "length", "sequence", "energy"],
+  "properties": {
+    "protocol": {"const": "sai-labs-result/1"},
+    "ruleset_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "length": {"type": "integer", "minimum": 2, "maximum": 4096},
+    "sequence": {"type": "string", "pattern": "^[01]+$", "maxLength": 4096},
+    "energy": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"}
+  }
+}

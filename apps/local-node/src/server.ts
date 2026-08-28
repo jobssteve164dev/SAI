@@ -8,6 +8,9 @@ import {FileStore} from "./store.js";
 import {RegionService} from "./service.js";
 import {LocalFederationService} from "./federation.js";
 import {assertTransferPrepareInput, type TransferCredential, type TransferReceipt} from "../../../packages/federation/src/index.js";
+import {handleLabsRequest} from "../../../packages/labs/src/http.js";
+import {FileLabsPersistence, LabsRepository} from "../../../packages/labs/src/store.js";
+import {createLabsAwareApplication} from "../../../packages/labs/src/application.js";
 
 function json(value: unknown, status = 200, headers: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(value), {status, headers: {"content-type": "application/json", ...headers}});
@@ -19,6 +22,7 @@ export interface LocalNode {
   auth: AuthService;
   region: RegionService;
   federation: LocalFederationService;
+  labs: LabsRepository;
   close(): Promise<void>;
 }
 
@@ -36,13 +40,16 @@ export async function startLocalNode(options: {dataDirectory: string; host?: str
   const authSnapshot = await store.loadAuth();
   const auth = new AuthService({baseUrl: url, region: options.regionId ?? "local", ...(authSnapshot ? {snapshot: authSnapshot} : {})});
   const federation = await LocalFederationService.open({baseUrl: url, regionId: options.regionId ?? "local", region, auth, store});
-  const mcp = createSaiMcpHandler(region);
+  const labs = await LabsRepository.open(await FileLabsPersistence.open(options.dataDirectory));
+  const mcp = createSaiMcpHandler(createLabsAwareApplication(region, labs));
 
   const fetchHandler = {
     fetch: async (request: Request): Promise<Response> => {
       const requestUrl = new URL(request.url);
       try {
         if (request.headers.get("host") !== new URL(url).host) return json({error: "invalid_host"}, 403);
+        const labsResponse = await handleLabsRequest(request, labs);
+        if (labsResponse) return labsResponse;
         const origin = request.headers.get("origin");
         if (origin && origin !== url) return json({error: "invalid_origin"}, 403);
         if (requestUrl.pathname === "/" || requestUrl.pathname === "/health") return json({service: "SAI", version: "0.2.0", node_id: federation.keys.nodeId, region_id: options.regionId ?? "local", status: "ok"});
@@ -109,7 +116,7 @@ export async function startLocalNode(options: {dataDirectory: string; host?: str
   };
   server.removeAllListeners("request");
   server.on("request", toNodeHandler(fetchHandler));
-  return {url, server, auth, region, federation, close: async () => { await mcp.close(); await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve())); }};
+  return {url, server, auth, region, federation, labs, close: async () => { await mcp.close(); await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve())); }};
 }
 
 async function authenticated(request: Request, auth: AuthService, requiredScope: "observe" | "act") {

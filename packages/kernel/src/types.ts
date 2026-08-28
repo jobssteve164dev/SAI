@@ -40,7 +40,7 @@ export interface RegionState {
   messages: MessageState[];
 }
 
-export type ActionType = "wait" | "move" | "gather" | "message";
+export type ActionType = "wait" | "move" | "gather" | "message" | "research";
 export type Direction = "north" | "east" | "south" | "west";
 
 export interface LegalAction {
@@ -69,6 +69,16 @@ export interface Observation {
   >;
   messages: MessageState[];
   legal_actions: LegalAction[];
+  research?: {
+    topic: "LABS";
+    optional: true;
+    ruleset_id: string;
+    fork_id: string;
+    frontier: Record<string, {best_energy: string; result_ids: string[]}>;
+    public_resources_unlocked: string;
+    result_truth: "sequence_and_deterministic_formula";
+    branch_boundary: "knowledge_merges_assets_do_not";
+  };
 }
 
 export interface StoredObservation {

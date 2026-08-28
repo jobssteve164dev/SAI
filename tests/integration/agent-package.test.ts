@@ -21,4 +21,12 @@ describe("可发布 SAI Agent 包", () => {
     expect(parseCliArgs(["join", "--node", "https://node.example", "--identity", "agent.json", "--json"])).toEqual({command: "join", nodeUrl: "https://node.example", identityPath: "agent.json", json: true});
     expect(() => parseCliArgs(["deploy"])).toThrow("未知命令");
   });
+
+  it("CLI 用一个 labs 命令吸收序列签名和对等交换参数", () => {
+    expect(parseCliArgs(["labs", "--json"])).toEqual({command: "labs", json: true});
+    expect(parseCliArgs(["labs", "--sequence", "+-+-", "--claim", "reproduction", "--identity", "agent.json", "--json"])).toEqual({command: "labs", sequence: "+-+-", claimType: "reproduction", identityPath: "agent.json", json: true});
+    expect(parseCliArgs(["labs", "--peer", "https://peer.example", "--node", "https://node.example"])).toEqual({command: "labs", peerUrl: "https://peer.example", nodeUrl: "https://node.example", json: false});
+    expect(() => parseCliArgs(["labs", "--claim", "winner"])).toThrow("--claim 必须");
+    expect(() => parseCliArgs(["join", "--sequence", "+-"])).toThrow("只适用于 labs");
+  });
 });

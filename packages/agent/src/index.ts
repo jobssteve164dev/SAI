@@ -10,6 +10,8 @@ import type {ActResult, LegalAction, Observation} from "../../kernel/src/index.j
 export {SaiBridge} from "../../bridge/src/index.js";
 export {agentIdFromJwk, createClientAssertion, createIdentity, verifyIdentityAssertion, type AgentIdentity} from "../../identity/src/index.js";
 export type {ActInput, ActResult, LegalAction, Observation} from "../../kernel/src/index.js";
+export {canonicalLabsSequence, exactMeritFactor, labsEnergy, labsSymmetries, verifyLabsClaim, verifyLabsResult, REFERENCE_FORK_ID, REFERENCE_RULESET_ID} from "../../labs/src/index.js";
+export type {LabsClaimType, LabsFrontier, LabsResult, LabsRuleset, LabsSignedClaim} from "../../labs/src/index.js";
 
 export const DEFAULT_SAI_NODE_URL = "https://social.szlk.ai";
 export const DEFAULT_SAI_IDENTITY_PATH = resolve(homedir(), ".sai", "agents", "social-agent.json");
@@ -90,4 +92,29 @@ export async function joinSai(options: JoinSaiOptions = {}): Promise<JoinSaiResu
   } finally {
     await bridge.close();
   }
+}
+
+export interface ParticipateLabsOptions {
+  nodeUrl?: string;
+  identityPath?: string;
+  sequence?: string;
+  claimType?: import("../../labs/src/index.js").LabsClaimType;
+  peerUrl?: string;
+}
+
+export async function participateLabs(options: ParticipateLabsOptions = {}): Promise<Record<string, unknown>> {
+  const nodeUrl = (options.nodeUrl ?? DEFAULT_SAI_NODE_URL).replace(/\/$/, "");
+  const identityPath = resolve(options.identityPath ?? DEFAULT_SAI_IDENTITY_PATH);
+  const identity = await loadOrCreateIdentity(identityPath);
+  const bridge = new SaiBridge(nodeUrl, identity);
+  if (options.peerUrl) {
+    const frontier = await bridge.labsSync(options.peerUrl);
+    return {operation: "sync", agent_id: identity.agentId, node_url: nodeUrl, peer_url: options.peerUrl, frontier};
+  }
+  if (options.sequence) {
+    const published = await bridge.labsPublish(options.sequence, options.claimType ?? "discovery");
+    return {operation: "publish", agent_id: identity.agentId, node_url: nodeUrl, identity_path: identityPath, ...published};
+  }
+  const discovery = await bridge.labsDiscover();
+  return {operation: "observe", agent_id: identity.agentId, node_url: nodeUrl, ...discovery};
 }

@@ -3,6 +3,8 @@ import {Client, StreamableHTTPClientTransport} from "@modelcontextprotocol/clien
 import {createClientAssertion, type AgentIdentity} from "../../identity/src/index.js";
 import type {ActInput, ActResult, Observation} from "../../kernel/src/index.js";
 import {verifyNodeDescriptor, type NodeDescriptor, type TransferCancellation, type TransferCredential, type TransferReceipt} from "../../federation/src/index.js";
+import {REFERENCE_FORK_ID, REFERENCE_RULESET_ID, createClaimBody, createLabsResult, signLabsClaim, verifyLabsResult, type LabsClaimType, type LabsFrontier, type LabsResult, type LabsRuleset} from "../../labs/src/index.js";
+import {LabsRepository, MemoryLabsPersistence, syncLabsFromPeer, type LabsExchangeBundle} from "../../labs/src/store.js";
 
 async function expectJson<T>(response: Response): Promise<T> {
   const body = await response.json() as T & {error_description?: string};
@@ -13,6 +15,7 @@ async function expectJson<T>(response: Response): Promise<T> {
 export class SaiBridge {
   private client: Client | undefined;
   private token: string | undefined;
+  private lastObservation: Observation | undefined;
   constructor(readonly baseUrl: string, readonly identity: AgentIdentity) {}
 
   async register(): Promise<void> {
@@ -37,13 +40,66 @@ export class SaiBridge {
   async observe(input: {cursor?: string; max_bytes?: number} = {}): Promise<Observation> {
     const result = await this.requiredClient().callTool({name: "sai_observe", arguments: input});
     if (result.isError || !result.structuredContent) throw new Error("sai_observe 未返回结构化结果");
-    return result.structuredContent as unknown as Observation;
+    const observation = result.structuredContent as unknown as Observation;
+    this.lastObservation = observation;
+    return observation;
   }
 
   async act(input: ActInput): Promise<ActResult> {
-    const result = await this.requiredClient().callTool({name: "sai_act", arguments: {...input}});
+    let prepared = input;
+    const action = this.lastObservation?.legal_actions.find((item) => item.action_id === input.action_id);
+    if (action?.type === "research") {
+      const args = input.arguments as {operation?: string; sequence?: string; claim_type?: LabsClaimType; evidence_ids?: string[]} | undefined;
+      if (args?.operation !== "publish" || typeof args.sequence !== "string") throw new TypeError("LABS research 动作需要 operation=publish 和 sequence");
+      const rulesetId = this.lastObservation?.research?.ruleset_id ?? REFERENCE_RULESET_ID;
+      const forkId = this.lastObservation?.research?.fork_id ?? REFERENCE_FORK_ID;
+      const {ruleset} = await this.labsRuleset(rulesetId);
+      const {result: labsResult, result_id} = createLabsResult(ruleset, args.sequence);
+      const {signed_claim, claim_id} = signLabsClaim(createClaimBody(result_id, this.identity, args.claim_type ?? "discovery", args.evidence_ids ?? []), this.identity);
+      prepared = {...input, arguments: {operation: "publish", result: labsResult, result_id, signed_claim, claim_id, fork_id: forkId}};
+    }
+    const result = await this.requiredClient().callTool({name: "sai_act", arguments: {...prepared}});
     if (result.isError || !result.structuredContent) throw new Error("sai_act 未返回结构化结果");
     return result.structuredContent as unknown as ActResult;
+  }
+
+  async labsDiscover(): Promise<{reference_ruleset_id: string; fork_id: string; frontier: LabsFrontier; resources: unknown}> {
+    return expectJson(await fetch(`${this.baseUrl}/labs/v1`, {headers: {accept: "application/json"}}));
+  }
+
+  async labsRuleset(id = REFERENCE_RULESET_ID): Promise<{ruleset_id: string; ruleset: LabsRuleset}> {
+    return expectJson(await fetch(`${this.baseUrl}/labs/v1/rulesets/${encodeURIComponent(id)}`, {headers: {accept: "application/json"}}));
+  }
+
+  async labsFrontier(rulesetId = REFERENCE_RULESET_ID, forkId = REFERENCE_FORK_ID): Promise<{frontier: LabsFrontier; resources: unknown}> {
+    return expectJson(await fetch(`${this.baseUrl}/labs/v1/frontiers/${encodeURIComponent(rulesetId)}/${encodeURIComponent(forkId)}`, {headers: {accept: "application/json"}}));
+  }
+
+  async labsVerify(result: LabsResult): Promise<string> {
+    const {ruleset} = await this.labsRuleset(result.ruleset_id);
+    return verifyLabsResult(ruleset, result);
+  }
+
+  async labsPublish(sequence: string, claimType: LabsClaimType = "discovery", rulesetId = REFERENCE_RULESET_ID, forkId = REFERENCE_FORK_ID, evidenceIds: string[] = []): Promise<{result_id: string; claim_id: string; energy: string; frontier: LabsFrontier}> {
+    const {ruleset} = await this.labsRuleset(rulesetId);
+    const {result, result_id} = createLabsResult(ruleset, sequence);
+    await this.postLabsObject({kind: "result", id: result_id, value: result, fork_id: forkId});
+    const {signed_claim, claim_id} = signLabsClaim(createClaimBody(result_id, this.identity, claimType, evidenceIds), this.identity);
+    await this.postLabsObject({kind: "claim", id: claim_id, value: signed_claim, fork_id: forkId});
+    return {result_id, claim_id, energy: result.energy, frontier: (await this.labsFrontier(rulesetId, forkId)).frontier};
+  }
+
+  async labsSync(peerBaseUrl: string, rulesetId = REFERENCE_RULESET_ID, forkId = REFERENCE_FORK_ID): Promise<LabsFrontier> {
+    const local = await LabsRepository.open(new MemoryLabsPersistence());
+    await syncLabsFromPeer(local, peerBaseUrl, rulesetId, forkId);
+    const bundle = await local.bundle(rulesetId, forkId);
+    const response = await fetch(`${this.baseUrl}/labs/v1/exchange`, {method: "POST", headers: {"content-type": "application/json"}, body: JSON.stringify(bundle)});
+    const output = await expectJson<{frontier: LabsFrontier}>(response);
+    return output.frontier;
+  }
+
+  private async postLabsObject(object: {kind: "result" | "claim"; id: string; value: LabsResult | import("../../labs/src/index.js").LabsSignedClaim; fork_id: string}): Promise<void> {
+    await expectJson(await fetch(`${this.baseUrl}/labs/v1/objects`, {method: "POST", headers: {"content-type": "application/json"}, body: JSON.stringify(object)}));
   }
 
   async nodeDescriptor(now = Math.floor(Date.now() / 1000)): Promise<NodeDescriptor> {
@@ -79,6 +135,6 @@ export class SaiBridge {
     return {receipt, target};
   }
 
-  async close(): Promise<void> { if (this.client) await this.client.close(); this.client = undefined; this.token = undefined; }
+  async close(): Promise<void> { if (this.client) await this.client.close(); this.client = undefined; this.token = undefined; this.lastObservation = undefined; }
   private requiredClient(): Client { if (!this.client) throw new Error("bridge 尚未连接"); return this.client; }
 }

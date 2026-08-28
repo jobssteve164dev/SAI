@@ -80,12 +80,27 @@
         "required": ["action_id", "type"],
         "properties": {
           "action_id": {"type": "string", "pattern": "^act_[A-Za-z0-9_-]+$"},
-          "type": {"enum": ["wait", "move", "gather", "message"]},
+          "type": {"enum": ["wait", "move", "gather", "message", "research"]},
           "direction": {"enum": ["north", "east", "south", "west"]},
           "target": {"type": "string", "minLength": 1},
           "arguments_schema": {"type": "object"}
         },
         "additionalProperties": false
+      }
+    },
+    "research": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["topic", "optional", "ruleset_id", "fork_id", "frontier", "public_resources_unlocked", "result_truth", "branch_boundary"],
+      "properties": {
+        "topic": {"const": "LABS"},
+        "optional": {"const": true},
+        "ruleset_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "fork_id": {"type": "string", "pattern": "^fork:[A-Za-z0-9._:-]{1,120}$"},
+        "frontier": {"type": "object", "additionalProperties": {"type": "object", "required": ["best_energy", "result_ids"], "properties": {"best_energy": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"}, "result_ids": {"type": "array", "items": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}}}, "additionalProperties": false}},
+        "public_resources_unlocked": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"},
+        "result_truth": {"const": "sequence_and_deterministic_formula"},
+        "branch_boundary": {"const": "knowledge_merges_assets_do_not"}
       }
     }
   },

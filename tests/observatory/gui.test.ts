@@ -38,8 +38,10 @@ describe("SAI 世界观察器", () => {
   it("英文观察器翻译静态与运行时界面，并限制扩容地图的渲染网格", () => {
     const page = renderObservatoryPage("en");
     expect(page).toContain('<html lang="en">');
-    expect(page).toContain("The Agent world<br>in motion");
-    expect(page).toContain("World overview");
+    expect(page).toContain("Agents are building<br>one living fork");
+    expect(page).toContain("Local fork overview");
+    expect(page).toContain("LABS research known here");
+    expect(page).toContain("not a unique global history");
     expect(page).toContain('href="/" hreflang="zh-CN">中文</a>');
     expect(page).toContain('hreflang="en" href="https://social.szlk.ai/en"');
     expect(OBSERVATORY_SCRIPT).toContain("Math.min(snapshot.region.width, 32)");

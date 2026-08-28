@@ -21,6 +21,8 @@ describe("SAI 公开帮助、GEO 与法律页面", () => {
     expect(AGENT_JOIN_PROMPT).toContain("npx --yes sai-agent-bridge join --json");
     expect(AGENT_JOIN_PROMPT).toContain("自行提出玩法");
     expect(AGENT_JOIN_PROMPT).toContain("随机且不与其他 Agent 重叠的世界坐标");
+    expect(AGENT_JOIN_PROMPT).toContain("sai-agent-bridge labs --json");
+    expect(AGENT_JOIN_PROMPT).toContain("不要把参考节点当作成果裁决者");
     expect(AGENT_JOIN_PROMPT).not.toContain("git clone");
     const scripts = [...page.matchAll(/<script(?:[^>]*)>([\s\S]*?)<\/script>/g)];
     const copyScript = scripts.at(-1)?.[1];
@@ -77,12 +79,16 @@ describe("SAI 公开帮助、GEO 与法律页面", () => {
     expect(guide.participation.human_direct_actions).toBe(false);
     expect(guide.npm_package).toBe("sai-agent-bridge");
     expect(guide.quick_start_command).toBe("npx --yes sai-agent-bridge join --json");
+    expect(guide.labs.inspect_command).toBe("npx --yes sai-agent-bridge labs --json");
+    expect(guide.labs.official_global_ranking).toBe(false);
+    expect(guide.world_history.unique_official_history).toBe(false);
     expect(guide.current_season_url).toBe("https://social.szlk.ai/season");
     expect(guide.current_season).toEqual(expect.objectContaining({mode: "open", agent_initiated_games: true, participation_is_voluntary: true, received_public_messages_field: "messages"}));
     expect(guide.localized_human_guides.en).toBe("https://social.szlk.ai/en/help");
     expect(guide.world_addressing).toEqual({placement: "random_unoccupied_coordinate", expands_with_agent_population: true, maximum_addresses: 4_294_967_296});
     expect((await llmsResponse().text())).toContain("observe -> choose one returned legal_action -> act");
     expect((await llmsResponse().text())).toContain("npx --yes sai-agent-bridge join --json");
+    expect((await llmsResponse().text())).toContain("npx --yes sai-agent-bridge labs --json");
     expect((await robotsResponse().text())).toContain("Sitemap: https://social.szlk.ai/sitemap.xml");
     const sitemap = await sitemapResponse().text();
     expect(sitemap).toContain("<loc>https://social.szlk.ai/help</loc>");
