@@ -39,8 +39,11 @@ export class SaiBridge {
   }
 
   async observe(input: {cursor?: string; max_bytes?: number} = {}): Promise<Observation> {
-    const result = await this.requiredClient().callTool({name: "sai_observe", arguments: input});
-    if (result.isError || !result.structuredContent) throw new Error("sai_observe 未返回结构化结果");
+    const result = await this.requiredClient().callTool({name: "sai_observe", arguments: {...input, max_bytes: input.max_bytes ?? 65_536}});
+    if (result.isError || !result.structuredContent) {
+      const detail = result.content.find((item) => item.type === "text")?.text;
+      throw new Error(`sai_observe 未返回结构化结果${detail ? `：${detail}` : ""}`);
+    }
     const observation = result.structuredContent as unknown as Observation;
     this.lastObservation = observation;
     return observation;
@@ -57,12 +60,14 @@ export class SaiBridge {
       const branch = resource?.type === "resource" ? resource.labs_branch as LabsWorldBranch | undefined : undefined;
       if (!branch || branch.economic_network_id !== ECONOMIC_NETWORK_ID) throw new TypeError("当前观察中没有可结算的 LABS 世界分支");
       const {ruleset} = await this.labsRuleset(branch.ruleset_id);
-      const research = executeLabsWorldResearch(ruleset, branch);
-      const claimType: LabsClaimType = research.record.contribution_type === "frontier_improvement" ? "discovery" : "reproduction";
+      const {supply} = await this.economy();
+      if (supply.economic_network_id !== branch.economic_network_id) throw new TypeError("LABS 研究观察与经济链不匹配");
+      const research = executeLabsWorldResearch(ruleset, branch, {economic_parent_id: supply.active_tip_id, claimant_agent_id: this.identity.agentId});
+      const claimType: LabsClaimType = research.record.contribution_type === "frontier_improvement" ? "discovery" : "coverage";
       const evidence = [...(args.evidence_ids ?? []), branch.branch_id, research.task_id, research.artifact_id, research.record_id];
       const {signed_claim, claim_id} = signLabsClaim(createClaimBody(research.result_id, this.identity, claimType, evidence), this.identity);
       const settlement = {candidate_sequence: research.candidate_sequence, result: research.result, result_id: research.result_id, signed_claim, claim_id, research_task: research.task, task_id: research.task_id, method_artifact: research.artifact, artifact_id: research.artifact_id, research_record: research.record, record_id: research.record_id};
-      verifyLabsWorldSubmission(ruleset, branch, settlement, this.identity.agentId);
+      verifyLabsWorldSubmission(ruleset, branch, settlement, this.identity.agentId, supply.active_tip_id);
       researchReceipt = {
         result_id: research.result_id,
         record_id: research.record_id,
@@ -70,6 +75,10 @@ export class SaiBridge {
         artifact_id: research.artifact_id,
         contribution_type: research.record.contribution_type,
         evaluated_candidates: research.record.evaluated_candidates,
+        new_canonical_candidates: research.record.new_canonical_candidates,
+        unit_index: branch.unit_index,
+        economic_parent_id: supply.active_tip_id,
+        reward_units: research.record.reward_units,
         energy: research.result.energy,
         result_page: `${this.baseUrl.replace(/\/$/, "")}/research/${encodeURIComponent(research.result_id)}`,
         reproducibility_bundle: `${this.baseUrl.replace(/\/$/, "")}/labs/v1/results/${encodeURIComponent(research.result_id)}/bundle`,
@@ -99,6 +108,10 @@ export class SaiBridge {
 
   async labsRegistry(): Promise<LabsRegistrySnapshot> {
     return expectJson(await fetch(`${this.baseUrl}/labs/v1/registry`, {headers: {accept: "application/json"}}));
+  }
+
+  async economy(): Promise<{supply: WorldSupplyObservation}> {
+    return expectJson(await fetch(`${this.baseUrl}/economy/v1`, {headers: {accept: "application/json"}}));
   }
 
   async labsResult(resultId: string): Promise<{protocol: "sai-labs-result-detail/1"; authority: false; entry: LabsRegistryEntry}> {
@@ -186,7 +199,11 @@ export interface LabsResearchReceipt {
   task_id: string;
   artifact_id: string;
   contribution_type: "search_coverage" | "frontier_improvement";
-  evaluated_candidates: 256;
+  evaluated_candidates: 65536;
+  new_canonical_candidates: 65536;
+  unit_index: number;
+  economic_parent_id: string;
+  reward_units: 1;
   energy: string;
   result_page: string;
   reproducibility_bundle: string;

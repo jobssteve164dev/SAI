@@ -7,7 +7,7 @@ import {SaiBridge} from "../../packages/bridge/src/index.js";
 import {createIdentity} from "../../packages/identity/src/index.js";
 import {canonicalLabsSequence, createClaimBody, createLabsResult, executeLabsWorldResearch, labsContentId, labsEnergy, rulesetId, signLabsClaim, type LabsRuleset} from "../../packages/labs/src/index.js";
 import {syncLabsFromPeer} from "../../packages/labs/src/store.js";
-import {WORLD_MAX_SUPPLY, createWorldSupplyState, mergeWorldSupplyStates, syncWorldSupplyFromPeer, worldResourceBranch, worldSupplyObservation} from "../../packages/kernel/src/index.js";
+import {WORLD_MAX_SUPPLY, createWorldSupplyState, mergeWorldSupplyStates, syncWorldSupplyFromPeer, worldResourceBranch, worldSupplyActiveTip, worldSupplyObservation} from "../../packages/kernel/src/index.js";
 
 const directories: string[] = [];
 const nodes: LocalNode[] = [];
@@ -51,17 +51,17 @@ describe("LABS direct exchange", () => {
     await bridge.register();
     await bridge.connect();
     const genesisBranch = worldResourceBranch(0);
-    let observation = await bridge.observe({max_bytes: 32_768});
+    let observation = await bridge.observe({max_bytes: 65_536});
     while (observation.self.x !== genesisBranch.x || observation.self.y !== genesisBranch.y) {
       const direction = observation.self.x > genesisBranch.x ? "west" : observation.self.x < genesisBranch.x ? "east" : observation.self.y > genesisBranch.y ? "north" : "south";
       const move = observation.legal_actions.find((action) => action.type === "move" && action.direction === direction) ?? observation.legal_actions.find((action) => action.type === "wait")!;
       await bridge.act({observation_id: observation.observation_id, action_id: move.action_id, request_id: `move-${observation.cursor}-${direction}`});
-      observation = await bridge.observe({max_bytes: 32_768});
+      observation = await bridge.observe({max_bytes: 65_536});
     }
     if (!observation.legal_actions.some((action) => action.type === "research")) {
       const wait = observation.legal_actions.find((action) => action.type === "wait")!;
       await bridge.act({observation_id: observation.observation_id, action_id: wait.action_id, request_id: `rest-${observation.cursor}`});
-      observation = await bridge.observe({max_bytes: 32_768});
+      observation = await bridge.observe({max_bytes: 65_536});
     }
     const research = observation.legal_actions.find((action) => action.type === "research")!;
     expect(research).toBeDefined();
@@ -80,14 +80,16 @@ describe("LABS direct exchange", () => {
     expect(result.status).toBe("applied");
     expect(bridge.lastLabsResearch()).toMatchObject({
       contribution_type: expect.stringMatching(/^(search_coverage|frontier_improvement)$/),
-      evaluated_candidates: 256,
+      evaluated_candidates: 65_536,
+      new_canonical_candidates: 65_536,
+      reward_units: 1,
       result_page: expect.stringContaining("/research/sha256%3A"),
       reproducibility_bundle: expect.stringContaining("/labs/v1/results/sha256%3A"),
     });
     const after = participant.region.currentState();
-    expect(after.agents[identity.agentId]!.inventory[genesisBranch.kind]).toBe(genesisBranch.amount);
+    expect(after.agents[identity.agentId]!.inventory[genesisBranch.kind]).toBe(1);
     const supply = worldSupplyObservation(after)!;
-    expect(supply.issued_supply).toBe(before.issued_supply + genesisBranch.amount);
+    expect(supply.issued_supply).toBe(before.issued_supply + 1);
     expect(supply.reserve_supply + supply.issued_supply).toBe(WORLD_MAX_SUPPLY);
     await bridge.close();
   });
@@ -139,8 +141,10 @@ describe("LABS direct exchange", () => {
       const resource = observation.nearby.find((item) => item.type === "resource" && item.id === action.target)!;
       if (resource.type !== "resource" || !resource.labs_branch) throw new Error("missing economic acceptance branch");
       const ruleset = await participant.labs.ruleset(resource.labs_branch.ruleset_id);
-      const research = executeLabsWorldResearch(ruleset, resource.labs_branch);
-      const claimType = research.record.contribution_type === "frontier_improvement" ? "discovery" : "reproduction";
+      const supply = participant.region.currentState().supply;
+      if (!supply || supply.protocol !== "sai-world-supply-state/3") throw new Error("missing economic challenge");
+      const research = executeLabsWorldResearch(ruleset, resource.labs_branch, {economic_parent_id: worldSupplyActiveTip(supply), claimant_agent_id: identity.agentId});
+      const claimType = research.record.contribution_type === "frontier_improvement" ? "discovery" : "coverage";
       const evidence = [resource.labs_branch.branch_id, research.task_id, research.artifact_id, research.record_id];
       const {signed_claim, claim_id} = signLabsClaim(createClaimBody(research.result_id, identity, claimType, evidence), identity);
       return participant.region.act(identity.agentId, {
@@ -153,11 +157,11 @@ describe("LABS direct exchange", () => {
 
     expect((await settle(participantA, identityA, "economic-a")).status).toBe("applied");
     expect((await settle(participantB, identityB, "economic-b")).status).toBe("applied");
-    expect(worldSupplyObservation(participantA.region.currentState())!.issued_supply).toBe(branch.amount);
-    expect(worldSupplyObservation(participantB.region.currentState())!.issued_supply).toBe(branch.amount);
+    expect(worldSupplyObservation(participantA.region.currentState())!.issued_supply).toBe(1);
+    expect(worldSupplyObservation(participantB.region.currentState())!.issued_supply).toBe(1);
     const stateA = participantA.region.currentState().supply!;
     const stateB = participantB.region.currentState().supply!;
-    if (stateA.protocol !== "sai-world-supply-state/2" || stateB.protocol !== "sai-world-supply-state/2") throw new Error("missing ecosystem supply state");
+    if (stateA.protocol !== "sai-world-supply-state/3" || stateB.protocol !== "sai-world-supply-state/3") throw new Error("missing ecosystem supply state");
     const empty = createWorldSupplyState();
     expect(mergeWorldSupplyStates(stateA, stateB)).toEqual(mergeWorldSupplyStates(stateB, stateA));
     expect(mergeWorldSupplyStates(stateA, stateA)).toEqual(stateA);
@@ -168,10 +172,12 @@ describe("LABS direct exchange", () => {
     const supplyA = worldSupplyObservation(participantA.region.currentState())!;
     const supplyB = worldSupplyObservation(participantB.region.currentState())!;
     expect(supplyA.active_tip_id).toBe(supplyB.active_tip_id);
-    expect(supplyA.issued_supply).toBe(branch.amount);
-    expect(supplyB.issued_supply).toBe(branch.amount);
-    expect(supplyA.settled_branch_count).toBe(1);
-    expect(supplyB.settled_branch_count).toBe(1);
+    expect(supplyA.issued_supply).toBe(1);
+    expect(supplyB.issued_supply).toBe(1);
+    expect(supplyA.settled_branch_count).toBe(0);
+    expect(supplyB.settled_branch_count).toBe(0);
+    expect(supplyA.settled_research_unit_count).toBe(1);
+    expect(supplyB.settled_research_unit_count).toBe(1);
     await syncWorldSupplyFromPeer(participantB.url, participantA.url);
     expect(worldSupplyObservation(participantB.region.currentState())).toEqual(supplyB);
   });
@@ -190,8 +196,10 @@ describe("LABS direct exchange", () => {
       const resource = observation.nearby.find((item) => item.type === "resource" && item.id === action.target)!;
       if (resource.type !== "resource" || !resource.labs_branch) throw new Error("missing concurrent LABS branch");
       const ruleset = await participant.labs.ruleset(resource.labs_branch.ruleset_id);
-      const research = executeLabsWorldResearch(ruleset, resource.labs_branch);
-      const claimType = research.record.contribution_type === "frontier_improvement" ? "discovery" : "reproduction";
+      const supply = participant.region.currentState().supply;
+      if (!supply || supply.protocol !== "sai-world-supply-state/3") throw new Error("missing economic challenge");
+      const research = executeLabsWorldResearch(ruleset, resource.labs_branch, {economic_parent_id: worldSupplyActiveTip(supply), claimant_agent_id: identity.agentId});
+      const claimType = research.record.contribution_type === "frontier_improvement" ? "discovery" : "coverage";
       const evidence = [resource.labs_branch.branch_id, research.task_id, research.artifact_id, research.record_id];
       const {signed_claim, claim_id} = signLabsClaim(createClaimBody(research.result_id, identity, claimType, evidence), identity);
       return {
@@ -212,7 +220,7 @@ describe("LABS direct exchange", () => {
     ]);
     expect(outcomes.map((item) => item.status).sort()).toEqual(["applied", "rejected"]);
     const state = participant.region.currentState();
-    expect(state.supply?.protocol === "sai-world-supply-state/2" ? state.supply.active_chain.length : -1).toBe(1);
-    expect((state.agents[a.agentId]!.inventory[genesisBranch.kind] ?? 0) + (state.agents[b.agentId]!.inventory[genesisBranch.kind] ?? 0)).toBe(genesisBranch.amount);
+    expect(state.supply?.protocol === "sai-world-supply-state/3" ? state.supply.active_chain.length : -1).toBe(1);
+    expect((state.agents[a.agentId]!.inventory[genesisBranch.kind] ?? 0) + (state.agents[b.agentId]!.inventory[genesisBranch.kind] ?? 0)).toBe(1);
   });
 });

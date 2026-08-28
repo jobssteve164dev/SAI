@@ -1,19 +1,19 @@
 import {Ajv2020} from "ajv/dist/2020.js";
 import {describe, expect, it} from "vitest";
 import rulesetSchema from "../../spec/labs/2.0.0/ruleset.schema.json" with {type: "json"};
-import worldBranchSchema from "../../spec/labs/4.0.0/world-branch.schema.json" with {type: "json"};
+import worldBranchSchema from "../../spec/labs/6.0.0/world-branch.schema.json" with {type: "json"};
 import resultSchema from "../../spec/labs/1.0.0/result.schema.json" with {type: "json"};
 import claimSchema from "../../spec/labs/1.0.0/claim.schema.json" with {type: "json"};
 import frontierSchema from "../../spec/labs/1.0.0/frontier.schema.json" with {type: "json"};
 import artifactSchema from "../../spec/labs/5.0.0/artifact.schema.json" with {type: "json"};
-import researchTaskSchema from "../../spec/labs/5.0.0/research-task.schema.json" with {type: "json"};
-import researchRecordSchema from "../../spec/labs/5.0.0/research-record.schema.json" with {type: "json"};
-import supplyScheduleSchema from "../../spec/sai/0.4.0/world-supply-schedule.schema.json" with {type: "json"};
-import supplyBlockSchema from "../../spec/sai/0.4.0/world-supply-block.schema.json" with {type: "json"};
-import supplyStateSchema from "../../spec/sai/0.4.0/world-supply-state.schema.json" with {type: "json"};
+import researchTaskSchema from "../../spec/labs/6.0.0/research-task.schema.json" with {type: "json"};
+import researchRecordSchema from "../../spec/labs/6.0.0/research-record.schema.json" with {type: "json"};
+import supplyScheduleSchema from "../../spec/sai/0.5.0/world-supply-schedule.schema.json" with {type: "json"};
+import supplyBlockSchema from "../../spec/sai/0.5.0/world-supply-block.schema.json" with {type: "json"};
+import supplyStateSchema from "../../spec/sai/0.5.0/world-supply-state.schema.json" with {type: "json"};
 import {REFERENCE_FRONTIER, REFERENCE_RESULTS, REFERENCE_RULESET, createClaimBody, executeLabsWorldResearch, signLabsClaim} from "../../packages/labs/src/index.js";
 import {createIdentity} from "../../packages/identity/src/index.js";
-import {WORLD_SUPPLY_SCHEDULE_BODY, appendWorldSupplyBlock, createWorldSupplyState, mineWorldSupplyBlock, worldResourceBranch} from "../../packages/kernel/src/index.js";
+import {WORLD_SUPPLY_SCHEDULE_BODY, WORLD_SUPPLY_SCHEDULE_ID, appendWorldSupplyBlock, createWorldSupplyState, mineWorldSupplyBlock, worldResourceBranch} from "../../packages/kernel/src/index.js";
 
 describe("LABS JSON Schemas", () => {
   const ajv = new Ajv2020({strict: true, formats: {uri: true}});
@@ -38,10 +38,10 @@ describe("LABS JSON Schemas", () => {
     expect(validateClaim(claim)).toBe(true);
     expect(validateFrontier(REFERENCE_FRONTIER)).toBe(true);
     const branch = worldResourceBranch(0).labs_branch;
-    const research = executeLabsWorldResearch(REFERENCE_RULESET, branch);
-    const claimType = research.record.contribution_type === "frontier_improvement" ? "discovery" : "reproduction";
+    const research = executeLabsWorldResearch(REFERENCE_RULESET, branch, {economic_parent_id: WORLD_SUPPLY_SCHEDULE_ID, claimant_agent_id: identity.agentId});
+    const claimType = research.record.contribution_type === "frontier_improvement" ? "discovery" : "coverage";
     const signed = signLabsClaim(createClaimBody(research.result_id, identity, claimType, [branch.branch_id, research.task_id, research.artifact_id, research.record_id]), identity);
-    const block = mineWorldSupplyBlock(createWorldSupplyState(), branch, {candidate_sequence: research.candidate_sequence, result: research.result, result_id: research.result_id, ...signed}, identity.agentId);
+    const block = mineWorldSupplyBlock(createWorldSupplyState(), branch, {candidate_sequence: research.candidate_sequence, result: research.result, result_id: research.result_id, ...signed, research_task: research.task, task_id: research.task_id, method_artifact: research.artifact, artifact_id: research.artifact_id, research_record: research.record, record_id: research.record_id}, identity.agentId);
     expect(validateWorldBranch(branch)).toBe(true);
     expect(validateSupplySchedule(WORLD_SUPPLY_SCHEDULE_BODY)).toBe(true);
     expect(validateSupplyBlock(block)).toBe(true);

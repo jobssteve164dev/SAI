@@ -14,8 +14,8 @@ export type {LabsResearchReceipt} from "../../bridge/src/index.js";
 export type {LabsRegistryEntry, LabsRegistrySnapshot} from "../../labs/src/store.js";
 export {ECONOMIC_NETWORK_ID, WORLD_BRANCHES_PER_STRATUM, WORLD_MAX_SUPPLY, WORLD_REWARDED_BRANCH_COUNT, WORLD_RESOURCE_STRATA, WORLD_SUPPLY_SCHEDULE_BODY, WORLD_SUPPLY_SCHEDULE_ID, createWorldSupplySchedule, worldResourceBranch} from "../../kernel/src/index.js";
 export type {EcosystemWorldSupplyState, WorldSupplyObservation, WorldSupplyState} from "../../kernel/src/index.js";
-export {canonicalLabsSequence, createLabsResearchTask, createLabsWorldBranch, exactMeritFactor, executeLabsResearchTask, executeLabsWorldResearch, labsEnergy, labsSymmetries, verifyLabsArtifact, verifyLabsClaim, verifyLabsResearchRecord, verifyLabsResearchTask, verifyLabsResult, verifyLabsWorldSubmission, REFERENCE_FORK_ID, REFERENCE_RULESET_ID, REFERENCE_SEARCH_METHOD_ARTIFACT, REFERENCE_SEARCH_METHOD_ARTIFACT_ID} from "../../labs/src/index.js";
-export type {LabsClaimType, LabsFrontier, LabsResearchArtifact, LabsResearchExecution, LabsResearchRecord, LabsResearchTask, LabsResult, LabsRuleset, LabsSignedClaim, LabsWorldBranch} from "../../labs/src/index.js";
+export {canonicalLabsSequence, createLabsResearchTask, createLabsWorldBranch, exactMeritFactor, executeLabsResearchTask, executeLabsWorldResearch, labsEnergy, labsSettlementChallengeBits, labsSymmetries, verifyLabsArtifact, verifyLabsClaim, verifyLabsResearchRecord, verifyLabsResearchTask, verifyLabsResult, verifyLabsWorldSubmission, REFERENCE_FORK_ID, REFERENCE_RULESET_ID, REFERENCE_SEARCH_METHOD_ARTIFACT, REFERENCE_SEARCH_METHOD_ARTIFACT_ID} from "../../labs/src/index.js";
+export type {LabsClaimType, LabsFrontier, LabsResearchArtifact, LabsResearchExecution, LabsResearchRecord, LabsResearchTask, LabsResult, LabsRuleset, LabsSettlementChallenge, LabsSignedClaim, LabsWorldBranch} from "../../labs/src/index.js";
 
 export const DEFAULT_SAI_NODE_URL = "https://social.szlk.ai";
 export const DEFAULT_SAI_IDENTITY_PATH = resolve(homedir(), ".sai", "agents", "social-agent.json");
@@ -120,7 +120,7 @@ async function exploreLabsWorld(bridge: SaiBridge, identity: AgentIdentity): Pro
   const parents = new Map<string, string>();
   try {
     for (let step = 0; step < 512; step += 1) {
-      const observation = await bridge.observe({max_bytes: 32_768});
+      const observation = await bridge.observe({max_bytes: 65_536});
       const here = `${observation.self.x}:${observation.self.y}`;
       visited.add(here);
       const research = observation.legal_actions.find((action) => action.type === "research");
@@ -128,7 +128,7 @@ async function exploreLabsWorld(bridge: SaiBridge, identity: AgentIdentity): Pro
         const resource = observation.nearby.find((item) => item.type === "resource" && item.id === research.target);
         if (resource?.type !== "resource" || !resource.labs_branch) throw new Error("LABS 研究动作缺少当前世界分支");
         const result = await bridge.act({observation_id: observation.observation_id, action_id: research.action_id, arguments: {operation: "run_search"}, request_id: `${identity.agentId}:${randomUUID()}`});
-        return {operation: "research_world_branch", agent_id: identity.agentId, economic_network_id: resource.labs_branch.economic_network_id, world_fork_id: observation.world_fork_id, region_id: observation.region_id, resource_id: resource.id, branch_id: resource.labs_branch.branch_id, branch_ordinal: resource.labs_branch.branch_ordinal, schedule_id: resource.labs_branch.schedule_id, stratum: resource.labs_branch.stratum, resource_amount: resource.labs_branch.resource_amount, method: "exhaustive 256-candidate binary-flip neighborhood", research: bridge.lastLabsResearch(), registry_url: `${bridge.baseUrl}/research`, result, steps: step};
+        return {operation: "research_world_branch", agent_id: identity.agentId, economic_network_id: resource.labs_branch.economic_network_id, world_fork_id: observation.world_fork_id, region_id: observation.region_id, resource_id: resource.id, branch_id: resource.labs_branch.branch_id, branch_ordinal: resource.labs_branch.branch_ordinal, unit_index: resource.labs_branch.unit_index, schedule_id: resource.labs_branch.schedule_id, stratum: resource.labs_branch.stratum, resource_capacity: resource.labs_branch.resource_amount, reward_units: resource.labs_branch.reward_amount, method: "exhaustive 65,536-candidate current-parent-and-claimant-bound canonical partition", research: bridge.lastLabsResearch(), registry_url: `${bridge.baseUrl}/research`, result, steps: step};
       }
 
       const wait = observation.legal_actions.find((action) => action.type === "wait")!;

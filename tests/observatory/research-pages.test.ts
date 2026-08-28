@@ -1,6 +1,6 @@
 import {describe, expect, it} from "vitest";
 import {createIdentity} from "../../packages/identity/src/index.js";
-import {worldResourceBranch} from "../../packages/kernel/src/index.js";
+import {WORLD_SUPPLY_SCHEDULE_ID, worldResourceBranch} from "../../packages/kernel/src/index.js";
 import {createClaimBody, executeLabsWorldResearch, REFERENCE_RULESET, signLabsClaim} from "../../packages/labs/src/index.js";
 import {LabsRepository, MemoryLabsPersistence} from "../../packages/labs/src/store.js";
 import {renderResearchRegistry, renderResearchResult, researchResponse} from "../../apps/cloudflare-worker/src/research-pages.js";
@@ -9,12 +9,12 @@ async function registryWithResearch(): Promise<{repository: LabsRepository; resu
   const repository = await LabsRepository.open(new MemoryLabsPersistence());
   const identity = await createIdentity();
   const branch = worldResourceBranch(0).labs_branch;
-  const research = executeLabsWorldResearch(REFERENCE_RULESET, branch);
-  const claimType = research.record.contribution_type === "frontier_improvement" ? "discovery" : "reproduction";
+  const research = executeLabsWorldResearch(REFERENCE_RULESET, branch, {economic_parent_id: WORLD_SUPPLY_SCHEDULE_ID, claimant_agent_id: identity.agentId});
+  const claimType = research.record.contribution_type === "frontier_improvement" ? "discovery" : "coverage";
   const claim = signLabsClaim(createClaimBody(research.result_id, identity, claimType, [branch.branch_id, research.task_id, research.artifact_id, research.record_id]), identity);
   await repository.ingest("task", research.task, research.task_id);
-  await repository.ingest("result", research.result, research.result_id);
   await repository.ingest("record", research.record, research.record_id);
+  await repository.ingest("result", research.result, research.result_id);
   await repository.ingest("claim", claim.signed_claim, claim.claim_id);
   return {repository, resultId: research.result_id};
 }
@@ -25,8 +25,9 @@ describe("LABS 双语研究成果页面", () => {
     const registry = renderResearchRegistry(await repository.registry());
     expect(registry).toContain("让 Agent 的计算<br>成为可用成果");
     expect(registry).toContain("不是官方全网排名");
-    expect(registry).toContain("256 个候选");
-    expect(registry).toContain("复现声明者");
+    expect(registry).toContain("65,536 个规范候选");
+    expect(registry).toContain("公开答案不能改名领取");
+    expect(registry).toContain("覆盖贡献者");
     expect(registry).not.toContain("次独立复现");
     expect(registry).not.toContain("独立复现 1");
     expect(registry).toContain("/labs/v1/registry.csv");
@@ -37,7 +38,10 @@ describe("LABS 双语研究成果页面", () => {
     const entry = await repository.registryEntry(resultId);
     const detail = renderResearchResult(entry!);
     expect(detail).toContain("这次究竟计算了什么");
-    expect(detail).toContain("256 / 256");
+    expect(detail).toContain("65,536 / 65,536");
+    expect(detail).toContain("达到一单位研究贡献标准");
+    expect(detail).toContain("经济链父摘要");
+    expect(detail).toContain("执行研究的 Agent");
     expect(detail).toContain("完整复现包");
     expect(detail).toContain("BibTeX");
     expect(detail).toContain("数学结果由序列与精确整数公式成立");
@@ -51,8 +55,9 @@ describe("LABS 双语研究成果页面", () => {
     const registry = renderResearchRegistry(await repository.registry(), "en");
     expect(registry).toContain("Agent computation<br>that remains useful");
     expect(registry).toContain("not an official global ranking");
-    expect(registry).toContain("256-candidate");
-    expect(registry).toContain("reproduction claimants");
+    expect(registry).toContain("65,536 canonical candidates");
+    expect(registry).toContain("cannot be renamed");
+    expect(registry).toContain("Coverage contributors");
     expect(registry).not.toContain("independent reproductions");
     expect(registry).toContain('href="/research" hreflang="zh-CN"');
     expect(registry).toContain("@media(max-width:420px)");

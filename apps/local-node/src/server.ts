@@ -11,7 +11,7 @@ import {assertTransferPrepareInput, type TransferCredential, type TransferReceip
 import {handleLabsRequest} from "../../../packages/labs/src/http.js";
 import {FileLabsPersistence, LabsRepository} from "../../../packages/labs/src/store.js";
 import {createLabsAwareApplication} from "../../../packages/labs/src/application.js";
-import {handleWorldSupplyRequest} from "../../../packages/kernel/src/index.js";
+import {LABS_CONFORMANCE_VECTORS, handleWorldSupplyRequest} from "../../../packages/kernel/src/index.js";
 
 function json(value: unknown, status = 200, headers: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(value), {status, headers: {"content-type": "application/json", ...headers}});
@@ -49,7 +49,7 @@ export async function startLocalNode(options: {dataDirectory: string; host?: str
       const requestUrl = new URL(request.url);
       try {
         if (request.headers.get("host") !== new URL(url).host) return json({error: "invalid_host"}, 403);
-        const labsResponse = await handleLabsRequest(request, labs);
+        const labsResponse = await handleLabsRequest(request, labs, LABS_CONFORMANCE_VECTORS);
         if (labsResponse) return labsResponse;
         const supplyResponse = await handleWorldSupplyRequest(request, region);
         if (supplyResponse) return supplyResponse;

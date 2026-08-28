@@ -1,12 +1,12 @@
 import {describe, expect, it} from "vitest";
-import {admitAgentAtRandomAddress, buildObservation, canonicalJson, createWorld, expandWorldForPopulation, MAX_WORLD_ADDRESSES, stateHash, transition, validateState, worldAddressCapacity} from "../../packages/kernel/src/index.js";
+import {ARCHIVED_ECOSYSTEM_WORLD_SUPPLY_SCHEDULE_IDS, ECONOMIC_NETWORK_ID, WORLD_SUPPLY_SCHEDULE_ID, admitAgentAtRandomAddress, buildObservation, canonicalJson, createWorld, expandWorldForPopulation, MAX_WORLD_ADDRESSES, stateHash, transition, upgradeWorldForLabs, validateState, worldAddressCapacity} from "../../packages/kernel/src/index.js";
 
 describe("确定性 Conformance World", () => {
   it("相同状态生成完全相同的观察与动作 ID", () => {
     const state = createWorld("fixed", [{id: "agent:a", x: 0, y: 0, energy: 5, inventory: {}}]);
     expect(buildObservation(state, "agent:a")).toEqual(buildObservation(structuredClone(state), "agent:a"));
-    expect(stateHash(state)).toBe("sha256:0b2000e4d5e4c56fcdf03208f1908453e773286e0b8f377ef2749c5e8d2e4915");
-    expect(buildObservation(state, "agent:a")!.observation.observation_id).toBe("obs_sIgV08qwq-11Er-duPjNNl7HEkOTjywgnhlKs9LfTZU");
+    expect(stateHash(state)).toBe("sha256:7f4ef88ee8f4dee96aa10412528dd1c0749312a38f94ddda6c1b8f5fed83f4ac");
+    expect(buildObservation(state, "agent:a")!.observation.observation_id).toBe("obs_agaxgYrPCm9Bo6205-TNLCB_ZYjocrChuNY4EE0g_6g");
     expect(canonicalJson({b: 2, a: 1})).toBe('{"a":1,"b":2}');
   });
 
@@ -14,6 +14,21 @@ describe("确定性 Conformance World", () => {
     const state = createWorld("integer", []);
     state.logical_tick = 1.5;
     expect(() => stateHash(state)).toThrow("安全整数");
+  });
+
+  it("显式归档已知旧贡献网络且不把旧余额导入当前永久生态", () => {
+    for (const scheduleId of ARCHIVED_ECOSYSTEM_WORLD_SUPPLY_SCHEDULE_IDS) {
+      const state = createWorld("archived-network", [{id: "agent:a", x: 0, y: 0, energy: 5, inventory: {}}]);
+      state.agents["agent:a"]!.inventory.crystal = 7;
+      state.supply = {protocol: "sai-world-supply-state/3", economic_network_id: `network:${scheduleId}`, schedule_id: scheduleId, active_chain: [{legacy: true} as never]};
+      const upgraded = upgradeWorldForLabs(state);
+      expect(upgraded.supply).toEqual({protocol: "sai-world-supply-state/3", economic_network_id: ECONOMIC_NETWORK_ID, schedule_id: WORLD_SUPPLY_SCHEDULE_ID, active_chain: []});
+      expect(upgraded.agents["agent:a"]!.inventory.crystal).toBeUndefined();
+      expect(() => validateState(upgraded)).not.toThrow();
+    }
+    const unknown = createWorld("unknown-network");
+    unknown.supply = {protocol: "sai-world-supply-state/3", economic_network_id: `network:sha256:${"f".repeat(64)}`, schedule_id: `sha256:${"f".repeat(64)}`, active_chain: []};
+    expect(() => upgradeWorldForLabs(unknown)).toThrow("世界资源经济网络状态无效");
   });
 
   it("只重检相关前置条件，不因无关世界变化拒绝动作", () => {

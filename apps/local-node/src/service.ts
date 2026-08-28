@@ -58,7 +58,7 @@ export class RegionService {
 
   async mergeSupply(incoming: EcosystemWorldSupplyState): Promise<EcosystemWorldSupplyState> {
     return this.serial(async () => {
-      if (!this.state.supply || this.state.supply.protocol !== "sai-world-supply-state/2") throw new Error("economic_network_unavailable");
+      if (!this.state.supply || this.state.supply.protocol !== "sai-world-supply-state/3") throw new Error("economic_network_unavailable");
       const merged = mergeWorldSupplyStates(this.state.supply, incoming);
       this.state = reconcileWorldSupplyInventories({...this.state, supply: merged});
       validateState(this.state);

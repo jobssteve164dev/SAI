@@ -7,6 +7,7 @@ export default defineConfig({
       provider: "v8",
     },
     include: ["tests/**/*.test.ts"],
+    maxWorkers: 2,
     testTimeout: 15_000,
   },
 });

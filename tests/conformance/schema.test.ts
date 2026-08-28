@@ -12,6 +12,11 @@ const sharedSchemaPaths = [
   "spec/labs/1.0.0/claim.schema.json",
   "spec/sai/0.4.0/world-supply-block.schema.json",
   "spec/sai/0.4.0/world-supply-state.schema.json",
+  "spec/labs/6.0.0/world-branch.schema.json",
+  "spec/labs/6.0.0/research-task.schema.json",
+  "spec/labs/6.0.0/research-record.schema.json",
+  "spec/sai/0.5.0/world-supply-block.schema.json",
+  "spec/sai/0.5.0/world-supply-state.schema.json",
 ];
 
 function conformanceAjv(): Ajv2020 {

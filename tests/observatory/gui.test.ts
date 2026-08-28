@@ -74,6 +74,6 @@ describe("SAI 世界观察器", () => {
     }]);
     expect(JSON.stringify(snapshot)).not.toContain("private-request-id");
     expect(JSON.stringify(snapshot)).not.toContain(wait.action_id);
-    expect(snapshot.supply).toEqual(expect.objectContaining({protocol: "sai-world-supply-observation/2", max_supply: 276_824_064, reserve_supply: 276_824_064, issued_supply: 0, rewarded_branch_count: 16_777_216, settled_branch_count: 0, strata: 32, branches_per_stratum: 524_288, active_height: 0, season_reset: false}));
+    expect(snapshot.supply).toEqual(expect.objectContaining({protocol: "sai-world-supply-observation/3", max_supply: 276_824_064, reserve_supply: 276_824_064, issued_supply: 0, rewarded_branch_count: 16_777_216, rewarded_research_unit_count: 276_824_064, settled_branch_count: 0, settled_research_unit_count: 0, remaining_research_unit_count: 276_824_064, candidates_per_research_unit: 65_536, verified_new_canonical_candidates: "0", strata: 32, branches_per_stratum: 524_288, active_height: 0, season_reset: false}));
   });
 });

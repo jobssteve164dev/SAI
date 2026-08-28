@@ -32,14 +32,28 @@ export interface LegacyWorldSupplyState {
   previous_settlement_id: string;
 }
 
+export interface PreviousEcosystemWorldSupplyState {
+  protocol: "sai-world-supply-state/2";
+  economic_network_id: string;
+  schedule_id: string;
+  active_chain: Array<Record<string, unknown>>;
+}
+
 export interface WorldSupplyBlock {
-  protocol: "sai-world-supply-block/1";
+  protocol: "sai-world-supply-block/2";
   economic_network_id: string;
   schedule_id: string;
   height: number;
   parent_id: string;
   branch_ordinal: number;
+  unit_index: number;
   branch_id: string;
+  task_id: string;
+  record_id: string;
+  coverage_partition_id: string;
+  coverage_digest: string;
+  evaluated_candidates: 65536;
+  reward_amount: 1;
   agent_id: string;
   candidate_sequence: string;
   result: import("../../labs/src/index.js").LabsResult;
@@ -51,16 +65,16 @@ export interface WorldSupplyBlock {
 }
 
 export interface EcosystemWorldSupplyState {
-  protocol: "sai-world-supply-state/2";
+  protocol: "sai-world-supply-state/3";
   economic_network_id: string;
   schedule_id: string;
   active_chain: WorldSupplyBlock[];
 }
 
-export type WorldSupplyState = LegacyWorldSupplyState | EcosystemWorldSupplyState;
+export type WorldSupplyState = LegacyWorldSupplyState | PreviousEcosystemWorldSupplyState | EcosystemWorldSupplyState;
 
 export interface WorldSupplyObservation {
-  protocol: "sai-world-supply-observation/2";
+  protocol: "sai-world-supply-observation/3";
   economic_network_id: string;
   schedule_id: string;
   max_supply: number;
@@ -70,8 +84,13 @@ export interface WorldSupplyObservation {
   external_or_in_transit_supply: number;
   burned_supply: 0;
   rewarded_branch_count: number;
+  rewarded_research_unit_count: number;
   settled_branch_count: number;
   remaining_branch_count: number;
+  settled_research_unit_count: number;
+  remaining_research_unit_count: number;
+  candidates_per_research_unit: 65536;
+  verified_new_canonical_candidates: string;
   strata: number;
   branches_per_stratum: number;
   active_height: number;
@@ -81,7 +100,7 @@ export interface WorldSupplyObservation {
 }
 
 export interface LabsWorldBranchObservation {
-  protocol: "sai-labs-world-branch/3";
+  protocol: "sai-labs-world-branch/4";
   branch_id: string;
   economic_network_id: string;
   schedule_id: string;
@@ -89,13 +108,15 @@ export interface LabsWorldBranchObservation {
   resource_id: string;
   resource_kind: string;
   resource_amount: number;
+  reward_amount: 1;
+  unit_index: number;
   x: number;
   y: number;
   stratum: number;
   ruleset_id: string;
   length: number;
-  energy_at_most: string;
-  sequence_prefix: string;
+  baseline_energy: string;
+  candidates_per_unit: 65536;
 }
 
 export interface MessageState {
@@ -137,6 +158,7 @@ export interface ActionCommand extends LegalAction {
   observed_y: number;
   observed_target_remaining?: number;
   observed_branch_id?: string;
+  observed_unit_index?: number;
 }
 
 export interface Observation {

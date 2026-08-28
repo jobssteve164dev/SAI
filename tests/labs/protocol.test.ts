@@ -11,12 +11,15 @@ import {
   createClaimBody,
   createInitialFrontier,
   createLabsResult,
+  createLabsResearchTask,
   createLabsWorldBranch,
   exactMeritFactor,
   executeLabsWorldResearch,
   labsCanonicalJson,
   labsContentId,
   labsEnergy,
+  labsResearchAddressCode,
+  labsResearchCandidate,
   labsSymmetries,
   mergeLabsFrontiers,
   rulesetId,
@@ -46,7 +49,7 @@ import {
   referenceSearchMethodArtifact,
   referenceSearchMethodArtifactId,
 } from "../../reference/labs-reference.mjs";
-import {ECONOMIC_NETWORK_ID, WORLD_BRANCHES_PER_STRATUM, WORLD_MAX_SUPPLY, WORLD_REWARDED_BRANCH_COUNT, WORLD_RESOURCE_STRATA, WORLD_SUPPLY_SCHEDULE_BODY, WORLD_SUPPLY_SCHEDULE_ID, assertEcosystemSupplyImportAllowed, createWorld, createWorldSupplyState, mergeWorldSupplyStates, validateState, worldResourceBranch} from "../../packages/kernel/src/index.js";
+import {ECONOMIC_NETWORK_ID, LABS_CONFORMANCE_AGENT_ID, LABS_CONFORMANCE_VECTORS, WORLD_BRANCHES_PER_STRATUM, WORLD_MAX_SUPPLY, WORLD_REWARDED_BRANCH_COUNT, WORLD_RESOURCE_STRATA, WORLD_SUPPLY_SCHEDULE_BODY, WORLD_SUPPLY_SCHEDULE_ID, assertEcosystemSupplyImportAllowed, createWorld, createWorldSupplyState, mergeWorldSupplyStates, validateState, worldResourceBranch} from "../../packages/kernel/src/index.js";
 
 function syntheticRuleset(): LabsRuleset {
   const sequence = canonicalLabsSequence("00000000000");
@@ -60,6 +63,7 @@ function syntheticRuleset(): LabsRuleset {
 }
 
 function id(seed: string): string { return labsContentId({seed}); }
+const CONFORMANCE_CHALLENGE = {economic_parent_id: WORLD_SUPPLY_SCHEDULE_ID, claimant_agent_id: LABS_CONFORMANCE_AGENT_ID};
 
 describe("LABS exact protocol", () => {
   it("recomputes all public 2026 reference records with BigInt", () => {
@@ -142,7 +146,8 @@ describe("LABS exact protocol", () => {
     expect((await repository.frontier(ruleset_id, fork_id)).lengths[11]).toEqual({best_energy: a.result.energy, result_ids: [a.result_id, b.result_id].sort()});
   });
 
-  it("matches the independent implementation byte for byte", () => {
+  it("matches the independent implementation byte for byte across every candidate in all three reference lengths", () => {
+    expect(referenceRulesetId(LABS_CONFORMANCE_VECTORS.ruleset.body)).toBe(LABS_CONFORMANCE_VECTORS.ruleset.expected_ruleset_id);
     expect(referenceCanonicalJson(REFERENCE_RULESET)).toBe(labsCanonicalJson(REFERENCE_RULESET));
     expect(referenceRulesetId(REFERENCE_RULESET)).toBe(rulesetId(REFERENCE_RULESET));
     for (const baseline of REFERENCE_RULESET.baselines) {
@@ -153,21 +158,84 @@ describe("LABS exact protocol", () => {
     }
     expect(referenceContentId(REFERENCE_FRONTIER)).toBe(labsContentId(REFERENCE_FRONTIER));
     expect(referenceMergeFrontiers(REFERENCE_FRONTIER, REFERENCE_FRONTIER)).toEqual(mergeLabsFrontiers(REFERENCE_FRONTIER, REFERENCE_FRONTIER));
-    expect(referenceSupplyScheduleId(WORLD_SUPPLY_SCHEDULE_BODY)).toBe(WORLD_SUPPLY_SCHEDULE_ID);
+    expect(referenceSupplyScheduleId(LABS_CONFORMANCE_VECTORS.supply_schedule.body)).toBe(LABS_CONFORMANCE_VECTORS.supply_schedule.expected_schedule_id);
+    expect(WORLD_SUPPLY_SCHEDULE_ID).toBe(LABS_CONFORMANCE_VECTORS.supply_schedule.expected_schedule_id);
+    expect(ECONOMIC_NETWORK_ID).toBe(LABS_CONFORMANCE_VECTORS.supply_schedule.expected_economic_network_id);
+    expect(referenceSymmetries(LABS_CONFORMANCE_VECTORS.symmetry.input)).toEqual(LABS_CONFORMANCE_VECTORS.symmetry.expected_transforms);
+    expect(referenceCanonicalSequence(LABS_CONFORMANCE_VECTORS.symmetry.input)).toBe(LABS_CONFORMANCE_VECTORS.symmetry.expected_canonical);
     for (const ordinal of [0, 1, 4_095, 4_096, 1_048_575, WORLD_REWARDED_BRANCH_COUNT - 1]) expect(referenceWorldResource(REFERENCE_RULESET, WORLD_SUPPLY_SCHEDULE_BODY, ordinal)).toEqual(worldResourceBranch(ordinal));
     expect(referenceSearchMethodArtifact).toEqual(REFERENCE_SEARCH_METHOD_ARTIFACT);
     expect(referenceSearchMethodArtifactId).toBe(REFERENCE_SEARCH_METHOD_ARTIFACT_ID);
-    for (const ordinal of [0, 1, 4_095]) {
-      const branch = worldResourceBranch(ordinal).labs_branch;
-      const reference = referenceExecuteResearch(REFERENCE_RULESET, branch);
-      const production = executeLabsWorldResearch(REFERENCE_RULESET, branch);
+    for (const vector of LABS_CONFORMANCE_VECTORS.research_units) {
+      const branch = worldResourceBranch(vector.branch_ordinal, vector.unit_index).labs_branch;
+      const reference = referenceExecuteResearch(REFERENCE_RULESET, branch, CONFORMANCE_CHALLENGE);
+      const production = executeLabsWorldResearch(REFERENCE_RULESET, branch, CONFORMANCE_CHALLENGE);
       expect(referenceCanonicalJson(reference)).toBe(labsCanonicalJson(production));
-      expect(reference.task_id).toBe(production.task_id);
-      expect(reference.result_id).toBe(production.result_id);
-      expect(reference.record_id).toBe(production.record_id);
+      expect(branch.branch_id).toBe(vector.expected_branch_id);
+      expect(production.task_id).toBe(vector.expected_task_id);
+      expect(production.record.coverage_partition_id).toBe(vector.expected_coverage_partition_id);
+      expect(production.record.coverage_digest).toBe(vector.expected_coverage_digest);
+      expect(production.record_id).toBe(vector.expected_record_id);
+      expect(production.result_id).toBe(vector.expected_result_id);
+      expect(production.record.best_energy).toBe(vector.expected_best_energy);
+      expect(production.record.energy_delta).toBe(vector.expected_energy_delta);
+      expect(production.record.tied_result_count).toBe(vector.expected_tied_result_count);
+      expect(production.record.tied_result_digest).toBe(vector.expected_tied_result_digest);
+      expect(production.artifact_id).toBe(vector.expected_artifact_id);
     }
     expect(referenceMergeSupplyStates(createWorldSupplyState(), createWorldSupplyState())).toEqual(mergeWorldSupplyStates(createWorldSupplyState(), createWorldSupplyState()));
     expect(WORLD_MAX_SUPPLY).toBe(276_824_064);
+    for (const vector of LABS_CONFORMANCE_VECTORS.cumulative_supply) expect(referenceCumulativeSupply(vector.stratum, WORLD_SUPPLY_SCHEDULE_BODY)).toBe(vector.expected_total);
+  }, 60_000);
+
+  it("covers every stratum and unit index with a unique nonzero canonical research partition", () => {
+    const representatives = new Map<number, number>();
+    for (let ordinal = 0; ordinal < 10_000 && representatives.size < 32; ordinal += 1) {
+      const resource = worldResourceBranch(ordinal);
+      if (!representatives.has(resource.stratum)) representatives.set(resource.stratum, ordinal);
+    }
+    expect(representatives.size).toBe(32);
+    const addresses = new Set<number>();
+    const partitions = new Set<string>();
+    let units = 0;
+    for (let stratum = 1; stratum <= 32; stratum += 1) {
+      const ordinal = representatives.get(stratum)!;
+      for (let unitIndex = 0; unitIndex < stratum; unitIndex += 1) {
+        const branch = worldResourceBranch(ordinal, unitIndex).labs_branch;
+        const {task} = createLabsResearchTask(REFERENCE_RULESET, branch, CONFORMANCE_CHALLENGE);
+        const address = labsResearchAddressCode(ordinal, unitIndex);
+        expect(address).not.toBe(0);
+        expect(addresses.has(address)).toBe(false);
+        expect(partitions.has(task.coverage_partition_id)).toBe(false);
+        addresses.add(address);
+        partitions.add(task.coverage_partition_id);
+        units += 1;
+      }
+      expect(() => worldResourceBranch(ordinal, stratum)).toThrow("超出分支容量");
+    }
+    expect(units).toBe(32 * 33 / 2);
+    for (const [ordinal, unitIndex] of [[0, 0], [0, 22], [1, 0], [1, 1], [3, 0], [3, 24]] as const) {
+      const {task} = createLabsResearchTask(REFERENCE_RULESET, worldResourceBranch(ordinal, unitIndex).labs_branch, CONFORMANCE_CHALLENGE);
+      for (const mask of [0, 1, 65_535]) {
+        const candidate = labsResearchCandidate(task, mask);
+        expect(canonicalLabsSequence(candidate)).toBe(candidate);
+      }
+    }
+  });
+
+  it("changes the actual candidate partition when the economic parent or claimant changes", () => {
+    const branch = worldResourceBranch(0).labs_branch;
+    const otherAgent = "agent:ed25519-v1:BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB";
+    const otherParent = labsContentId({parent: "next"});
+    const base = createLabsResearchTask(REFERENCE_RULESET, branch, CONFORMANCE_CHALLENGE);
+    const claimantChanged = createLabsResearchTask(REFERENCE_RULESET, branch, {...CONFORMANCE_CHALLENGE, claimant_agent_id: otherAgent});
+    const parentChanged = createLabsResearchTask(REFERENCE_RULESET, branch, {...CONFORMANCE_CHALLENGE, economic_parent_id: otherParent});
+    expect(new Set([base.task_id, claimantChanged.task_id, parentChanged.task_id]).size).toBe(3);
+    expect(new Set([base.task.coverage_partition_id, claimantChanged.task.coverage_partition_id, parentChanged.task.coverage_partition_id]).size).toBe(3);
+    expect(base.task.challenge_bits).not.toBe(claimantChanged.task.challenge_bits);
+    expect(base.task.challenge_bits).not.toBe(parentChanged.task.challenge_bits);
+    expect(labsResearchCandidate(base.task, 0)).not.toBe(labsResearchCandidate(claimantChanged.task, 0));
+    expect(labsResearchCandidate(base.task, 0)).not.toBe(labsResearchCandidate(parentChanged.task, 0));
   });
 
   it("derives its own exact permanent supply from finite geography and 32 strata", () => {
@@ -192,7 +260,7 @@ describe("LABS exact protocol", () => {
     expect(() => verifyLabsResult(REFERENCE_RULESET, {...record.result, server_sequence: 1} as typeof record.result)).toThrow("schema 无效");
     expect(() => labsEnergy("0".repeat(4097))).toThrow("长度不能超过");
     const worse = createLabsResult(REFERENCE_RULESET, "0".repeat(451));
-    await expect(repository.ingest("result", worse.result, worse.result_id)).rejects.toThrow("只接受达到规则集公开基线");
+    await expect(repository.ingest("result", worse.result, worse.result_id)).rejects.toThrow("必须由完整可复现研究记录引用");
     const bundle = await repository.bundle();
     const forged: LabsExchangeBundle = structuredClone(bundle);
     forged.frontier.lengths[451] = {best_energy: "0", result_ids: [record.result_id]};

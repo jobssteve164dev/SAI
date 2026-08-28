@@ -30,8 +30,12 @@ function csvCell(value: string | number): string {
 }
 
 function registryCsv(entries: Awaited<ReturnType<LabsRepository["registry"]>>["entries"]): string {
-  const header = ["result_id", "status", "length", "energy", "merit_factor", "baseline_energy", "energy_delta", "research_records", "discovery_claims", "reproduction_claimants", "relay_claims"];
-  const rows = entries.map((entry) => [entry.result_id, entry.status, entry.result.length, entry.result.energy, entry.merit_factor.decimal, entry.baseline_energy, entry.energy_delta, entry.research.length, entry.discovery_claims, entry.reproduction_claimants, entry.relay_claims]);
+  const header = ["result_id", "status", "length", "energy", "merit_factor", "baseline_energy", "energy_delta", "research_records", "contribution_grade_records", "verified_new_canonical_candidates", "coverage_contributors", "discovery_claims", "reproduction_claimants", "relay_claims"];
+  const rows = entries.map((entry) => {
+    const contributionRecords = entry.research.map(({record}) => record).filter((record) => record.protocol === "sai-labs-research-record/2");
+    const candidates = contributionRecords.reduce((sum, record) => sum + BigInt(record.new_canonical_candidates), 0n).toString();
+    return [entry.result_id, entry.status, entry.result.length, entry.result.energy, entry.merit_factor.decimal, entry.baseline_energy, entry.energy_delta, entry.research.length, contributionRecords.length, candidates, entry.coverage_contributors, entry.discovery_claims, entry.reproduction_claimants, entry.relay_claims];
+  });
   return `${[header, ...rows].map((row) => row.map(csvCell).join(",")).join("\n")}\n`;
 }
 
@@ -42,7 +46,7 @@ function resultCitation(entry: NonNullable<Awaited<ReturnType<LabsRepository["re
   return `@misc{${key},\n  title = {${title}},\n  author = {${authors}},\n  year = {2026},\n  howpublished = {\\url{https://social.szlk.ai/research/${entry.result_id}}},\n  note = {Content-addressed result ${entry.result_id}; exact merit factor ${entry.merit_factor.numerator}/${entry.merit_factor.denominator}}\n}\n`;
 }
 
-export async function handleLabsRequest(request: Request, repository: LabsRepository): Promise<Response | undefined> {
+export async function handleLabsRequest(request: Request, repository: LabsRepository, testVectors?: unknown): Promise<Response | undefined> {
   const url = new URL(request.url);
   if (!url.pathname.startsWith("/labs/v1")) return undefined;
   try {
@@ -61,10 +65,12 @@ export async function handleLabsRequest(request: Request, repository: LabsReposi
         exchange_url: `/labs/v1/exchange/${REFERENCE_RULESET_ID}/${REFERENCE_FORK_ID}`,
         registry_url: "/labs/v1/registry",
         registry_csv_url: "/labs/v1/registry.csv",
+        test_vectors_url: "/labs/v1/test-vectors",
         human_registry_url: "/research",
         frontier,
       });
     }
+    if (parts[2] === "test-vectors" && parts.length === 3 && request.method === "GET") return testVectors ? json(testVectors, 200, {"cache-control": "public, max-age=31536000, immutable"}) : json({error: "not_found"}, 404);
     if (parts[2] === "rulesets" && parts[3] && parts.length === 4 && request.method === "GET") return json({ruleset_id: parts[3], ruleset: await repository.ruleset(parts[3])}, 200, {etag: `"${parts[3]}"`, "cache-control": "public, max-age=31536000, immutable"});
     if (parts[2] === "objects" && parts[3] && parts.length === 4 && request.method === "GET") {
       const object = await repository.object(parts[3]);

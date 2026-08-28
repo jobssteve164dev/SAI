@@ -34,7 +34,7 @@ export async function handleWorldSupplyRequest(request: Request, application: Wo
   try {
     if (request.method === "OPTIONS") return new Response(null, {status: 204, headers: CORS});
     const current = await application.currentState();
-    if (!current.supply || current.supply.protocol !== "sai-world-supply-state/2") return json({error: "economic_network_unavailable"}, 409);
+    if (!current.supply || current.supply.protocol !== "sai-world-supply-state/3") return json({error: "economic_network_unavailable"}, 409);
     if (url.pathname === "/economy/v1" && request.method === "GET") return json({
       protocol: "sai-economic-network-discovery/1",
       authority: false,

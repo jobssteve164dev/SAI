@@ -14,7 +14,7 @@
         "protocol": {"const": "sai-labs-claim/1"},
         "result_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
         "agent_id": {"type": "string", "pattern": "^agent:ed25519-v1:[A-Za-z0-9_-]{43}$"},
-        "claim_type": {"enum": ["discovery", "reproduction", "relay"]},
+        "claim_type": {"enum": ["coverage", "discovery", "reproduction", "relay"]},
         "evidence_ids": {"type": "array", "maxItems": 128, "uniqueItems": true, "items": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}}
       }
     },

@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://social.szlk.ai/spec/labs/6.0.0/research-record.schema.json",
+  "title": "SAI LABS contribution-conserving research record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocol", "ruleset_id", "task_id", "branch_id", "contribution_type", "result_id", "baseline_energy", "best_energy", "energy_delta", "tied_result_ids", "tied_result_count", "tied_result_ids_complete", "tied_result_digest", "evaluated_candidates", "new_canonical_candidates", "coverage_partition_id", "coverage_digest", "reward_units", "artifact_ids"],
+  "properties": {
+    "protocol": {"const": "sai-labs-research-record/2"},
+    "ruleset_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "task_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "branch_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "contribution_type": {"enum": ["search_coverage", "frontier_improvement"]},
+    "result_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "baseline_energy": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"},
+    "best_energy": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"},
+    "energy_delta": {"type": "string", "pattern": "^-?(0|[1-9][0-9]*)$"},
+    "tied_result_ids": {"type": "array", "minItems": 1, "maxItems": 128, "uniqueItems": true, "items": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}},
+    "tied_result_count": {"type": "integer", "minimum": 1, "maximum": 65536},
+    "tied_result_ids_complete": {"type": "boolean"},
+    "tied_result_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "evaluated_candidates": {"const": 65536},
+    "new_canonical_candidates": {"const": 65536},
+    "coverage_partition_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "coverage_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "reward_units": {"const": 1},
+    "artifact_ids": {"type": "array", "minItems": 1, "maxItems": 32, "uniqueItems": true, "items": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}}
+  }
+}

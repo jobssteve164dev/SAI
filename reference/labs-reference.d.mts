@@ -9,8 +9,9 @@ export function referenceMergeFrontiers(left: import("../packages/labs/src/index
 export function referenceWorldBranch(ruleset: import("../packages/labs/src/index.js").LabsRuleset, scope: {economic_network_id: string; schedule_id: string; branch_ordinal: number; resource_id: string; resource_kind: string; resource_amount: number; x: number; y: number; stratum: number; length: number; energy_at_most?: string}): import("../packages/labs/src/index.js").LabsWorldBranch;
 export const referenceSearchMethodArtifact: import("../packages/labs/src/index.js").LabsResearchArtifact;
 export const referenceSearchMethodArtifactId: string;
-export function referenceResearchTask(ruleset: import("../packages/labs/src/index.js").LabsRuleset, branch: import("../packages/labs/src/index.js").LabsWorldBranch): {task: import("../packages/labs/src/index.js").LabsResearchTask; task_id: string};
-export function referenceExecuteResearch(ruleset: import("../packages/labs/src/index.js").LabsRuleset, branch: import("../packages/labs/src/index.js").LabsWorldBranch): import("../packages/labs/src/index.js").LabsResearchExecution;
+export function referenceResearchTask(ruleset: import("../packages/labs/src/index.js").LabsRuleset, branch: import("../packages/labs/src/index.js").LabsWorldBranch, challenge: import("../packages/labs/src/index.js").LabsSettlementChallenge): {task: import("../packages/labs/src/index.js").LabsResearchTask; task_id: string};
+export function referenceResearchCandidate(task: import("../packages/labs/src/index.js").LabsResearchTask, mask: number): string;
+export function referenceExecuteResearch(ruleset: import("../packages/labs/src/index.js").LabsRuleset, branch: import("../packages/labs/src/index.js").LabsWorldBranch, challenge: import("../packages/labs/src/index.js").LabsSettlementChallenge): import("../packages/labs/src/index.js").LabsResearchExecution;
 export function referenceSupplyScheduleId(schedule: unknown): string;
 export function referenceCumulativeSupply(stratum: number, schedule: {strata: number; branches_per_stratum: number}): number;
 export function referenceWorldResource(ruleset: import("../packages/labs/src/index.js").LabsRuleset, schedule: typeof import("../packages/kernel/src/index.js").WORLD_SUPPLY_SCHEDULE_BODY, ordinal: number): import("../packages/kernel/src/index.js").WorldResourceBranch;

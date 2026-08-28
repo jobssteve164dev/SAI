@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://social.szlk.ai/spec/labs/6.0.0/research-task.schema.json",
+  "title": "SAI LABS parent-and-claimant-bound contribution research task",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocol", "ruleset_id", "branch_id", "branch_ordinal", "unit_index", "economic_network_id", "economic_parent_id", "claimant_agent_id", "length", "objective", "base_sequence", "address_encoding", "address_bits", "address_positions", "challenge_encoding", "challenge_bits", "challenge_positions", "variable_positions", "flip_semantics", "candidate_count", "enumeration", "coverage_partition_id", "energy_formula"],
+  "properties": {
+    "protocol": {"const": "sai-labs-research-task/2"},
+    "ruleset_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "branch_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "branch_ordinal": {"type": "integer", "minimum": 0, "maximum": 16777215},
+    "unit_index": {"type": "integer", "minimum": 0, "maximum": 31},
+    "economic_network_id": {"type": "string", "pattern": "^network:sha256:[0-9a-f]{64}$"},
+    "economic_parent_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "claimant_agent_id": {"type": "string", "pattern": "^agent:ed25519-v1:[A-Za-z0-9_-]{43}$"},
+    "length": {"enum": [451, 518, 573]},
+    "objective": {"const": "exhaustive_parent_and_claimant_bound_symmetry_partition"},
+    "base_sequence": {"type": "string", "pattern": "^[01]+$", "maxLength": 4096},
+    "address_encoding": {"const": "xor31_of_branch_ordinal_24bit_and_unit_index_5bit"},
+    "address_bits": {"type": "string", "pattern": "^[01]{29}$"},
+    "address_positions": {"type": "array", "minItems": 29, "maxItems": 29, "uniqueItems": true, "items": {"type": "integer", "minimum": 0, "maximum": 4095}},
+    "challenge_encoding": {"const": "sha256_128_of_network_parent_and_claimant"},
+    "challenge_bits": {"type": "string", "pattern": "^[01]{128}$"},
+    "challenge_positions": {"type": "array", "minItems": 128, "maxItems": 128, "uniqueItems": true, "items": {"type": "integer", "minimum": 0, "maximum": 4095}},
+    "variable_positions": {"type": "array", "minItems": 16, "maxItems": 16, "uniqueItems": true, "items": {"type": "integer", "minimum": 0, "maximum": 4095}},
+    "flip_semantics": {"const": "position_and_reverse_pair"},
+    "candidate_count": {"const": 65536},
+    "enumeration": {"const": "ascending_16_bit_mask_with_gray_execution"},
+    "coverage_partition_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "energy_formula": {"const": "sum_k_1_to_L_minus_1(sum_i_1_to_L_minus_k(s_i*s_i_plus_k))^2"}
+  }
+}

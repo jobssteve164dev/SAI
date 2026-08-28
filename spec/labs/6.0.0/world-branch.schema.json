@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://social.szlk.ai/spec/labs/6.0.0/world-branch.schema.json",
+  "title": "SAI LABS contribution-bound ecosystem resource unit",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocol", "branch_id", "economic_network_id", "schedule_id", "branch_ordinal", "resource_id", "resource_kind", "resource_amount", "reward_amount", "unit_index", "x", "y", "stratum", "ruleset_id", "length", "baseline_energy", "candidates_per_unit"],
+  "properties": {
+    "protocol": {"const": "sai-labs-world-branch/4"},
+    "branch_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "economic_network_id": {"type": "string", "pattern": "^network:sha256:[0-9a-f]{64}$"},
+    "schedule_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "branch_ordinal": {"type": "integer", "minimum": 0, "maximum": 16777215},
+    "resource_id": {"type": "string", "pattern": "^resource:world:[0-9]{1,8}$"},
+    "resource_kind": {"enum": ["crystal", "fiber", "catalyst"]},
+    "resource_amount": {"type": "integer", "minimum": 1, "maximum": 32},
+    "reward_amount": {"const": 1},
+    "unit_index": {"type": "integer", "minimum": 0, "maximum": 31},
+    "x": {"type": "integer", "minimum": 0, "maximum": 65535},
+    "y": {"type": "integer", "minimum": 0, "maximum": 65535},
+    "stratum": {"type": "integer", "minimum": 1, "maximum": 32},
+    "ruleset_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "length": {"enum": [451, 518, 573]},
+    "baseline_energy": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$", "maxLength": 32},
+    "candidates_per_unit": {"const": 65536}
+  }
+}
