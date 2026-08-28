@@ -5,21 +5,27 @@ import worldBranchSchema from "../../spec/labs/4.0.0/world-branch.schema.json" w
 import resultSchema from "../../spec/labs/1.0.0/result.schema.json" with {type: "json"};
 import claimSchema from "../../spec/labs/1.0.0/claim.schema.json" with {type: "json"};
 import frontierSchema from "../../spec/labs/1.0.0/frontier.schema.json" with {type: "json"};
+import artifactSchema from "../../spec/labs/5.0.0/artifact.schema.json" with {type: "json"};
+import researchTaskSchema from "../../spec/labs/5.0.0/research-task.schema.json" with {type: "json"};
+import researchRecordSchema from "../../spec/labs/5.0.0/research-record.schema.json" with {type: "json"};
 import supplyScheduleSchema from "../../spec/sai/0.4.0/world-supply-schedule.schema.json" with {type: "json"};
 import supplyBlockSchema from "../../spec/sai/0.4.0/world-supply-block.schema.json" with {type: "json"};
 import supplyStateSchema from "../../spec/sai/0.4.0/world-supply-state.schema.json" with {type: "json"};
-import {REFERENCE_FRONTIER, REFERENCE_RESULTS, REFERENCE_RULESET, createClaimBody, createLabsResult, labsSymmetries, signLabsClaim} from "../../packages/labs/src/index.js";
+import {REFERENCE_FRONTIER, REFERENCE_RESULTS, REFERENCE_RULESET, createClaimBody, executeLabsWorldResearch, signLabsClaim} from "../../packages/labs/src/index.js";
 import {createIdentity} from "../../packages/identity/src/index.js";
 import {WORLD_SUPPLY_SCHEDULE_BODY, appendWorldSupplyBlock, createWorldSupplyState, mineWorldSupplyBlock, worldResourceBranch} from "../../packages/kernel/src/index.js";
 
 describe("LABS JSON Schemas", () => {
   const ajv = new Ajv2020({strict: true, formats: {uri: true}});
   it("accepts reference objects and rejects malformed or expanded objects", async () => {
-    ajv.addSchema(resultSchema).addSchema(claimSchema).addSchema(supplyBlockSchema);
+    ajv.addSchema(resultSchema).addSchema(claimSchema).addSchema(supplyBlockSchema).addSchema(artifactSchema).addSchema(researchTaskSchema).addSchema(researchRecordSchema);
     const validateRuleset = ajv.compile(rulesetSchema);
     const validateResult = ajv.getSchema(resultSchema.$id)!;
     const validateClaim = ajv.getSchema(claimSchema.$id)!;
     const validateFrontier = ajv.compile(frontierSchema);
+    const validateArtifact = ajv.getSchema(artifactSchema.$id)!;
+    const validateResearchTask = ajv.getSchema(researchTaskSchema.$id)!;
+    const validateResearchRecord = ajv.getSchema(researchRecordSchema.$id)!;
     const validateWorldBranch = ajv.compile(worldBranchSchema);
     const validateSupplySchedule = ajv.compile(supplyScheduleSchema);
     const validateSupplyBlock = ajv.getSchema(supplyBlockSchema.$id)!;
@@ -32,16 +38,18 @@ describe("LABS JSON Schemas", () => {
     expect(validateClaim(claim)).toBe(true);
     expect(validateFrontier(REFERENCE_FRONTIER)).toBe(true);
     const branch = worldResourceBranch(0).labs_branch;
-    const baseline = REFERENCE_RULESET.baselines.find((item) => item.length === branch.length)!;
-    const candidate_sequence = labsSymmetries(baseline.sequence).find((item) => item.startsWith(branch.sequence_prefix))!;
-    const resultObject = createLabsResult(REFERENCE_RULESET, candidate_sequence);
-    const signed = signLabsClaim(createClaimBody(resultObject.result_id, identity, "reproduction", [branch.branch_id]), identity);
-    const block = mineWorldSupplyBlock(createWorldSupplyState(), branch, {candidate_sequence, ...resultObject, ...signed}, identity.agentId);
+    const research = executeLabsWorldResearch(REFERENCE_RULESET, branch);
+    const claimType = research.record.contribution_type === "frontier_improvement" ? "discovery" : "reproduction";
+    const signed = signLabsClaim(createClaimBody(research.result_id, identity, claimType, [branch.branch_id, research.task_id, research.artifact_id, research.record_id]), identity);
+    const block = mineWorldSupplyBlock(createWorldSupplyState(), branch, {candidate_sequence: research.candidate_sequence, result: research.result, result_id: research.result_id, ...signed}, identity.agentId);
     expect(validateWorldBranch(branch)).toBe(true);
     expect(validateSupplySchedule(WORLD_SUPPLY_SCHEDULE_BODY)).toBe(true);
     expect(validateSupplyBlock(block)).toBe(true);
     expect(validateSupplyState(createWorldSupplyState())).toBe(true);
     expect(validateSupplyState(appendWorldSupplyBlock(createWorldSupplyState(), block))).toBe(true);
+    expect(validateArtifact(research.artifact)).toBe(true);
+    expect(validateResearchTask(research.task)).toBe(true);
+    expect(validateResearchRecord(research.record)).toBe(true);
     expect(validateWorldBranch({...branch, branch_ordinal: -1})).toBe(false);
     expect(validateWorldBranch({...branch, received_at: "now"})).toBe(false);
     expect(validateSupplySchedule({...WORLD_SUPPLY_SCHEDULE_BODY, season_reset: true})).toBe(false);
@@ -54,6 +62,9 @@ describe("LABS JSON Schemas", () => {
     expect(validateResult({...record.result, energy: 12625})).toBe(false);
     expect(validateResult({...record.result, server_sequence: 1})).toBe(false);
     expect(validateClaim({...claim, signature: `${claim.signature.slice(1)}!`})).toBe(false);
+    expect(validateArtifact({...research.artifact, content: 7})).toBe(false);
+    expect(validateResearchTask({...research.task, candidate_count: 255})).toBe(false);
+    expect(validateResearchRecord({...research.record, evaluated_candidates: 255})).toBe(false);
     expect(validateFrontier({...REFERENCE_FRONTIER, received_at: "now"})).toBe(false);
   });
 });

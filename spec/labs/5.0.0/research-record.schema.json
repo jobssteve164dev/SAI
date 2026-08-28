@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://social.szlk.ai/spec/labs/5.0.0/research-record.schema.json",
+  "title": "SAI LABS independently reproducible research record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocol", "ruleset_id", "task_id", "branch_id", "contribution_type", "result_id", "baseline_energy", "best_energy", "energy_delta", "tied_result_ids", "evaluated_candidates", "coverage_digest", "artifact_ids"],
+  "properties": {
+    "protocol": {"const": "sai-labs-research-record/1"},
+    "ruleset_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "task_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "branch_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "contribution_type": {"enum": ["search_coverage", "frontier_improvement"]},
+    "result_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "baseline_energy": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"},
+    "best_energy": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"},
+    "energy_delta": {"type": "string", "pattern": "^(0|[1-9][0-9]*)$"},
+    "tied_result_ids": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+    },
+    "evaluated_candidates": {"const": 256},
+    "coverage_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "artifact_ids": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+    }
+  }
+}

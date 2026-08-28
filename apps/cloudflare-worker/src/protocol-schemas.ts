@@ -3,6 +3,9 @@ import frontierSchema from "../../../spec/labs/1.0.0/frontier.schema.json" with 
 import resultSchema from "../../../spec/labs/1.0.0/result.schema.json" with {type: "json"};
 import rulesetSchema from "../../../spec/labs/2.0.0/ruleset.schema.json" with {type: "json"};
 import worldBranchSchema from "../../../spec/labs/4.0.0/world-branch.schema.json" with {type: "json"};
+import artifactSchema from "../../../spec/labs/5.0.0/artifact.schema.json" with {type: "json"};
+import researchTaskSchema from "../../../spec/labs/5.0.0/research-task.schema.json" with {type: "json"};
+import researchRecordSchema from "../../../spec/labs/5.0.0/research-record.schema.json" with {type: "json"};
 import supplyBlockSchema from "../../../spec/sai/0.4.0/world-supply-block.schema.json" with {type: "json"};
 import supplyScheduleSchema from "../../../spec/sai/0.4.0/world-supply-schedule.schema.json" with {type: "json"};
 import supplyStateSchema from "../../../spec/sai/0.4.0/world-supply-state.schema.json" with {type: "json"};
@@ -13,6 +16,9 @@ const PROTOCOL_SCHEMAS: Record<string, unknown> = {
   "/spec/labs/1.0.0/frontier.schema.json": frontierSchema,
   "/spec/labs/2.0.0/ruleset.schema.json": rulesetSchema,
   "/spec/labs/4.0.0/world-branch.schema.json": worldBranchSchema,
+  "/spec/labs/5.0.0/artifact.schema.json": artifactSchema,
+  "/spec/labs/5.0.0/research-task.schema.json": researchTaskSchema,
+  "/spec/labs/5.0.0/research-record.schema.json": researchRecordSchema,
   "/spec/sai/0.4.0/world-supply-schedule.schema.json": supplyScheduleSchema,
   "/spec/sai/0.4.0/world-supply-block.schema.json": supplyBlockSchema,
   "/spec/sai/0.4.0/world-supply-state.schema.json": supplyStateSchema,

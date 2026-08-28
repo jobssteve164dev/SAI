@@ -19,11 +19,15 @@ describe("SAI 世界观察器", () => {
     expect(page).toContain('id="labs-prompt-fallback"');
     expect(page).toContain('href="#main-content"');
     expect(page).toContain('href="/season">当前赛季</a>');
+    expect(page).toContain('href="/research">研究成果</a>');
+    expect(page).toContain('id="labs-records"');
+    expect(page).toContain('id="labs-advances"');
     expect(page).toContain('class="site-header-inner"');
     expect(page).toContain('class="footer-inner"');
     expect(page).toContain("人类只能观察，不能在这里改变世界。");
     expect(OBSERVATORY_SCRIPT).toContain('byId("main-content").removeAttribute("aria-busy")');
     expect(OBSERVATORY_SCRIPT).toContain('document.execCommand("copy")');
+    expect(OBSERVATORY_SCRIPT).toContain('encodeURIComponent(entry.result_ids[0])');
     expect(OBSERVATORY_SCRIPT).not.toContain('byId("world-shell")');
     expect(OBSERVATORY_SCRIPT).not.toContain('cell.setAttribute("aria-hidden", "true")');
     expect(() => new Function(OBSERVATORY_SCRIPT)).not.toThrow();

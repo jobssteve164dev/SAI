@@ -1,7 +1,7 @@
 import {describe, expect, it} from "vitest";
 import {WORLD_MAX_SUPPLY, buildObservation, createWorld, replay, stateHash, transition, worldResourceBranch, worldSupplyObservation, type ActionCommand, type RegionState} from "../../packages/kernel/src/index.js";
 import {createIdentity, type AgentIdentity} from "../../packages/identity/src/index.js";
-import {REFERENCE_RULESET, createClaimBody, createLabsResult, labsSymmetries, signLabsClaim, type LabsWorldBranch} from "../../packages/labs/src/index.js";
+import {REFERENCE_RULESET, createClaimBody, executeLabsWorldResearch, signLabsClaim, type LabsWorldBranch} from "../../packages/labs/src/index.js";
 
 async function prepared(state: RegionState, agentId: string, identity: AgentIdentity) {
   const stored = buildObservation(state, agentId)!;
@@ -9,11 +9,26 @@ async function prepared(state: RegionState, agentId: string, identity: AgentIden
   const resource = stored.observation.nearby.find((item) => item.type === "resource" && item.id === command.target)!;
   const branch = resource.type === "resource" ? resource.labs_branch as LabsWorldBranch : undefined;
   if (!branch) throw new Error("missing LABS branch");
-  const baseline = REFERENCE_RULESET.baselines.find((item) => item.length === branch.length)!;
-  const candidate_sequence = labsSymmetries(baseline.sequence).find((item) => item.startsWith(branch.sequence_prefix))!;
-  const {result, result_id} = createLabsResult(REFERENCE_RULESET, candidate_sequence);
-  const {signed_claim, claim_id} = signLabsClaim(createClaimBody(result_id, identity, "reproduction", [branch.branch_id]), identity);
-  return {command, branch, argumentsValue: {operation: "settle_branch", branch_id: branch.branch_id, economic_network_id: branch.economic_network_id, candidate_sequence, result, result_id, signed_claim, claim_id}};
+  const research = executeLabsWorldResearch(REFERENCE_RULESET, branch);
+  const claimType = research.record.contribution_type === "frontier_improvement" ? "discovery" : "reproduction";
+  const evidence = [branch.branch_id, research.task_id, research.artifact_id, research.record_id];
+  const {signed_claim, claim_id} = signLabsClaim(createClaimBody(research.result_id, identity, claimType, evidence), identity);
+  return {command, branch, argumentsValue: {
+    operation: "settle_branch",
+    branch_id: branch.branch_id,
+    economic_network_id: branch.economic_network_id,
+    candidate_sequence: research.candidate_sequence,
+    result: research.result,
+    result_id: research.result_id,
+    signed_claim,
+    claim_id,
+    research_task: research.task,
+    task_id: research.task_id,
+    method_artifact: research.artifact,
+    artifact_id: research.artifact_id,
+    research_record: research.record,
+    record_id: research.record_id,
+  }};
 }
 
 describe("LABS finite-world settlement", () => {

@@ -101,6 +101,118 @@ export function referenceWorldBranch(ruleset, scope) {
   return {...body, branch_id: referenceContentId(body)};
 }
 
+export const referenceSearchMethodArtifact = {
+  protocol: "sai-labs-artifact/1",
+  artifact_type: "method",
+  title: "SAI LABS exhaustive eight-position flip-neighborhood search v1",
+  media_type: "text/markdown",
+  content_encoding: "utf-8",
+  content: `# Exhaustive flip-neighborhood search v1
+
+Input is a content-addressed LABS research task. The task fixes one binary base sequence and eight distinct zero-based positions.
+
+1. Enumerate masks 0 through 255 in ascending order.
+2. For each mask, copy the base sequence and complement position j when bit j of the mask is 1.
+3. Recompute the complete aperiodic autocorrelation energy with exact integer arithmetic.
+4. Canonicalize each candidate under the eight LABS energy symmetries and derive its SHA-256 result ID.
+5. Preserve every result ID tied at the lowest energy. Select the lexicographically smallest result ID, then the smallest raw candidate, as the portable representative.
+6. Hash the ordered mask, result ID, and energy rows as the coverage digest.
+
+The resulting record proves which finite neighborhood was evaluated and can be reproduced without SAI, a reference node, wall-clock time, or hidden data. It does not prove the algorithm is globally optimal outside that neighborhood.`,
+  license: "Apache-2.0",
+};
+
+export const referenceSearchMethodArtifactId = referenceContentId(referenceSearchMethodArtifact);
+
+function referencePositionDigest(branchId, counter) {
+  return createHash("sha256").update(`${branchId}:research-positions:${counter}`).digest("hex");
+}
+
+export function referenceResearchTask(ruleset, branch) {
+  const baseline = ruleset.baselines.find((item) => item.length === branch.length);
+  const baseSequence = baseline && referenceSymmetries(baseline.sequence).find((candidate) => candidate.startsWith(branch.sequence_prefix));
+  if (!baseline || !baseSequence || baseSequence.length - branch.sequence_prefix.length < 8) throw new RangeError("branch lacks deterministic research space");
+  const available = baseSequence.length - branch.sequence_prefix.length;
+  const selected = new Set();
+  for (let counter = 0; selected.size < 8; counter += 1) {
+    const digest = referencePositionDigest(branch.branch_id, counter);
+    for (let offset = 0; offset <= digest.length - 8 && selected.size < 8; offset += 8) {
+      selected.add(branch.sequence_prefix.length + (Number.parseInt(digest.slice(offset, offset + 8), 16) % available));
+    }
+  }
+  const task = {
+    protocol: "sai-labs-research-task/1",
+    ruleset_id: referenceRulesetId(ruleset),
+    branch_id: branch.branch_id,
+    length: branch.length,
+    objective: "exhaustive_binary_flip_neighborhood",
+    base_sequence: baseSequence,
+    variable_positions: [...selected].sort((left, right) => left - right),
+    candidate_count: 256,
+    enumeration: "ascending_8_bit_flip_mask",
+    energy_formula: ruleset.energy_formula,
+  };
+  return {task, task_id: referenceContentId(task)};
+}
+
+export function referenceExecuteResearch(ruleset, branch) {
+  const {task, task_id} = referenceResearchTask(ruleset, branch);
+  const baseline = ruleset.baselines.find((item) => item.length === task.length);
+  if (!baseline) throw new RangeError("unknown task length");
+  const evaluations = [];
+  const best = [];
+  let bestEnergy;
+  for (let mask = 0; mask < 256; mask += 1) {
+    const bits = [...task.base_sequence];
+    for (let bit = 0; bit < 8; bit += 1) {
+      if ((mask & (1 << bit)) !== 0) {
+        const position = task.variable_positions[bit];
+        bits[position] = bits[position] === "0" ? "1" : "0";
+      }
+    }
+    const candidate = bits.join("");
+    const created = referenceResult(ruleset, candidate);
+    const energy = BigInt(created.result.energy);
+    evaluations.push({mask, result_id: created.result_id, energy: created.result.energy});
+    if (bestEnergy === undefined || energy < bestEnergy) {
+      bestEnergy = energy;
+      best.splice(0, best.length, {candidate, ...created});
+    } else if (energy === bestEnergy) best.push({candidate, ...created});
+  }
+  const selected = [...best].sort((left, right) => left.result_id === right.result_id
+    ? left.candidate < right.candidate ? -1 : left.candidate > right.candidate ? 1 : 0
+    : left.result_id < right.result_id ? -1 : 1)[0];
+  const tiedResultIds = [...new Set(best.map((item) => item.result_id))].sort();
+  const baselineEnergy = BigInt(baseline.energy);
+  const coverageDigest = referenceContentId({protocol: "sai-labs-search-coverage/1", task_id, evaluations});
+  const record = {
+    protocol: "sai-labs-research-record/1",
+    ruleset_id: task.ruleset_id,
+    task_id,
+    branch_id: task.branch_id,
+    contribution_type: bestEnergy < baselineEnergy ? "frontier_improvement" : "search_coverage",
+    result_id: selected.result_id,
+    baseline_energy: baseline.energy,
+    best_energy: bestEnergy.toString(),
+    energy_delta: (baselineEnergy - bestEnergy).toString(),
+    tied_result_ids: tiedResultIds,
+    evaluated_candidates: 256,
+    coverage_digest: coverageDigest,
+    artifact_ids: [referenceSearchMethodArtifactId],
+  };
+  return {
+    task,
+    task_id,
+    artifact: structuredClone(referenceSearchMethodArtifact),
+    artifact_id: referenceSearchMethodArtifactId,
+    record,
+    record_id: referenceContentId(record),
+    candidate_sequence: selected.candidate,
+    result: selected.result,
+    result_id: selected.result_id,
+  };
+}
+
 export function referenceSupplyScheduleId(schedule) {
   return referenceContentId(schedule);
 }

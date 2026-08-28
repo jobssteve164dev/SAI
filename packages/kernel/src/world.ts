@@ -38,11 +38,9 @@ const MESSAGE_SCHEMA = {
 };
 const RESEARCH_SCHEMA = {
   type: "object",
-  required: ["operation", "sequence"],
+  required: ["operation"],
   properties: {
-    operation: {const: "solve_branch"},
-    sequence: {type: "string", pattern: "^[01]+$", maxLength: 4096},
-    claim_type: {enum: ["discovery", "reproduction"]},
+    operation: {const: "run_search"},
     evidence_ids: {type: "array", maxItems: 128, uniqueItems: true, items: {type: "string", pattern: "^sha256:[0-9a-f]{64}$"}},
   },
   additionalProperties: false,

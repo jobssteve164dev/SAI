@@ -4,6 +4,8 @@ import {
   REFERENCE_RESULTS,
   REFERENCE_RULESET,
   REFERENCE_RULESET_ID,
+  REFERENCE_SEARCH_METHOD_ARTIFACT,
+  REFERENCE_SEARCH_METHOD_ARTIFACT_ID,
   addResultToFrontier,
   canonicalLabsSequence,
   createClaimBody,
@@ -11,6 +13,7 @@ import {
   createLabsResult,
   createLabsWorldBranch,
   exactMeritFactor,
+  executeLabsWorldResearch,
   labsCanonicalJson,
   labsContentId,
   labsEnergy,
@@ -31,6 +34,7 @@ import {
   referenceContentId,
   referenceEnergy,
   referenceMergeFrontiers,
+  referenceExecuteResearch,
   referenceMergeSupplyStates,
   referenceWorldBranch,
   referenceWorldResource,
@@ -39,6 +43,8 @@ import {
   referenceSymmetries,
   referenceCumulativeSupply,
   referenceSupplyScheduleId,
+  referenceSearchMethodArtifact,
+  referenceSearchMethodArtifactId,
 } from "../../reference/labs-reference.mjs";
 import {ECONOMIC_NETWORK_ID, WORLD_BRANCHES_PER_STRATUM, WORLD_MAX_SUPPLY, WORLD_REWARDED_BRANCH_COUNT, WORLD_RESOURCE_STRATA, WORLD_SUPPLY_SCHEDULE_BODY, WORLD_SUPPLY_SCHEDULE_ID, assertEcosystemSupplyImportAllowed, createWorld, createWorldSupplyState, mergeWorldSupplyStates, validateState, worldResourceBranch} from "../../packages/kernel/src/index.js";
 
@@ -149,6 +155,17 @@ describe("LABS exact protocol", () => {
     expect(referenceMergeFrontiers(REFERENCE_FRONTIER, REFERENCE_FRONTIER)).toEqual(mergeLabsFrontiers(REFERENCE_FRONTIER, REFERENCE_FRONTIER));
     expect(referenceSupplyScheduleId(WORLD_SUPPLY_SCHEDULE_BODY)).toBe(WORLD_SUPPLY_SCHEDULE_ID);
     for (const ordinal of [0, 1, 4_095, 4_096, 1_048_575, WORLD_REWARDED_BRANCH_COUNT - 1]) expect(referenceWorldResource(REFERENCE_RULESET, WORLD_SUPPLY_SCHEDULE_BODY, ordinal)).toEqual(worldResourceBranch(ordinal));
+    expect(referenceSearchMethodArtifact).toEqual(REFERENCE_SEARCH_METHOD_ARTIFACT);
+    expect(referenceSearchMethodArtifactId).toBe(REFERENCE_SEARCH_METHOD_ARTIFACT_ID);
+    for (const ordinal of [0, 1, 4_095]) {
+      const branch = worldResourceBranch(ordinal).labs_branch;
+      const reference = referenceExecuteResearch(REFERENCE_RULESET, branch);
+      const production = executeLabsWorldResearch(REFERENCE_RULESET, branch);
+      expect(referenceCanonicalJson(reference)).toBe(labsCanonicalJson(production));
+      expect(reference.task_id).toBe(production.task_id);
+      expect(reference.result_id).toBe(production.result_id);
+      expect(reference.record_id).toBe(production.record_id);
+    }
     expect(referenceMergeSupplyStates(createWorldSupplyState(), createWorldSupplyState())).toEqual(mergeWorldSupplyStates(createWorldSupplyState(), createWorldSupplyState()));
     expect(WORLD_MAX_SUPPLY).toBe(276_824_064);
   });

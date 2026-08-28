@@ -3,8 +3,8 @@ import {Client, StreamableHTTPClientTransport} from "@modelcontextprotocol/clien
 import {createClientAssertion, type AgentIdentity} from "../../identity/src/index.js";
 import {ECONOMIC_NETWORK_ID, syncWorldSupplyFromPeer, type ActInput, type ActResult, type Observation, type WorldSupplyObservation} from "../../kernel/src/index.js";
 import {verifyNodeDescriptor, type NodeDescriptor, type TransferCancellation, type TransferCredential, type TransferReceipt} from "../../federation/src/index.js";
-import {REFERENCE_FORK_ID, REFERENCE_RULESET_ID, createClaimBody, createLabsResult, signLabsClaim, verifyLabsResult, verifyLabsWorldSubmission, type LabsClaimType, type LabsFrontier, type LabsResult, type LabsRuleset, type LabsWorldBranch} from "../../labs/src/index.js";
-import {LabsRepository, MemoryLabsPersistence, syncLabsFromPeer, type LabsExchangeBundle} from "../../labs/src/store.js";
+import {REFERENCE_FORK_ID, REFERENCE_RULESET_ID, createClaimBody, createLabsResult, executeLabsWorldResearch, signLabsClaim, verifyLabsResult, verifyLabsWorldSubmission, type LabsClaimType, type LabsFrontier, type LabsResult, type LabsRuleset, type LabsWorldBranch} from "../../labs/src/index.js";
+import {LabsRepository, MemoryLabsPersistence, syncLabsFromPeer, type LabsExchangeBundle, type LabsRegistryEntry, type LabsRegistrySnapshot} from "../../labs/src/store.js";
 
 async function expectJson<T>(response: Response): Promise<T> {
   const body = await response.json() as T & {error_description?: string};
@@ -16,6 +16,7 @@ export class SaiBridge {
   private client: Client | undefined;
   private token: string | undefined;
   private lastObservation: Observation | undefined;
+  private lastResearchReceipt: LabsResearchReceipt | undefined;
   constructor(readonly baseUrl: string, readonly identity: AgentIdentity) {}
 
   async register(): Promise<void> {
@@ -47,25 +48,42 @@ export class SaiBridge {
 
   async act(input: ActInput): Promise<ActResult> {
     let prepared = input;
+    let researchReceipt: LabsResearchReceipt | undefined;
     const action = this.lastObservation?.legal_actions.find((item) => item.action_id === input.action_id);
     if (action?.type === "research") {
-      const args = input.arguments as {operation?: string; sequence?: string; claim_type?: LabsClaimType; evidence_ids?: string[]} | undefined;
-      if (args?.operation !== "solve_branch" || typeof args.sequence !== "string") throw new TypeError("LABS research 动作需要 operation=solve_branch 和 sequence");
+      const args = input.arguments as {operation?: string; evidence_ids?: string[]} | undefined;
+      if (args?.operation !== "run_search" && args?.operation !== "solve_branch") throw new TypeError("LABS research 动作需要 operation=run_search");
       const resource = this.lastObservation?.nearby.find((item) => item.type === "resource" && item.id === action.target);
       const branch = resource?.type === "resource" ? resource.labs_branch as LabsWorldBranch | undefined : undefined;
       if (!branch || branch.economic_network_id !== ECONOMIC_NETWORK_ID) throw new TypeError("当前观察中没有可结算的 LABS 世界分支");
       const {ruleset} = await this.labsRuleset(branch.ruleset_id);
-      const {result: labsResult, result_id} = createLabsResult(ruleset, args.sequence);
-      const claimType = args.claim_type ?? "reproduction";
-      const {signed_claim, claim_id} = signLabsClaim(createClaimBody(result_id, this.identity, claimType, [...(args.evidence_ids ?? []), branch.branch_id]), this.identity);
-      const settlement = {candidate_sequence: args.sequence, result: labsResult, result_id, signed_claim, claim_id};
+      const research = executeLabsWorldResearch(ruleset, branch);
+      const claimType: LabsClaimType = research.record.contribution_type === "frontier_improvement" ? "discovery" : "reproduction";
+      const evidence = [...(args.evidence_ids ?? []), branch.branch_id, research.task_id, research.artifact_id, research.record_id];
+      const {signed_claim, claim_id} = signLabsClaim(createClaimBody(research.result_id, this.identity, claimType, evidence), this.identity);
+      const settlement = {candidate_sequence: research.candidate_sequence, result: research.result, result_id: research.result_id, signed_claim, claim_id, research_task: research.task, task_id: research.task_id, method_artifact: research.artifact, artifact_id: research.artifact_id, research_record: research.record, record_id: research.record_id};
       verifyLabsWorldSubmission(ruleset, branch, settlement, this.identity.agentId);
+      researchReceipt = {
+        result_id: research.result_id,
+        record_id: research.record_id,
+        task_id: research.task_id,
+        artifact_id: research.artifact_id,
+        contribution_type: research.record.contribution_type,
+        evaluated_candidates: research.record.evaluated_candidates,
+        energy: research.result.energy,
+        result_page: `${this.baseUrl.replace(/\/$/, "")}/research/${encodeURIComponent(research.result_id)}`,
+        reproducibility_bundle: `${this.baseUrl.replace(/\/$/, "")}/labs/v1/results/${encodeURIComponent(research.result_id)}/bundle`,
+      };
       prepared = {...input, arguments: {operation: "settle_branch", branch_id: branch.branch_id, economic_network_id: branch.economic_network_id, ...settlement}};
     }
     const result = await this.requiredClient().callTool({name: "sai_act", arguments: {...prepared}});
     if (result.isError || !result.structuredContent) throw new Error("sai_act 未返回结构化结果");
-    return result.structuredContent as unknown as ActResult;
+    const structured = result.structuredContent as unknown as ActResult;
+    if (researchReceipt) this.lastResearchReceipt = researchReceipt;
+    return structured;
   }
+
+  lastLabsResearch(): LabsResearchReceipt | undefined { return this.lastResearchReceipt ? structuredClone(this.lastResearchReceipt) : undefined; }
 
   async labsDiscover(): Promise<{reference_ruleset_id: string; world_fork_id: string; frontier: LabsFrontier}> {
     return expectJson(await fetch(`${this.baseUrl}/labs/v1`, {headers: {accept: "application/json"}}));
@@ -77,6 +95,14 @@ export class SaiBridge {
 
   async labsFrontier(rulesetId = REFERENCE_RULESET_ID, forkId = REFERENCE_FORK_ID): Promise<{frontier: LabsFrontier}> {
     return expectJson(await fetch(`${this.baseUrl}/labs/v1/frontiers/${encodeURIComponent(rulesetId)}/${encodeURIComponent(forkId)}`, {headers: {accept: "application/json"}}));
+  }
+
+  async labsRegistry(): Promise<LabsRegistrySnapshot> {
+    return expectJson(await fetch(`${this.baseUrl}/labs/v1/registry`, {headers: {accept: "application/json"}}));
+  }
+
+  async labsResult(resultId: string): Promise<{protocol: "sai-labs-result-detail/1"; authority: false; entry: LabsRegistryEntry}> {
+    return expectJson(await fetch(`${this.baseUrl}/labs/v1/results/${encodeURIComponent(resultId)}`, {headers: {accept: "application/json"}}));
   }
 
   async labsVerify(result: LabsResult): Promise<string> {
@@ -96,9 +122,17 @@ export class SaiBridge {
   async labsSync(peerBaseUrl: string, rulesetId = REFERENCE_RULESET_ID, forkId = REFERENCE_FORK_ID): Promise<{frontier: LabsFrontier; economy: WorldSupplyObservation}> {
     const local = await LabsRepository.open(new MemoryLabsPersistence());
     await syncLabsFromPeer(local, peerBaseUrl, rulesetId, forkId);
-    const bundle = await local.bundle(rulesetId, forkId);
-    const response = await fetch(`${this.baseUrl}/labs/v1/exchange`, {method: "POST", headers: {"content-type": "application/json"}, body: JSON.stringify(bundle)});
-    const output = await expectJson<{frontier: LabsFrontier}>(response);
+    let cursor: string | null = null;
+    let output: {frontier: LabsFrontier} | undefined;
+    for (let page = 0; page < 4_096; page += 1) {
+      const bundle: LabsExchangeBundle = await local.bundle(rulesetId, forkId, cursor);
+      const response = await fetch(`${this.baseUrl}/labs/v1/exchange`, {method: "POST", headers: {"content-type": "application/json"}, body: JSON.stringify(bundle)});
+      output = await expectJson<{frontier: LabsFrontier}>(response);
+      if (!bundle.next_cursor) break;
+      if (bundle.next_cursor === cursor) throw new Error("LABS 本地交换游标没有前进");
+      cursor = bundle.next_cursor;
+    }
+    if (!output) throw new Error("LABS 本地交换没有产生页面");
     await syncWorldSupplyFromPeer(this.baseUrl, peerBaseUrl);
     const {supply: economy} = await expectJson<{supply: WorldSupplyObservation}>(await fetch(`${this.baseUrl}/economy/v1`, {headers: {accept: "application/json"}}));
     return {frontier: output.frontier, economy};
@@ -144,4 +178,16 @@ export class SaiBridge {
 
   async close(): Promise<void> { if (this.client) await this.client.close(); this.client = undefined; this.token = undefined; this.lastObservation = undefined; }
   private requiredClient(): Client { if (!this.client) throw new Error("bridge 尚未连接"); return this.client; }
+}
+
+export interface LabsResearchReceipt {
+  result_id: string;
+  record_id: string;
+  task_id: string;
+  artifact_id: string;
+  contribution_type: "search_coverage" | "frontier_improvement";
+  evaluated_candidates: 256;
+  energy: string;
+  result_page: string;
+  reproducibility_bundle: string;
 }

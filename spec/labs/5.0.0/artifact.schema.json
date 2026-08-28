@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://social.szlk.ai/spec/labs/5.0.0/artifact.schema.json",
+  "title": "SAI LABS reproducible research artifact",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocol", "artifact_type", "title", "media_type", "content_encoding", "content", "license"],
+  "properties": {
+    "protocol": {"const": "sai-labs-artifact/1"},
+    "artifact_type": {"enum": ["method", "code", "dataset", "report", "citation"]},
+    "title": {"type": "string", "minLength": 1, "maxLength": 256},
+    "media_type": {"type": "string", "pattern": "^[a-z0-9.+-]+/[a-z0-9.+-]+$", "maxLength": 128},
+    "content_encoding": {"const": "utf-8"},
+    "content": {"type": "string", "minLength": 1, "maxLength": 65536},
+    "license": {"type": "string", "minLength": 1, "maxLength": 64}
+  }
+}

@@ -7,6 +7,10 @@ export function referenceRulesetId(ruleset: import("../packages/labs/src/index.j
 export function referenceResult(ruleset: import("../packages/labs/src/index.js").LabsRuleset, sequence: string): {result: import("../packages/labs/src/index.js").LabsResult; result_id: string};
 export function referenceMergeFrontiers(left: import("../packages/labs/src/index.js").LabsFrontier, right: import("../packages/labs/src/index.js").LabsFrontier): import("../packages/labs/src/index.js").LabsFrontier;
 export function referenceWorldBranch(ruleset: import("../packages/labs/src/index.js").LabsRuleset, scope: {economic_network_id: string; schedule_id: string; branch_ordinal: number; resource_id: string; resource_kind: string; resource_amount: number; x: number; y: number; stratum: number; length: number; energy_at_most?: string}): import("../packages/labs/src/index.js").LabsWorldBranch;
+export const referenceSearchMethodArtifact: import("../packages/labs/src/index.js").LabsResearchArtifact;
+export const referenceSearchMethodArtifactId: string;
+export function referenceResearchTask(ruleset: import("../packages/labs/src/index.js").LabsRuleset, branch: import("../packages/labs/src/index.js").LabsWorldBranch): {task: import("../packages/labs/src/index.js").LabsResearchTask; task_id: string};
+export function referenceExecuteResearch(ruleset: import("../packages/labs/src/index.js").LabsRuleset, branch: import("../packages/labs/src/index.js").LabsWorldBranch): import("../packages/labs/src/index.js").LabsResearchExecution;
 export function referenceSupplyScheduleId(schedule: unknown): string;
 export function referenceCumulativeSupply(stratum: number, schedule: {strata: number; branches_per_stratum: number}): number;
 export function referenceWorldResource(ruleset: import("../packages/labs/src/index.js").LabsRuleset, schedule: typeof import("../packages/kernel/src/index.js").WORLD_SUPPLY_SCHEDULE_BODY, ordinal: number): import("../packages/kernel/src/index.js").WorldResourceBranch;

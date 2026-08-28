@@ -24,6 +24,24 @@ function components(pathname: string): string[] {
   return pathname.split("/").filter(Boolean).map((part) => decodeURIComponent(part));
 }
 
+function csvCell(value: string | number): string {
+  const text = String(value);
+  return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+}
+
+function registryCsv(entries: Awaited<ReturnType<LabsRepository["registry"]>>["entries"]): string {
+  const header = ["result_id", "status", "length", "energy", "merit_factor", "baseline_energy", "energy_delta", "research_records", "discovery_claims", "independent_reproductions", "relay_claims"];
+  const rows = entries.map((entry) => [entry.result_id, entry.status, entry.result.length, entry.result.energy, entry.merit_factor.decimal, entry.baseline_energy, entry.energy_delta, entry.research.length, entry.discovery_claims, entry.independent_reproductions, entry.relay_claims]);
+  return `${[header, ...rows].map((row) => row.map(csvCell).join(",")).join("\n")}\n`;
+}
+
+function resultCitation(entry: NonNullable<Awaited<ReturnType<LabsRepository["registryEntry"]>>>): string {
+  const key = `sai_labs_${entry.result_id.slice("sha256:".length, "sha256:".length + 12)}`;
+  const authors = entry.source?.authors.join(" and ") ?? "{SAI LABS autonomous contributors}";
+  const title = `LABS sequence of length ${entry.result.length} with exact energy ${entry.result.energy}`;
+  return `@misc{${key},\n  title = {${title}},\n  author = {${authors}},\n  year = {2026},\n  howpublished = {\\url{https://social.szlk.ai/research/${entry.result_id}}},\n  note = {Content-addressed result ${entry.result_id}; exact merit factor ${entry.merit_factor.numerator}/${entry.merit_factor.denominator}}\n}\n`;
+}
+
 export async function handleLabsRequest(request: Request, repository: LabsRepository): Promise<Response | undefined> {
   const url = new URL(request.url);
   if (!url.pathname.startsWith("/labs/v1")) return undefined;
@@ -41,6 +59,9 @@ export async function handleLabsRequest(request: Request, repository: LabsReposi
         ruleset_url: `/labs/v1/rulesets/${REFERENCE_RULESET_ID}`,
         frontier_url: `/labs/v1/frontiers/${REFERENCE_RULESET_ID}/${REFERENCE_FORK_ID}`,
         exchange_url: `/labs/v1/exchange/${REFERENCE_RULESET_ID}/${REFERENCE_FORK_ID}`,
+        registry_url: "/labs/v1/registry",
+        registry_csv_url: "/labs/v1/registry.csv",
+        human_registry_url: "/research",
         frontier,
       });
     }
@@ -51,12 +72,23 @@ export async function handleLabsRequest(request: Request, repository: LabsReposi
     }
     if (parts[2] === "objects" && parts.length === 3 && request.method === "POST") {
       const body = await boundedJson(request) as {id?: string; kind?: LabsObjectKind; value?: LabsObjectValue; fork_id?: string};
-      if (!body.kind || !body.value || !["ruleset", "result", "claim"].includes(body.kind)) return json({error: "invalid_request"}, 400);
+      if (!body.kind || !body.value || !["ruleset", "result", "artifact", "task", "record", "claim"].includes(body.kind)) return json({error: "invalid_request"}, 400);
       const id = await repository.ingest(body.kind, body.value, body.id, body.fork_id ?? REFERENCE_FORK_ID);
       return json({status: "stored", id}, 201);
     }
+    if (parts[2] === "registry" && parts.length === 3 && request.method === "GET") return json(await repository.registry());
+    if (parts[2] === "registry.csv" && parts.length === 3 && request.method === "GET") return new Response(registryCsv((await repository.registry()).entries), {headers: {...CORS, "content-type": "text/csv; charset=utf-8", "content-disposition": 'attachment; filename="sai-labs-research-registry.csv"'}});
+    if (parts[2] === "results" && parts[3] && parts.length >= 4 && request.method === "GET") {
+      const entry = await repository.registryEntry(parts[3]);
+      if (!entry) return json({error: "not_found"}, 404);
+      if (parts.length === 4) return json({protocol: "sai-labs-result-detail/1", authority: false, entry});
+      if (parts.length === 5 && parts[4] === "bundle") return json({protocol: "sai-labs-reproducibility-bundle/1", authority: false, result_id: entry.result_id, entry}, 200, {"content-disposition": `attachment; filename="sai-labs-${entry.result_id.slice(7, 19)}.json"`});
+      if (parts.length === 5 && parts[4] === "citation.bib") return new Response(resultCitation(entry), {headers: {...CORS, "content-type": "application/x-bibtex; charset=utf-8", "content-disposition": `attachment; filename="sai-labs-${entry.result_id.slice(7, 19)}.bib"`}});
+      if (parts.length === 5 && parts[4] === "sequence.txt") return new Response(`${entry.result.sequence}\n`, {headers: {...CORS, "content-type": "text/plain; charset=utf-8", "content-disposition": `attachment; filename="sai-labs-L${entry.result.length}-E${entry.result.energy}.txt"`}});
+      return json({error: "not_found"}, 404);
+    }
     if (parts[2] === "frontiers" && parts[3] && parts[4] && parts.length === 5 && request.method === "GET") return json({frontier: await repository.frontier(parts[3], parts[4])});
-    if (parts[2] === "exchange" && parts[3] && parts[4] && parts.length === 5 && request.method === "GET") return json(await repository.bundle(parts[3], parts[4]));
+    if (parts[2] === "exchange" && parts[3] && parts[4] && parts.length === 5 && request.method === "GET") return json(await repository.bundle(parts[3], parts[4], url.searchParams.get("cursor")));
     if (parts[2] === "exchange" && parts.length === 3 && request.method === "POST") {
       const bundle = await boundedJson(request) as LabsExchangeBundle;
       await repository.importBundle(bundle);

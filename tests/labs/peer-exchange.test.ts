@@ -5,7 +5,7 @@ import {afterEach, describe, expect, it} from "vitest";
 import {startLocalNode, type LocalNode} from "../../apps/local-node/src/server.js";
 import {SaiBridge} from "../../packages/bridge/src/index.js";
 import {createIdentity} from "../../packages/identity/src/index.js";
-import {canonicalLabsSequence, createClaimBody, createLabsResult, labsContentId, labsEnergy, labsSymmetries, rulesetId, signLabsClaim, type LabsRuleset} from "../../packages/labs/src/index.js";
+import {canonicalLabsSequence, createClaimBody, createLabsResult, executeLabsWorldResearch, labsContentId, labsEnergy, rulesetId, signLabsClaim, type LabsRuleset} from "../../packages/labs/src/index.js";
 import {syncLabsFromPeer} from "../../packages/labs/src/store.js";
 import {WORLD_MAX_SUPPLY, createWorldSupplyState, mergeWorldSupplyStates, syncWorldSupplyFromPeer, worldResourceBranch, worldSupplyObservation} from "../../packages/kernel/src/index.js";
 
@@ -65,12 +65,25 @@ describe("LABS direct exchange", () => {
     }
     const research = observation.legal_actions.find((action) => action.type === "research")!;
     expect(research).toBeDefined();
+    expect(research.arguments_schema).toEqual({
+      type: "object",
+      required: ["operation"],
+      properties: {
+        operation: {const: "run_search"},
+        evidence_ids: {type: "array", maxItems: 128, uniqueItems: true, items: {type: "string", pattern: "^sha256:[0-9a-f]{64}$"}},
+      },
+      additionalProperties: false,
+    });
     const resource = observation.nearby.find((item) => item.type === "resource" && item.id === research.target)!;
-    const baseline = (await bridge.labsRuleset()).ruleset.baselines.find((item) => item.length === (resource.type === "resource" ? resource.labs_branch?.length : undefined))!;
-    const sequence = labsSymmetries(baseline.sequence).find((candidate) => candidate.startsWith(resource.type === "resource" ? resource.labs_branch!.sequence_prefix : ""))!;
     const before = worldSupplyObservation(participant.region.currentState())!;
-    const result = await bridge.act({observation_id: observation.observation_id, action_id: research.action_id, arguments: {operation: "solve_branch", sequence, claim_type: "reproduction"}, request_id: "labs-observe-act"});
+    const result = await bridge.act({observation_id: observation.observation_id, action_id: research.action_id, arguments: {operation: "run_search"}, request_id: "labs-observe-act"});
     expect(result.status).toBe("applied");
+    expect(bridge.lastLabsResearch()).toMatchObject({
+      contribution_type: expect.stringMatching(/^(search_coverage|frontier_improvement)$/),
+      evaluated_candidates: 256,
+      result_page: expect.stringContaining("/research/sha256%3A"),
+      reproducibility_bundle: expect.stringContaining("/labs/v1/results/sha256%3A"),
+    });
     const after = participant.region.currentState();
     expect(after.agents[identity.agentId]!.inventory[genesisBranch.kind]).toBe(genesisBranch.amount);
     const supply = worldSupplyObservation(after)!;
@@ -126,15 +139,15 @@ describe("LABS direct exchange", () => {
       const resource = observation.nearby.find((item) => item.type === "resource" && item.id === action.target)!;
       if (resource.type !== "resource" || !resource.labs_branch) throw new Error("missing economic acceptance branch");
       const ruleset = await participant.labs.ruleset(resource.labs_branch.ruleset_id);
-      const baseline = ruleset.baselines.find((item) => item.length === resource.labs_branch!.length)!;
-      const candidateSequence = labsSymmetries(baseline.sequence).find((candidate) => candidate.startsWith(resource.labs_branch!.sequence_prefix))!;
-      const {result, result_id} = createLabsResult(ruleset, candidateSequence);
-      const {signed_claim, claim_id} = signLabsClaim(createClaimBody(result_id, identity, "reproduction", [resource.labs_branch.branch_id]), identity);
+      const research = executeLabsWorldResearch(ruleset, resource.labs_branch);
+      const claimType = research.record.contribution_type === "frontier_improvement" ? "discovery" : "reproduction";
+      const evidence = [resource.labs_branch.branch_id, research.task_id, research.artifact_id, research.record_id];
+      const {signed_claim, claim_id} = signLabsClaim(createClaimBody(research.result_id, identity, claimType, evidence), identity);
       return participant.region.act(identity.agentId, {
         observation_id: observation.observation_id,
         action_id: action.action_id,
         request_id: requestId,
-        arguments: {operation: "settle_branch", branch_id: resource.labs_branch.branch_id, economic_network_id: resource.labs_branch.economic_network_id, candidate_sequence: candidateSequence, result, result_id, signed_claim, claim_id},
+        arguments: {operation: "settle_branch", branch_id: resource.labs_branch.branch_id, economic_network_id: resource.labs_branch.economic_network_id, candidate_sequence: research.candidate_sequence, result: research.result, result_id: research.result_id, signed_claim, claim_id, research_task: research.task, task_id: research.task_id, method_artifact: research.artifact, artifact_id: research.artifact_id, research_record: research.record, record_id: research.record_id},
       });
     };
 
@@ -176,17 +189,18 @@ describe("LABS direct exchange", () => {
       const action = observation.legal_actions.find((item) => item.type === "research")!;
       const resource = observation.nearby.find((item) => item.type === "resource" && item.id === action.target)!;
       if (resource.type !== "resource" || !resource.labs_branch) throw new Error("missing concurrent LABS branch");
-      const baseline = (await participant.labs.ruleset(resource.labs_branch.ruleset_id)).baselines.find((item) => item.length === resource.labs_branch!.length)!;
-      const candidate_sequence = labsSymmetries(baseline.sequence).find((candidate) => candidate.startsWith(resource.labs_branch!.sequence_prefix))!;
-      const {result, result_id} = createLabsResult(await participant.labs.ruleset(resource.labs_branch.ruleset_id), candidate_sequence);
-      const {signed_claim, claim_id} = signLabsClaim(createClaimBody(result_id, identity, "reproduction", [resource.labs_branch.branch_id]), identity);
+      const ruleset = await participant.labs.ruleset(resource.labs_branch.ruleset_id);
+      const research = executeLabsWorldResearch(ruleset, resource.labs_branch);
+      const claimType = research.record.contribution_type === "frontier_improvement" ? "discovery" : "reproduction";
+      const evidence = [resource.labs_branch.branch_id, research.task_id, research.artifact_id, research.record_id];
+      const {signed_claim, claim_id} = signLabsClaim(createClaimBody(research.result_id, identity, claimType, evidence), identity);
       return {
         agent_id: identity.agentId,
         input: {
           observation_id: observation.observation_id,
           action_id: action.action_id,
           request_id,
-          arguments: {operation: "settle_branch", branch_id: resource.labs_branch.branch_id, economic_network_id: resource.labs_branch.economic_network_id, candidate_sequence, result, result_id, signed_claim, claim_id},
+          arguments: {operation: "settle_branch", branch_id: resource.labs_branch.branch_id, economic_network_id: resource.labs_branch.economic_network_id, candidate_sequence: research.candidate_sequence, result: research.result, result_id: research.result_id, signed_claim, claim_id, research_task: research.task, task_id: research.task_id, method_artifact: research.artifact, artifact_id: research.artifact_id, research_record: research.record, record_id: research.record_id},
         },
       };
     };

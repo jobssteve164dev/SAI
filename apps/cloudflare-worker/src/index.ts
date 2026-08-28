@@ -12,6 +12,7 @@ import {LabsRepository, type LabsPersistence, type LabsStoredObject} from "../..
 import {LEGACY_REFERENCE_FORK_ID, PREVIOUS_REFERENCE_FORK_ID, REFERENCE_FORK_ID, exactMeritFactor, type LabsFrontier} from "../../../packages/labs/src/index.js";
 import {createLabsAwareApplication} from "../../../packages/labs/src/application.js";
 import {protocolSchemaResponse} from "./protocol-schemas.js";
+import {researchResponse} from "./research-pages.js";
 
 interface Env {
   REGIONS: DurableObjectNamespace<RegionDurableObject>;
@@ -156,6 +157,9 @@ export class RegionDurableObject extends DurableObject<Env> {
       if (url.pathname === "/en/help" && (request.method === "GET" || request.method === "HEAD")) return helpResponse(request.method, "en");
       if (url.pathname === "/season" && (request.method === "GET" || request.method === "HEAD")) return seasonResponse(request.method);
       if (url.pathname === "/en/season" && (request.method === "GET" || request.method === "HEAD")) return seasonResponse(request.method, "en");
+      if ((url.pathname === "/research" || url.pathname === "/en/research") && (request.method === "GET" || request.method === "HEAD")) return researchResponse(request, this.labs, url.pathname.startsWith("/en/") ? "en" : "zh-CN");
+      const researchMatch = url.pathname.match(/^\/(en\/)?research\/(sha256(?::|%3A)[0-9a-f]{64})$/i);
+      if (researchMatch && (request.method === "GET" || request.method === "HEAD")) return researchResponse(request, this.labs, researchMatch[1] ? "en" : "zh-CN", decodeURIComponent(researchMatch[2]!));
       if ((url.pathname === "/favicon.svg" || url.pathname === "/favicon.ico") && (request.method === "GET" || request.method === "HEAD")) return faviconResponse(request.method, url.pathname.endsWith(".ico") ? "ico" : "svg");
       if (url.pathname === "/robots.txt" && request.method === "GET") return robotsResponse();
       if (url.pathname === "/sitemap.xml" && request.method === "GET") return sitemapResponse();
@@ -175,11 +179,13 @@ export class RegionDurableObject extends DurableObject<Env> {
         const snapshot = await this.region.observerSnapshot();
         const frontier = await this.labs.frontier();
         const ruleset = await this.labs.ruleset(frontier.ruleset_id);
+        const registry = await this.labs.registry(frontier.ruleset_id);
         const labs = {
           ruleset_id: frontier.ruleset_id,
           world_fork_id: frontier.fork_id,
           source_title: ruleset.baselines[0]?.source.title ?? ruleset.name,
           source_url: ruleset.baselines[0]?.source.url ?? `${this.env.PUBLIC_BASE_URL}/labs/v1`,
+          research_totals: registry.totals,
           frontier: ruleset.baselines.map((baseline) => {
             const entry = frontier.lengths[String(baseline.length)]!;
             return {length: baseline.length, best_energy: entry.best_energy, merit_factor: exactMeritFactor(baseline.length, BigInt(entry.best_energy)).decimal, result_ids: entry.result_ids};

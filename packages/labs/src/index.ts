@@ -1,11 +1,14 @@
 import {createHash, createPrivateKey, createPublicKey, sign, verify, type JsonWebKey} from "node:crypto";
 import {agentIdFromJwk, type AgentIdentity} from "../../identity/src/index.js";
-import {assertLabsClaim, assertLabsFrontier, assertLabsResult, assertLabsRuleset, assertLabsWorldBranch} from "./validation.js";
+import {assertLabsArtifact, assertLabsClaim, assertLabsFrontier, assertLabsResearchRecord, assertLabsResearchTask, assertLabsResult, assertLabsRuleset, assertLabsWorldBranch} from "./validation.js";
 
 export const LABS_RULESET_PROTOCOL = "sai-labs-ruleset/2" as const;
 export const LABS_RESULT_PROTOCOL = "sai-labs-result/1" as const;
 export const LABS_CLAIM_PROTOCOL = "sai-labs-claim/1" as const;
 export const LABS_FRONTIER_PROTOCOL = "sai-labs-frontier/1" as const;
+export const LABS_ARTIFACT_PROTOCOL = "sai-labs-artifact/1" as const;
+export const LABS_RESEARCH_TASK_PROTOCOL = "sai-labs-research-task/1" as const;
+export const LABS_RESEARCH_RECORD_PROTOCOL = "sai-labs-research-record/1" as const;
 export const LABS_MAX_OBJECT_BYTES = 131_072;
 export const LABS_MAX_SEQUENCE_LENGTH = 4_096;
 export const LEGACY_REFERENCE_FORK_ID = "fork:sai-public-world-1";
@@ -94,6 +97,57 @@ export interface LabsWorldBranch {
   sequence_prefix: string;
 }
 
+export interface LabsResearchArtifact {
+  protocol: typeof LABS_ARTIFACT_PROTOCOL;
+  artifact_type: "method" | "code" | "dataset" | "report" | "citation";
+  title: string;
+  media_type: string;
+  content_encoding: "utf-8";
+  content: string;
+  license: string;
+}
+
+export interface LabsResearchTask {
+  protocol: typeof LABS_RESEARCH_TASK_PROTOCOL;
+  ruleset_id: string;
+  branch_id: string;
+  length: number;
+  objective: "exhaustive_binary_flip_neighborhood";
+  base_sequence: string;
+  variable_positions: number[];
+  candidate_count: 256;
+  enumeration: "ascending_8_bit_flip_mask";
+  energy_formula: LabsRuleset["energy_formula"];
+}
+
+export interface LabsResearchRecord {
+  protocol: typeof LABS_RESEARCH_RECORD_PROTOCOL;
+  ruleset_id: string;
+  task_id: string;
+  branch_id: string;
+  contribution_type: "search_coverage" | "frontier_improvement";
+  result_id: string;
+  baseline_energy: string;
+  best_energy: string;
+  energy_delta: string;
+  tied_result_ids: string[];
+  evaluated_candidates: 256;
+  coverage_digest: string;
+  artifact_ids: string[];
+}
+
+export interface LabsResearchExecution {
+  task: LabsResearchTask;
+  task_id: string;
+  artifact: LabsResearchArtifact;
+  artifact_id: string;
+  record: LabsResearchRecord;
+  record_id: string;
+  candidate_sequence: string;
+  result: LabsResult;
+  result_id: string;
+}
+
 function normalize(value: unknown): unknown {
   if (value === null || typeof value === "string" || typeof value === "boolean") return value;
   if (typeof value === "number") {
@@ -122,6 +176,38 @@ export function labsContentId(value: unknown): string {
 
 export function labsObjectBytes(value: unknown): number {
   return Buffer.byteLength(labsCanonicalJson(value), "utf8");
+}
+
+export const REFERENCE_SEARCH_METHOD_ARTIFACT: LabsResearchArtifact = {
+  protocol: LABS_ARTIFACT_PROTOCOL,
+  artifact_type: "method",
+  title: "SAI LABS exhaustive eight-position flip-neighborhood search v1",
+  media_type: "text/markdown",
+  content_encoding: "utf-8",
+  content: `# Exhaustive flip-neighborhood search v1
+
+Input is a content-addressed LABS research task. The task fixes one binary base sequence and eight distinct zero-based positions.
+
+1. Enumerate masks 0 through 255 in ascending order.
+2. For each mask, copy the base sequence and complement position j when bit j of the mask is 1.
+3. Recompute the complete aperiodic autocorrelation energy with exact integer arithmetic.
+4. Canonicalize each candidate under the eight LABS energy symmetries and derive its SHA-256 result ID.
+5. Preserve every result ID tied at the lowest energy. Select the lexicographically smallest result ID, then the smallest raw candidate, as the portable representative.
+6. Hash the ordered mask, result ID, and energy rows as the coverage digest.
+
+The resulting record proves which finite neighborhood was evaluated and can be reproduced without SAI, a reference node, wall-clock time, or hidden data. It does not prove the algorithm is globally optimal outside that neighborhood.`,
+  license: "Apache-2.0",
+};
+
+export const REFERENCE_SEARCH_METHOD_ARTIFACT_ID = labsContentId(REFERENCE_SEARCH_METHOD_ARTIFACT);
+
+export function verifyLabsArtifact(artifact: LabsResearchArtifact, expectedId?: string): string {
+  assertLabsArtifact(artifact);
+  if (artifact.protocol !== LABS_ARTIFACT_PROTOCOL || artifact.content_encoding !== "utf-8") throw new TypeError("LABS 研究制品协议无效");
+  if (labsObjectBytes(artifact) > LABS_MAX_OBJECT_BYTES) throw new RangeError("LABS 研究制品超过对象大小上限");
+  const artifactId = labsContentId(artifact);
+  if (expectedId && artifactId !== expectedId) throw new TypeError("LABS artifact_id 不匹配");
+  return artifactId;
 }
 
 function assertDecimal(value: string, label: string): bigint {
@@ -343,17 +429,167 @@ export function createLabsWorldBranch(ruleset: LabsRuleset, scope: {economic_net
   return branch;
 }
 
-export function verifyLabsWorldSubmission(ruleset: LabsRuleset, branch: LabsWorldBranch, submission: {candidate_sequence: string; result: LabsResult; result_id: string; signed_claim: LabsSignedClaim; claim_id: string}, agentId: string): void {
+function researchPositionDigest(branchId: string, counter: number): string {
+  return createHash("sha256").update(`${branchId}:research-positions:${counter}`).digest("hex");
+}
+
+function exactSafeEnergy(sequence: string): number {
+  let energy = 0;
+  for (let shift = 1; shift < sequence.length; shift += 1) {
+    let correlation = 0;
+    for (let index = 0; index < sequence.length - shift; index += 1) correlation += sequence[index] === sequence[index + shift] ? 1 : -1;
+    energy += correlation * correlation;
+  }
+  if (!Number.isSafeInteger(energy)) throw new RangeError("LABS 搜索能量超过安全整数范围");
+  return energy;
+}
+
+export function createLabsResearchTask(ruleset: LabsRuleset, branch: LabsWorldBranch): {task: LabsResearchTask; task_id: string} {
+  assertLabsWorldBranch(branch);
+  const expectedBranch = createLabsWorldBranch(ruleset, branch);
+  if (labsCanonicalJson(expectedBranch) !== labsCanonicalJson(branch)) throw new TypeError("LABS 研究任务引用了错误世界分支");
+  const baseline = ruleset.baselines.find((item) => item.length === branch.length);
+  const baseSequence = baseline ? labsSymmetries(baseline.sequence).find((candidate) => candidate.startsWith(branch.sequence_prefix)) : undefined;
+  if (!baseline || !baseSequence || baseSequence.length - branch.sequence_prefix.length < 8) throw new RangeError("LABS 世界分支没有足够的确定性搜索空间");
+  const available = baseSequence.length - branch.sequence_prefix.length;
+  const selected = new Set<number>();
+  for (let counter = 0; selected.size < 8; counter += 1) {
+    const digest = researchPositionDigest(branch.branch_id, counter);
+    for (let offset = 0; offset <= digest.length - 8 && selected.size < 8; offset += 8) {
+      selected.add(branch.sequence_prefix.length + (Number.parseInt(digest.slice(offset, offset + 8), 16) % available));
+    }
+  }
+  const task: LabsResearchTask = {
+    protocol: LABS_RESEARCH_TASK_PROTOCOL,
+    ruleset_id: rulesetId(ruleset),
+    branch_id: branch.branch_id,
+    length: branch.length,
+    objective: "exhaustive_binary_flip_neighborhood",
+    base_sequence: baseSequence,
+    variable_positions: [...selected].sort((left, right) => left - right),
+    candidate_count: 256,
+    enumeration: "ascending_8_bit_flip_mask",
+    energy_formula: ruleset.energy_formula,
+  };
+  assertLabsResearchTask(task);
+  return {task, task_id: labsContentId(task)};
+}
+
+export function verifyLabsResearchTask(ruleset: LabsRuleset, task: LabsResearchTask, expectedId?: string): string {
+  assertLabsResearchTask(task);
+  if (task.protocol !== LABS_RESEARCH_TASK_PROTOCOL || task.ruleset_id !== rulesetId(ruleset) || task.base_sequence.length !== task.length) throw new TypeError("LABS 研究任务与规则集不匹配");
+  const baseline = ruleset.baselines.find((item) => item.length === task.length);
+  if (!baseline || canonicalLabsSequence(task.base_sequence) !== baseline.sequence || labsEnergy(task.base_sequence).toString() !== baseline.energy) throw new TypeError("LABS 研究任务基线无效");
+  if (task.variable_positions.some((position) => position >= task.length)) throw new RangeError("LABS 研究任务位置超出序列范围");
+  if (labsObjectBytes(task) > LABS_MAX_OBJECT_BYTES) throw new RangeError("LABS 研究任务超过对象大小上限");
+  const taskId = labsContentId(task);
+  if (expectedId && taskId !== expectedId) throw new TypeError("LABS task_id 不匹配");
+  return taskId;
+}
+
+export function executeLabsResearchTask(ruleset: LabsRuleset, task: LabsResearchTask): LabsResearchExecution {
+  const taskId = verifyLabsResearchTask(ruleset, task);
+  const baseline = ruleset.baselines.find((item) => item.length === task.length)!;
+  const evaluations: Array<{mask: number; result_id: string; energy: string}> = [];
+  const bestCandidates: Array<{candidate: string; result: LabsResult; result_id: string}> = [];
+  let bestEnergy = Number.MAX_SAFE_INTEGER;
+  for (let mask = 0; mask < task.candidate_count; mask += 1) {
+    const bits = [...task.base_sequence];
+    for (let bit = 0; bit < task.variable_positions.length; bit += 1) {
+      if ((mask & (1 << bit)) !== 0) {
+        const position = task.variable_positions[bit]!;
+        bits[position] = bits[position] === "0" ? "1" : "0";
+      }
+    }
+    const candidate = bits.join("");
+    const energy = exactSafeEnergy(candidate);
+    const canonical = canonicalLabsSequence(candidate);
+    const result: LabsResult = {protocol: LABS_RESULT_PROTOCOL, ruleset_id: task.ruleset_id, length: task.length, sequence: canonical, energy: String(energy)};
+    const resultId = labsContentId(result);
+    evaluations.push({mask, result_id: resultId, energy: String(energy)});
+    if (energy < bestEnergy) {
+      bestEnergy = energy;
+      bestCandidates.splice(0, bestCandidates.length, {candidate, result, result_id: resultId});
+    } else if (energy === bestEnergy) bestCandidates.push({candidate, result, result_id: resultId});
+  }
+  const selected = [...bestCandidates].sort((left, right) => left.result_id === right.result_id ? left.candidate < right.candidate ? -1 : left.candidate > right.candidate ? 1 : 0 : left.result_id < right.result_id ? -1 : 1)[0]!;
+  const tiedResultIds = [...new Set(bestCandidates.map((item) => item.result_id))].sort();
+  const baselineEnergy = BigInt(baseline.energy);
+  const best = BigInt(bestEnergy);
+  if (best > baselineEnergy) throw new TypeError("LABS 搜索任务未保留公开基线");
+  const coverageDigest = labsContentId({protocol: "sai-labs-search-coverage/1", task_id: taskId, evaluations});
+  const record: LabsResearchRecord = {
+    protocol: LABS_RESEARCH_RECORD_PROTOCOL,
+    ruleset_id: task.ruleset_id,
+    task_id: taskId,
+    branch_id: task.branch_id,
+    contribution_type: best < baselineEnergy ? "frontier_improvement" : "search_coverage",
+    result_id: selected.result_id,
+    baseline_energy: baseline.energy,
+    best_energy: String(bestEnergy),
+    energy_delta: (baselineEnergy - best).toString(),
+    tied_result_ids: tiedResultIds,
+    evaluated_candidates: 256,
+    coverage_digest: coverageDigest,
+    artifact_ids: [REFERENCE_SEARCH_METHOD_ARTIFACT_ID],
+  };
+  assertLabsResearchRecord(record);
+  return {
+    task: structuredClone(task),
+    task_id: taskId,
+    artifact: structuredClone(REFERENCE_SEARCH_METHOD_ARTIFACT),
+    artifact_id: REFERENCE_SEARCH_METHOD_ARTIFACT_ID,
+    record,
+    record_id: labsContentId(record),
+    candidate_sequence: selected.candidate,
+    result: selected.result,
+    result_id: selected.result_id,
+  };
+}
+
+export function verifyLabsResearchRecord(ruleset: LabsRuleset, task: LabsResearchTask, record: LabsResearchRecord, expectedId?: string): string {
+  assertLabsResearchRecord(record);
+  const expected = executeLabsResearchTask(ruleset, task);
+  if (labsCanonicalJson(expected.record) !== labsCanonicalJson(record)) throw new TypeError("LABS 研究记录与确定性搜索结果不匹配");
+  const recordId = labsContentId(record);
+  if (expectedId && recordId !== expectedId) throw new TypeError("LABS record_id 不匹配");
+  return recordId;
+}
+
+const researchExecutionCache = new Map<string, LabsResearchExecution>();
+
+export function executeLabsWorldResearch(ruleset: LabsRuleset, branch: LabsWorldBranch): LabsResearchExecution {
+  const key = `${rulesetId(ruleset)}:${branch.branch_id}`;
+  const cached = researchExecutionCache.get(key);
+  if (cached) return structuredClone(cached);
+  const {task} = createLabsResearchTask(ruleset, branch);
+  const execution = executeLabsResearchTask(ruleset, task);
+  researchExecutionCache.set(key, structuredClone(execution));
+  if (researchExecutionCache.size > 32) researchExecutionCache.delete(researchExecutionCache.keys().next().value as string);
+  return execution;
+}
+
+export function verifyLabsWorldSubmission(ruleset: LabsRuleset, branch: LabsWorldBranch, submission: {candidate_sequence: string; result: LabsResult; result_id: string; signed_claim: LabsSignedClaim; claim_id: string; research_task?: LabsResearchTask; task_id?: string; method_artifact?: LabsResearchArtifact; artifact_id?: string; research_record?: LabsResearchRecord; record_id?: string}, agentId: string): void {
   assertLabsWorldBranch(branch);
   const expected = createLabsWorldBranch(ruleset, branch);
   if (labsCanonicalJson(expected) !== labsCanonicalJson(branch)) throw new TypeError("LABS 世界分支与当前资源状态不匹配");
-  if (submission.candidate_sequence.length !== branch.length || !submission.candidate_sequence.startsWith(branch.sequence_prefix)) throw new TypeError("LABS 序列不属于当前世界分支");
+  const research = executeLabsWorldResearch(ruleset, branch);
+  if (submission.candidate_sequence !== research.candidate_sequence) throw new TypeError("LABS 世界结算没有提交该分支完整搜索的确定性最佳候选");
   const created = createLabsResult(ruleset, submission.candidate_sequence);
   if (created.result_id !== submission.result_id || labsCanonicalJson(created.result) !== labsCanonicalJson(submission.result)) throw new TypeError("LABS 世界结算结果与候选序列不匹配");
+  if (created.result_id !== research.result_id || labsCanonicalJson(created.result) !== labsCanonicalJson(research.result)) throw new TypeError("LABS 世界结算结果与研究记录不匹配");
   if (BigInt(submission.result.energy) > BigInt(branch.energy_at_most)) throw new RangeError("LABS 结果未达到当前世界分支能量门槛");
   verifyLabsResult(ruleset, submission.result, submission.result_id);
   verifyLabsClaim(submission.signed_claim, submission.claim_id);
-  if (submission.signed_claim.claim.agent_id !== agentId || submission.signed_claim.claim.result_id !== submission.result_id || submission.signed_claim.claim.claim_type === "relay" || !submission.signed_claim.claim.evidence_ids.includes(branch.branch_id)) throw new TypeError("LABS 世界结算声明的身份、结果或分支绑定无效");
+  const expectedClaimType: LabsClaimType = research.record.contribution_type === "frontier_improvement" ? "discovery" : "reproduction";
+  const requiredEvidence = [branch.branch_id, research.task_id, research.artifact_id, research.record_id];
+  if (submission.signed_claim.claim.agent_id !== agentId || submission.signed_claim.claim.result_id !== submission.result_id || submission.signed_claim.claim.claim_type !== expectedClaimType || requiredEvidence.some((id) => !submission.signed_claim.claim.evidence_ids.includes(id))) throw new TypeError("LABS 世界结算声明没有绑定完整研究证据");
+  if (submission.research_task && labsCanonicalJson(submission.research_task) !== labsCanonicalJson(research.task)) throw new TypeError("LABS 世界结算研究任务不匹配");
+  if (submission.task_id && submission.task_id !== research.task_id) throw new TypeError("LABS 世界结算 task_id 不匹配");
+  if (submission.method_artifact && labsCanonicalJson(submission.method_artifact) !== labsCanonicalJson(research.artifact)) throw new TypeError("LABS 世界结算方法制品不匹配");
+  if (submission.artifact_id && submission.artifact_id !== research.artifact_id) throw new TypeError("LABS 世界结算 artifact_id 不匹配");
+  if (submission.research_record && labsCanonicalJson(submission.research_record) !== labsCanonicalJson(research.record)) throw new TypeError("LABS 世界结算研究记录不匹配");
+  if (submission.record_id && submission.record_id !== research.record_id) throw new TypeError("LABS 世界结算 record_id 不匹配");
 }
 
 function bitsFromHex(hex: string, length: number): string {
