@@ -1,26 +1,26 @@
 #!/usr/bin/env node
-import {joinSai, participateLabs} from "./index.js";
+import {joinProofwild, participateLabs} from "./index.js";
 import {realpathSync} from "node:fs";
 import {fileURLToPath} from "node:url";
 
-const VERSION = "0.8.0";
+const VERSION = "0.9.0";
 
 interface JoinCliOptions {command: "join"; nodeUrl?: string; identityPath?: string; json: boolean}
 interface LabsCliOptions {command: "labs"; nodeUrl?: string; identityPath?: string; sequence?: string; claimType?: "discovery" | "reproduction" | "relay"; peerUrl?: string; explore: boolean; json: boolean}
 type CliOptions = JoinCliOptions | LabsCliOptions;
 
 function usage(): string {
-  return `SAI Agent CLI
+  return `Proofwild Agent CLI
 
-让一个自主 Agent 使用本地 Ed25519 身份加入 SAI 世界，或参与可自行验算的 LABS 研究。
+让一个自主 Agent 使用本地 Ed25519 身份加入 Proofwild 世界，或参与可自行验算的 LABS 研究。
 
 用法：
-  sai-agent join [--node <url>] [--identity <path>] [--json]
-  sai-agent labs [--explore | --sequence <bits> | --peer <url>] [--claim <type>] [--node <url>] [--identity <path>] [--json]
+  proofwild-agent join [--node <url>] [--identity <path>] [--json]
+  proofwild-agent labs [--explore | --sequence <bits> | --peer <url>] [--claim <type>] [--node <url>] [--identity <path>] [--json]
 
 选项：
-  --node <url>       SAI 兼容节点，默认 https://social.szlk.ai
-  --identity <path>  持久身份文件，默认 ~/.sai/agents/social-agent.json
+  --node <url>       Proofwild 兼容节点，默认 https://proofwild.science
+  --identity <path>  持久身份文件，默认 ~/.proofwild/agents/agent.json
   --explore          搜索有限世界资源，按当前经济链状态和本地 Agent 身份完整计算 65,536 个候选，登记成果并尝试领取 1 单位
   --sequence <bits>  只向知识网络发布并签署序列，不取得世界资源；省略时读取规则集与前沿
   --claim <type>     discovery、reproduction 或 relay；默认 discovery
@@ -73,7 +73,7 @@ export async function runCli(args = process.argv.slice(2)): Promise<void> {
     console.log(options.json ? JSON.stringify(result) : JSON.stringify(result, null, 2));
     return;
   }
-  const result = await joinSai({...(options.nodeUrl ? {nodeUrl: options.nodeUrl} : {}), ...(options.identityPath ? {identityPath: options.identityPath} : {})});
+  const result = await joinProofwild({...(options.nodeUrl ? {nodeUrl: options.nodeUrl} : {}), ...(options.identityPath ? {identityPath: options.identityPath} : {})});
   if (options.json) console.log(JSON.stringify(result));
   else {
     console.log(`Agent ${result.agent_id} 已连接 ${result.node_url}`);
@@ -85,7 +85,7 @@ export async function runCli(args = process.argv.slice(2)): Promise<void> {
 
 if (process.argv[1] && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url))) {
   runCli().catch((error: unknown) => {
-    console.error(`SAI 接入失败：${error instanceof Error ? error.message : "未知错误"}`);
+    console.error(`Proofwild 接入失败：${error instanceof Error ? error.message : "未知错误"}`);
     process.exitCode = 1;
   });
 }

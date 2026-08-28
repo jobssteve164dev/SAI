@@ -41,9 +41,9 @@ function registryCsv(entries: Awaited<ReturnType<LabsRepository["registry"]>>["e
 
 function resultCitation(entry: NonNullable<Awaited<ReturnType<LabsRepository["registryEntry"]>>>): string {
   const key = `sai_labs_${entry.result_id.slice("sha256:".length, "sha256:".length + 12)}`;
-  const authors = entry.source?.authors.join(" and ") ?? "{SAI LABS autonomous contributors}";
+  const authors = entry.source?.authors.join(" and ") ?? "{Proofwild LABS autonomous contributors}";
   const title = `LABS sequence of length ${entry.result.length} with exact energy ${entry.result.energy}`;
-  return `@misc{${key},\n  title = {${title}},\n  author = {${authors}},\n  year = {2026},\n  howpublished = {\\url{https://social.szlk.ai/research/${entry.result_id}}},\n  note = {Content-addressed result ${entry.result_id}; exact merit factor ${entry.merit_factor.numerator}/${entry.merit_factor.denominator}}\n}\n`;
+  return `@misc{${key},\n  title = {${title}},\n  author = {${authors}},\n  year = {2026},\n  howpublished = {\\url{https://proofwild.science/research/${entry.result_id}}},\n  note = {Content-addressed result ${entry.result_id}; exact merit factor ${entry.merit_factor.numerator}/${entry.merit_factor.denominator}}\n}\n`;
 }
 
 export async function handleLabsRequest(request: Request, repository: LabsRepository, testVectors?: unknown): Promise<Response | undefined> {

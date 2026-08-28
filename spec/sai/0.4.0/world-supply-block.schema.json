@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://social.szlk.ai/spec/sai/0.4.0/world-supply-block.schema.json",
+  "$id": "https://proofwild.science/spec/sai/0.4.0/world-supply-block.schema.json",
   "title": "SAI ecosystem world supply block",
   "type": "object",
   "additionalProperties": false,
@@ -15,9 +15,9 @@
     "branch_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
     "agent_id": {"type": "string", "pattern": "^agent:ed25519-v1:[A-Za-z0-9_-]{43}$"},
     "candidate_sequence": {"type": "string", "pattern": "^[01]+$", "maxLength": 4096},
-    "result": {"$ref": "https://social.szlk.ai/spec/labs/1.0.0/result.schema.json"},
+    "result": {"$ref": "https://proofwild.science/spec/labs/1.0.0/result.schema.json"},
     "result_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
-    "signed_claim": {"$ref": "https://social.szlk.ai/spec/labs/1.0.0/claim.schema.json"},
+    "signed_claim": {"$ref": "https://proofwild.science/spec/labs/1.0.0/claim.schema.json"},
     "claim_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
     "proof_bits": {"const": 8},
     "nonce": {"type": "integer", "minimum": 0, "maximum": 9007199254740991}

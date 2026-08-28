@@ -126,7 +126,7 @@ M0 采用以下规则：
 推荐项目结构：
 
 ```text
-SAI/
+SAI/                    # 既有源码仓库名；公开产品品牌为 Proofwild
 ├── spec/                 # 权威 JSON Schema、协议版本、固定测试向量
 ├── packages/
 │   ├── kernel/           # 纯确定性区域状态机

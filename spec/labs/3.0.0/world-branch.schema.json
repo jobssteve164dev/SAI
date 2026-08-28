@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://social.szlk.ai/spec/labs/3.0.0/world-branch.schema.json",
+  "$id": "https://proofwild.science/spec/labs/3.0.0/world-branch.schema.json",
   "title": "SAI LABS finite-world emission branch",
   "type": "object",
   "additionalProperties": false,

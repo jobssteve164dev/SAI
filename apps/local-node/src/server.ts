@@ -55,7 +55,7 @@ export async function startLocalNode(options: {dataDirectory: string; host?: str
         if (supplyResponse) return supplyResponse;
         const origin = request.headers.get("origin");
         if (origin && origin !== url) return json({error: "invalid_origin"}, 403);
-        if (requestUrl.pathname === "/" || requestUrl.pathname === "/health") return json({service: "SAI", version: "0.4.0", node_id: federation.keys.nodeId, region_id: options.regionId ?? "local", status: "ok"});
+        if (requestUrl.pathname === "/" || requestUrl.pathname === "/health") return json({service: "Proofwild", version: "0.4.0", node_id: federation.keys.nodeId, region_id: options.regionId ?? "local", status: "ok"});
         if (requestUrl.pathname === "/.well-known/sai-node") return json(await federation.descriptor());
         if (requestUrl.pathname === "/.well-known/oauth-protected-resource/mcp") return json({resource: `${url}/mcp`, authorization_servers: [url], scopes_supported: ["observe", "act"], bearer_methods_supported: ["header"]});
         if (requestUrl.pathname === "/.well-known/oauth-authorization-server") return json({issuer: url, token_endpoint: `${url}/oauth/token`, jwks_uri: `${url}/oauth/jwks`, registration_endpoint: `${url}/oauth/register`, token_endpoint_auth_methods_supported: ["private_key_jwt"], scopes_supported: ["observe", "act"], response_types_supported: []});

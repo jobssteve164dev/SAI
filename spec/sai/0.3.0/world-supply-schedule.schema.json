@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://social.szlk.ai/spec/sai/0.3.0/world-supply-schedule.schema.json",
+  "$id": "https://proofwild.science/spec/sai/0.3.0/world-supply-schedule.schema.json",
   "title": "SAI immutable fork-local world supply schedule",
   "type": "object",
   "additionalProperties": false,

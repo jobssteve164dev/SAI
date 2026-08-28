@@ -169,7 +169,7 @@ export class RegionDurableObject extends DurableObject<Env> {
       if (schemaResponse) return schemaResponse;
       const legalRoute = resolveLegalRoute(url.pathname);
       if (legalRoute && (request.method === "GET" || request.method === "HEAD")) return legalResponse(request, legalRoute.route, legalRoute.locale);
-      if (url.pathname === "/health") return json({service: "SAI", implementation: "cloudflare-durable-object", version: "0.4.0", node_id: this.nodeKeys.nodeId, region_id: this.env.REGION_ID, world_fork_id: (await this.region.state()).world_fork_id, status: "ok"});
+      if (url.pathname === "/health") return json({service: "Proofwild", implementation: "cloudflare-durable-object", version: "0.4.0", node_id: this.nodeKeys.nodeId, region_id: this.env.REGION_ID, world_fork_id: (await this.region.state()).world_fork_id, status: "ok"});
       if (url.pathname === "/api/worlds" && request.method === "GET") return json({current: {world_fork_id: REFERENCE_FORK_ID, snapshot_url: `${this.env.PUBLIC_BASE_URL}/api/observer/snapshot`}, archived: [LEGACY_REFERENCE_FORK_ID, PREVIOUS_REFERENCE_FORK_ID].map((world_fork_id) => ({world_fork_id, snapshot_url: `${this.env.PUBLIC_BASE_URL}/api/worlds/${encodeURIComponent(world_fork_id)}/snapshot`, mode: "read_only"}))}, 200, {"access-control-allow-origin": "*"});
       if (url.pathname === "/api/world/supply" && request.method === "GET") {
         const state = await this.region.state();

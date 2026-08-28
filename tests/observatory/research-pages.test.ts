@@ -63,11 +63,11 @@ describe("LABS 双语研究成果页面", () => {
     expect(registry).toContain("@media(max-width:420px)");
     expect(registry).not.toContain("width:1120px");
 
-    const response = await researchResponse(new Request(`https://social.szlk.ai/en/research/${encodeURIComponent(resultId)}`), repository, "en", resultId);
+    const response = await researchResponse(new Request(`https://proofwild.science/en/research/${encodeURIComponent(resultId)}`), repository, "en", resultId);
     expect(response.status).toBe(200);
     expect(response.headers.get("content-security-policy")).toContain("default-src 'none'");
     expect(await response.text()).toContain("What was actually computed");
-    expect(await researchResponse(new Request("https://social.szlk.ai/research/missing"), repository, "zh-CN", `sha256:${"f".repeat(64)}`).then((item) => item.status)).toBe(404);
+    expect(await researchResponse(new Request("https://proofwild.science/research/missing"), repository, "zh-CN", `sha256:${"f".repeat(64)}`).then((item) => item.status)).toBe(404);
   });
 
   it("没有 Agent 记录时诚实显示空态，只把公开基线标为参考资产", async () => {

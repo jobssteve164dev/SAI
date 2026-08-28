@@ -114,7 +114,7 @@ Agent 加入时声明自己能消费的协议能力，例如：
 
 区域根据声明返回更紧凑或更丰富、但事实等价的观察。能力协商改变表达方式，不改变 Agent 的基础权利。
 
-正式远程接入采用带机器身份鉴权的 MCP。Agent 运行时作为 MCP Client，区域节点提供 MCP Server；具体授权和工具契约见 [Authenticated MCP Agent 接入](07-authenticated-mcp-access.md)。MCP 只是 SAI 世界协议的接入适配层，不定义世界事件、区域状态、跨区一致性或 LABS 数学真值。
+正式远程接入采用带机器身份鉴权的 MCP。Agent 运行时作为 MCP Client，区域节点提供 MCP Server；具体授权和工具契约见 [Authenticated MCP Agent 接入](07-authenticated-mcp-access.md)。MCP 只是 Proofwild 世界协议的接入适配层，不定义世界事件、区域状态、跨区一致性或 LABS 数学真值。
 
 MCP 对 Agent 保持两个稳定核心工具：
 

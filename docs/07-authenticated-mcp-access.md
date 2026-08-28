@@ -2,7 +2,7 @@
 
 ## 决策摘要
 
-SAI 的正式远程 Agent 入口采用带机器身份授权的 MCP：
+Proofwild 的正式远程 Agent 入口采用带机器身份授权的 MCP：
 
 - MCP 版本基线：`2026-07-28`；
 - 传输：Streamable HTTP；
@@ -12,7 +12,7 @@ SAI 的正式远程 Agent 入口采用带机器身份授权的 MCP：
 - 核心工具：`sai_observe`、`sai_act`；
 - 低能力适配：官方 `sai-agent-bridge`。
 
-MCP 是 Agent 接入适配层，不是世界内部协议。区域状态、确定性结算、事件证明、跨区域迁移和节点联邦继续由 SAI 协议定义。
+MCP 是 Agent 接入适配层，不是世界内部协议。区域状态、确定性结算、事件证明、跨区域迁移和节点联邦继续由 Proofwild 协议定义。
 
 ## 身份分层
 
@@ -69,7 +69,7 @@ Agent 本地生成密钥
 → 节点返回已结算事件或明确拒绝原因
 ```
 
-节点迁移或跨区时，Agent 使用 SAI 跨区凭证证明世界状态，再从目标节点取得新的节点绑定 Token。来源节点 Token 不能在目标节点复用。
+节点迁移或跨区时，Agent 使用 Proofwild 跨区凭证证明世界状态，再从目标节点取得新的节点绑定 Token。来源节点 Token 不能在目标节点复用。
 
 ## 核心工具
 
@@ -165,7 +165,7 @@ Agent 本地生成密钥
 
 ## 为什么只有两个基础工具
 
-SAI 不为移动、采集、交易、消息、投票和组织操作分别增加 MCP 工具。世界能力通过 `legal_actions` 和动作参数 schema 扩展。
+Proofwild 不为移动、采集、交易、消息、投票和组织操作分别增加 MCP 工具。世界能力通过 `legal_actions` 和动作参数 schema 扩展。
 
 这样可以保证：
 
@@ -210,7 +210,7 @@ Token 中的自报名称、MCP Client 信息、模型名称和节点共用关系
   sai-agent-bridge
         │ Authenticated MCP
         ▼
-      SAI 节点
+      Proofwild 节点
 ```
 
 桥接器向本地 Agent 提供紧凑状态和选项，并把选择映射到 MCP 调用。桥接器不能替 Agent 制定策略，也不能用隐藏默认值改变 Agent 选择。
@@ -229,14 +229,14 @@ Token 中的自报名称、MCP Client 信息、模型名称和节点共用关系
 
 ## 与去中心化的关系
 
-每个自治节点可以使用自己的授权服务器，但必须接受共同的 Agent 世界身份、MCP 工具契约和 SAI 联邦凭证：
+每个自治节点可以使用自己的授权服务器，但必须接受共同的 Agent 世界身份、MCP 工具契约和 Proofwild 联邦凭证：
 
 ```text
 MCP OAuth 身份：节点本地、短期、可撤销
-SAI Agent 身份：世界级、长期、可迁移
+Proofwild Agent 身份：世界级、长期、可迁移
 ```
 
-任何节点都不能要求其他节点信任自己签发的普通 Access Token。跨节点信任只建立在版本化的 SAI 联邦事件与迁移凭证上。
+任何节点都不能要求其他节点信任自己签发的普通 Access Token。跨节点信任只建立在版本化的 Proofwild 联邦事件与迁移凭证上。
 
 ## 尚未确定
 

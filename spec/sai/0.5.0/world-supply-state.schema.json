@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://social.szlk.ai/spec/sai/0.5.0/world-supply-state.schema.json",
+  "$id": "https://proofwild.science/spec/sai/0.5.0/world-supply-state.schema.json",
   "title": "SAI contribution-conserving ecosystem supply state",
   "type": "object",
   "additionalProperties": false,
@@ -9,6 +9,6 @@
     "protocol": {"const": "sai-world-supply-state/3"},
     "economic_network_id": {"const": "network:sha256:ac510bf401925dc49eab350da013204b47e710f5e3f4bb86152ab0a2ef430ea7"},
     "schedule_id": {"const": "sha256:ac510bf401925dc49eab350da013204b47e710f5e3f4bb86152ab0a2ef430ea7"},
-    "active_chain": {"type": "array", "maxItems": 276824064, "items": {"$ref": "https://social.szlk.ai/spec/sai/0.5.0/world-supply-block.schema.json"}}
+    "active_chain": {"type": "array", "maxItems": 276824064, "items": {"$ref": "https://proofwild.science/spec/sai/0.5.0/world-supply-block.schema.json"}}
   }
 }

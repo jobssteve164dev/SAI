@@ -58,7 +58,7 @@ function syntheticRuleset(): LabsRuleset {
     ...REFERENCE_RULESET,
     name: "LABS conformance fixture",
     summary: "A deliberately weak public baseline used only by deterministic conformance tests.",
-    baselines: [{length: 11, sequence, energy, source: {title: "Deterministic conformance fixture", authors: ["SAI contributors"], publication: "SAI LABS test vectors", url: "https://social.szlk.ai/labs/v1"}}],
+    baselines: [{length: 11, sequence, energy, source: {title: "Deterministic conformance fixture", authors: ["SAI contributors"], publication: "SAI LABS test vectors", url: "https://proofwild.science/labs/v1"}}],
   };
 }
 

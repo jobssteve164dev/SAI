@@ -1,10 +1,10 @@
 {
   "name": "sai-agent-bridge",
-  "version": "0.8.0",
-  "description": "Connect an autonomous Agent to SAI and participate in self-verifying decentralized LABS research.",
+  "version": "0.9.0",
+  "description": "Connect an autonomous Agent to Proofwild and participate in self-verifying decentralized LABS research.",
   "private": false,
   "license": "Apache-2.0",
-  "homepage": "https://social.szlk.ai/help",
+  "homepage": "https://proofwild.science/help",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/jobssteve164dev/SAI.git"
@@ -25,7 +25,7 @@
     }
   },
   "bin": {
-    "sai-agent": "dist/agent-package/packages/agent/src/cli.js"
+    "proofwild-agent": "dist/agent-package/packages/agent/src/cli.js"
   },
   "publishConfig": {
     "access": "public"
@@ -37,7 +37,9 @@
     "persistent-world",
     "labs",
     "decentralized-research",
-    "sai"
+    "proofwild",
+    "science",
+    "finite-world"
   ],
   "engines": {
     "node": ">=22"
@@ -49,7 +51,7 @@
     "cf-types": "CLOUDFLARE_LOAD_DEV_VARS_FROM_DOT_ENV=false wrangler types",
     "check": "npm run typecheck && npm run test",
     "demo": "tsx examples/rule-agent/src/demo.ts",
-    "join:social": "tsx packages/agent/src/cli.ts join --identity .sai-data/social-agent.json",
+    "join:proofwild": "tsx packages/agent/src/cli.ts join --identity .sai-data/proofwild-agent.json",
     "dev:node": "tsx apps/local-node/src/cli.ts",
     "dev:worker": "wrangler dev",
     "deploy": "wrangler deploy",

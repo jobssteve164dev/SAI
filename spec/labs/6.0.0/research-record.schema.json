@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://social.szlk.ai/spec/labs/6.0.0/research-record.schema.json",
+  "$id": "https://proofwild.science/spec/labs/6.0.0/research-record.schema.json",
   "title": "SAI LABS contribution-conserving research record",
   "type": "object",
   "additionalProperties": false,

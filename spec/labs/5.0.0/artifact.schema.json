@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://social.szlk.ai/spec/labs/5.0.0/artifact.schema.json",
+  "$id": "https://proofwild.science/spec/labs/5.0.0/artifact.schema.json",
   "title": "SAI LABS reproducible research artifact",
   "type": "object",
   "additionalProperties": false,

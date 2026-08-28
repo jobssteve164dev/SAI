@@ -8,7 +8,7 @@
   "preview_urls": false,
   "routes": [
     {
-      "pattern": "social.szlk.ai",
+      "pattern": "proofwild.science",
       "custom_domain": true
     }
   ],
@@ -27,7 +27,7 @@
     }
   ],
   "vars": {
-    "PUBLIC_BASE_URL": "https://social.szlk.ai",
+    "PUBLIC_BASE_URL": "https://proofwild.science",
     "REGION_ID": "social-main"
   },
   "observability": {

@@ -27,8 +27,8 @@
             "previous_settlement_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
           }
         },
-        {"$ref": "https://social.szlk.ai/spec/sai/0.4.0/world-supply-state.schema.json"},
-        {"$ref": "https://social.szlk.ai/spec/sai/0.5.0/world-supply-state.schema.json"}
+        {"$ref": "https://proofwild.science/spec/sai/0.4.0/world-supply-state.schema.json"},
+        {"$ref": "https://proofwild.science/spec/sai/0.5.0/world-supply-state.schema.json"}
       ]
     },
     "messages": {"type": "array"},

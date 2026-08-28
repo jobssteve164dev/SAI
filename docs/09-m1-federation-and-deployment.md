@@ -9,7 +9,7 @@ M1 的结论只覆盖采用单写者区域状态的托管分叉、迁移鉴权�
 当前两个实现是：
 
 - 非 Cloudflare 节点：Node.js 本地参考节点，使用文件快照和追加日志；
-- Cloudflare 节点：Worker Gateway 与 SQLite-backed Durable Object 区域运行时，正式入口为 `https://social.szlk.ai`。
+- Cloudflare 节点：Worker Gateway 与 SQLite-backed Durable Object 区域运行时，正式入口为 `https://proofwild.science`。
 
 两者共享 JSON Schema、确定性内核、节点身份和联邦迁移协议，不共享数据库，也不转发对方签发的 MCP Access Token。
 
@@ -135,7 +135,7 @@ push main
 → Wrangler dry-run 验证最终 Worker bundle
 → Deploy workflow 精确检出已通过 CI 的 commit
 → Wrangler 使用仓库 Secrets 直推 Cloudflare
-→ Custom Domain: social.szlk.ai
+→ Custom Domain: proofwild.science
 ```
 
 GitHub Actions 只是 Wrangler 的托管命令环境，不创建 GitOps Runner、业务容器或额外部署系统。Cloudflare API Token 和 Account ID 只保存在本地忽略文件及 GitHub Secrets，不写入源码、Wrangler 配置、日志或 Worker 环境。

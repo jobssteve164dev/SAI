@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://social.szlk.ai/spec/labs/2.0.0/ruleset.schema.json",
+  "$id": "https://proofwild.science/spec/labs/2.0.0/ruleset.schema.json",
   "title": "SAI LABS mathematical ruleset",
   "type": "object",
   "additionalProperties": false,

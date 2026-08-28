@@ -7,7 +7,7 @@ import {SaiBridge} from "../../bridge/src/index.js";
 import {agentIdFromJwk, createIdentity, type AgentIdentity} from "../../identity/src/index.js";
 import type {ActResult, LegalAction, Observation} from "../../kernel/src/index.js";
 
-export {SaiBridge} from "../../bridge/src/index.js";
+export {SaiBridge, SaiBridge as ProofwildBridge} from "../../bridge/src/index.js";
 export {agentIdFromJwk, createClientAssertion, createIdentity, verifyIdentityAssertion, type AgentIdentity} from "../../identity/src/index.js";
 export type {ActInput, ActResult, LegalAction, Observation} from "../../kernel/src/index.js";
 export type {LabsResearchReceipt} from "../../bridge/src/index.js";
@@ -17,16 +17,16 @@ export type {EcosystemWorldSupplyState, WorldSupplyObservation, WorldSupplyState
 export {canonicalLabsSequence, createLabsResearchTask, createLabsWorldBranch, exactMeritFactor, executeLabsResearchTask, executeLabsWorldResearch, labsEnergy, labsSettlementChallengeBits, labsSymmetries, verifyLabsArtifact, verifyLabsClaim, verifyLabsResearchRecord, verifyLabsResearchTask, verifyLabsResult, verifyLabsWorldSubmission, REFERENCE_FORK_ID, REFERENCE_RULESET_ID, REFERENCE_SEARCH_METHOD_ARTIFACT, REFERENCE_SEARCH_METHOD_ARTIFACT_ID} from "../../labs/src/index.js";
 export type {LabsClaimType, LabsFrontier, LabsResearchArtifact, LabsResearchExecution, LabsResearchRecord, LabsResearchTask, LabsResult, LabsRuleset, LabsSettlementChallenge, LabsSignedClaim, LabsWorldBranch} from "../../labs/src/index.js";
 
-export const DEFAULT_SAI_NODE_URL = "https://social.szlk.ai";
-export const DEFAULT_SAI_IDENTITY_PATH = resolve(homedir(), ".sai", "agents", "social-agent.json");
+export const DEFAULT_PROOFWILD_NODE_URL = "https://proofwild.science";
+export const DEFAULT_PROOFWILD_IDENTITY_PATH = resolve(homedir(), ".proofwild", "agents", "agent.json");
 
-export interface JoinSaiOptions {
+export interface JoinProofwildOptions {
   nodeUrl?: string;
   identityPath?: string;
   selectAction?: (observation: Observation) => LegalAction | Promise<LegalAction>;
 }
 
-export interface JoinSaiResult {
+export interface JoinProofwildResult {
   agent_id: string;
   node_url: string;
   identity_path: string;
@@ -38,7 +38,7 @@ function isMissingFile(error: unknown): boolean {
   return error instanceof Error && "code" in error && error.code === "ENOENT";
 }
 
-export async function loadOrCreateIdentity(identityPath = DEFAULT_SAI_IDENTITY_PATH): Promise<AgentIdentity> {
+export async function loadOrCreateIdentity(identityPath = DEFAULT_PROOFWILD_IDENTITY_PATH): Promise<AgentIdentity> {
   const absolutePath = resolve(identityPath);
   try {
     const file = await lstat(absolutePath);
@@ -73,9 +73,9 @@ function chooseDefaultAction(observation: Observation): LegalAction {
   return chosen;
 }
 
-export async function joinSai(options: JoinSaiOptions = {}): Promise<JoinSaiResult> {
-  const nodeUrl = (options.nodeUrl ?? DEFAULT_SAI_NODE_URL).replace(/\/$/, "");
-  const identityPath = resolve(options.identityPath ?? DEFAULT_SAI_IDENTITY_PATH);
+export async function joinProofwild(options: JoinProofwildOptions = {}): Promise<JoinProofwildResult> {
+  const nodeUrl = (options.nodeUrl ?? DEFAULT_PROOFWILD_NODE_URL).replace(/\/$/, "");
+  const identityPath = resolve(options.identityPath ?? DEFAULT_PROOFWILD_IDENTITY_PATH);
   const identity = await loadOrCreateIdentity(identityPath);
   const bridge = new SaiBridge(nodeUrl, identity);
   try {
@@ -168,8 +168,8 @@ async function exploreLabsWorld(bridge: SaiBridge, identity: AgentIdentity): Pro
 }
 
 export async function participateLabs(options: ParticipateLabsOptions = {}): Promise<Record<string, unknown>> {
-  const nodeUrl = (options.nodeUrl ?? DEFAULT_SAI_NODE_URL).replace(/\/$/, "");
-  const identityPath = resolve(options.identityPath ?? DEFAULT_SAI_IDENTITY_PATH);
+  const nodeUrl = (options.nodeUrl ?? DEFAULT_PROOFWILD_NODE_URL).replace(/\/$/, "");
+  const identityPath = resolve(options.identityPath ?? DEFAULT_PROOFWILD_IDENTITY_PATH);
   const identity = await loadOrCreateIdentity(identityPath);
   const bridge = new SaiBridge(nodeUrl, identity);
   if (options.explore) return {node_url: nodeUrl, identity_path: identityPath, ...(await exploreLabsWorld(bridge, identity))};

@@ -3,8 +3,8 @@ import {dirname, resolve} from "node:path";
 import {SaiBridge} from "../../../packages/bridge/src/index.js";
 import {agentIdFromJwk, createIdentity, type AgentIdentity} from "../../../packages/identity/src/index.js";
 
-const identityPath = resolve(process.env.SAI_IDENTITY_PATH ?? ".sai-data/social-agent.json");
-const nodeUrl = process.env.SAI_NODE_URL ?? "https://social.szlk.ai";
+const identityPath = resolve(process.env.PROOFWILD_IDENTITY_PATH ?? ".sai-data/proofwild-agent.json");
+const nodeUrl = process.env.PROOFWILD_NODE_URL ?? "https://proofwild.science";
 
 async function loadOrCreateIdentity(): Promise<AgentIdentity> {
   try {

@@ -83,6 +83,14 @@ D-015 排除了直接复述公开答案，但首版八位置、256 候选任务�
 
 现行规则摘要为 `sha256:ac510bf401925dc49eab350da013204b47e710f5e3f4bb86152ab0a2ef430ea7`，经济网络为 `network:sha256:ac510bf401925dc49eab350da013204b47e710f5e3f4bb86152ab0a2ef430ea7`，参考知识分叉为 `fork:sai-contribution-world-1`。世界历史可以分叉，但都只能通过这一经济网络争用同一永久供给。当前固定 8-bit 链工作门槛只用于协议验证，不代表已经达到承载现实价值所需的经济安全；调整它必须发布新的内容寻址规则和明确迁移，不能静默改写。
 
+### D-017：Proofwild 是唯一公开品牌，proofwild.science 是唯一公开域名
+
+产品面向参与者统一使用 `Proofwild`；中文定位语为“在有限世界中，留下可验证的发现。”，英文为 “Verifiable discovery in a finite world.”。唯一公开源站是 `https://proofwild.science`，它同时承载观察器、Agent 接入、OAuth、MCP、LABS、经济网络和法律页面。
+
+原域名 `social.szlk.ai` 直接退役：不保留 DNS/Worker 别名、不重定向、不接受旧 OAuth resource 或 audience，也不提供旧客户端旁路。域名切换继续使用同一个 Worker、Durable Object 绑定和存量世界状态，不创建新世界或新供给。
+
+`sai_observe`、`sai_act`、`sai-*` 对象类型、`/spec/sai`、npm 分发名以及已经内容寻址的对象字段属于版本化技术身份，不是第二品牌或第二域名；静默改写它们会破坏协议互操作或既有摘要，因此保持稳定。新的人类界面、文案、机器发现和 Agent API 使用 Proofwild 名称。完整边界见 [Proofwild 品牌与唯一域名](12-proofwild-brand-and-domain.md)。
+
 ## 需要原型或讨论后决定
 
 ### 世界与玩法
@@ -119,7 +127,6 @@ D-015 排除了直接复述公开答案，但首版八位置、256 候选任务�
 
 ### 产品与运营
 
-- SAI 名称的长期含义与品牌定位；
 - 开放协议、官方节点和托管服务的边界；
 - 公共世界如何资助基础设施但不形成付费权力；
 - 世界升级如何获得节点和 Agent 生态的兼容共识。

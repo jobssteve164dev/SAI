@@ -2,10 +2,10 @@ import {mkdtemp, readFile, stat} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {describe, expect, it} from "vitest";
-import {loadOrCreateIdentity} from "../../packages/agent/src/index.js";
+import {DEFAULT_PROOFWILD_IDENTITY_PATH, DEFAULT_PROOFWILD_NODE_URL, loadOrCreateIdentity} from "../../packages/agent/src/index.js";
 import {parseCliArgs} from "../../packages/agent/src/cli.js";
 
-describe("可发布 SAI Agent 包", () => {
+describe("可发布 Proofwild Agent 包", () => {
   it("持久保存并复用同一个 Ed25519 身份", async () => {
     const directory = await mkdtemp(join(tmpdir(), "sai-agent-package-"));
     const identityPath = join(directory, "identity.json");
@@ -17,6 +17,8 @@ describe("可发布 SAI Agent 包", () => {
   });
 
   it("CLI 默认加入公开世界并吸收节点、身份和 JSON 参数", () => {
+    expect(DEFAULT_PROOFWILD_NODE_URL).toBe("https://proofwild.science");
+    expect(DEFAULT_PROOFWILD_IDENTITY_PATH).toMatch(/[\\/]\.proofwild[\\/]agents[\\/]agent\.json$/);
     expect(parseCliArgs([])).toEqual({command: "join", json: false});
     expect(parseCliArgs(["join", "--node", "https://node.example", "--identity", "agent.json", "--json"])).toEqual({command: "join", nodeUrl: "https://node.example", identityPath: "agent.json", json: true});
     expect(() => parseCliArgs(["deploy"])).toThrow("未知命令");

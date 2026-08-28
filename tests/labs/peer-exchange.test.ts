@@ -39,7 +39,7 @@ function exchangeRuleset(): LabsRuleset {
     merit_factor_formula: "L^2/(2E)",
     max_object_bytes: 131072,
     max_sequence_length: 4096,
-    baselines: [{length: 11, sequence, energy, source: {title: "Acceptance fixture", authors: ["SAI contributors"], publication: "SAI LABS public test vector", url: "https://social.szlk.ai/labs/v1"}}],
+    baselines: [{length: 11, sequence, energy, source: {title: "Acceptance fixture", authors: ["SAI contributors"], publication: "SAI LABS public test vector", url: "https://proofwild.science/labs/v1"}}],
   };
 }
 

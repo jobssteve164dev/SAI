@@ -7,11 +7,11 @@ const agents: AgentState[] = [
   {id: "agent:ed25519-v1:alpha", x: 1, y: 1, energy: 4, inventory: {ore: 1}},
 ];
 
-describe("SAI 世界观察器", () => {
+describe("Proofwild 世界观察器", () => {
   it("根页面提供可访问的只读观察界面且最终内联脚本语法有效", async () => {
     const page = renderObservatoryPage();
-    expect(page).toContain("<title>SAI 世界观察器</title>");
-    expect(page).toContain('<link rel="icon" href="/favicon.svg?v=20260827-2" type="image/svg+xml" sizes="any">');
+    expect(page).toContain("<title>Proofwild 世界观察器</title>");
+    expect(page).toContain('<link rel="icon" href="/favicon.svg?v=20260828-proofwild-1" type="image/svg+xml" sizes="any">');
     expect(page).toContain('class="brand-mark"');
     expect(page).toContain('id="world-map"');
     expect(page).toContain('id="event-list"');
@@ -49,7 +49,7 @@ describe("SAI 世界观察器", () => {
     expect(page).toContain("LABS research and ecosystem supply");
     expect(page).toContain("A world history may fork; the economic supply does not");
     expect(page).toContain('href="/" hreflang="zh-CN">中文</a>');
-    expect(page).toContain('hreflang="en" href="https://social.szlk.ai/en"');
+    expect(page).toContain('hreflang="en" href="https://proofwild.science/en"');
     expect(OBSERVATORY_SCRIPT).toContain("Math.min(snapshot.region.width, 32)");
     expect(OBSERVATORY_SCRIPT).toContain('document.documentElement.lang === "en"');
     expect(() => new Function(OBSERVATORY_SCRIPT)).not.toThrow();

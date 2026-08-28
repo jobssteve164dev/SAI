@@ -3,10 +3,10 @@
 ## 去中心化账本与永久稀缺的一手参考
 
 - [Bitcoin: A Peer-to-Peer Electronic Cash System](https://bitcoin.org/bitcoin.pdf)：只参考无需特殊服务器的工作证明链、网络分区和累计工作选择；不复制其货币总量、补贴或减半曲线，也不把经济链冒充唯一世界历史。
-- [Bitcoin Core chain selection](https://github.com/bitcoin/bitcoin/blob/master/src/validation.cpp)：用于核对“完整本地验算后按累计工作选择候选链”的实现边界；SAI 当前固定低工作门槛仅供研究协议复现。
-- [Bitcoin Developer Guide: Block Chain](https://developer.bitcoin.org/devguide/block_chain.html)：用于对照区块父摘要、工作目标与网络重组。SAI 的 276,824,064 单位由 `2^32` 世界地理和 32 层创世分支独立推导，不采用比特币发行参数。
+- [Bitcoin Core chain selection](https://github.com/bitcoin/bitcoin/blob/master/src/validation.cpp)：用于核对“完整本地验算后按累计工作选择候选链”的实现边界；Proofwild 当前固定低工作门槛仅供研究协议复现。
+- [Bitcoin Developer Guide: Block Chain](https://developer.bitcoin.org/devguide/block_chain.html)：用于对照区块父摘要、工作目标与网络重组。Proofwild 的 276,824,064 单位由 `2^32` 世界地理和 32 层创世分支独立推导，不采用比特币发行参数。
 
-这些资料用于审计去中心化链的安全边界，不是 SAI 供给曲线或品牌定位的来源。
+这些资料用于审计去中心化链的安全边界，不是 Proofwild 供给曲线或品牌定位的来源。
 
 ## LABS 数学基线的一手来源
 
