@@ -1,7 +1,7 @@
 import {randomUUID} from "node:crypto";
 import {Client, StreamableHTTPClientTransport} from "@modelcontextprotocol/client";
 import {createClientAssertion, type AgentIdentity} from "../../identity/src/index.js";
-import type {ActInput, ActResult, Observation} from "../../kernel/src/index.js";
+import {ECONOMIC_NETWORK_ID, syncWorldSupplyFromPeer, type ActInput, type ActResult, type Observation, type WorldSupplyObservation} from "../../kernel/src/index.js";
 import {verifyNodeDescriptor, type NodeDescriptor, type TransferCancellation, type TransferCredential, type TransferReceipt} from "../../federation/src/index.js";
 import {REFERENCE_FORK_ID, REFERENCE_RULESET_ID, createClaimBody, createLabsResult, signLabsClaim, verifyLabsResult, verifyLabsWorldSubmission, type LabsClaimType, type LabsFrontier, type LabsResult, type LabsRuleset, type LabsWorldBranch} from "../../labs/src/index.js";
 import {LabsRepository, MemoryLabsPersistence, syncLabsFromPeer, type LabsExchangeBundle} from "../../labs/src/store.js";
@@ -53,14 +53,14 @@ export class SaiBridge {
       if (args?.operation !== "solve_branch" || typeof args.sequence !== "string") throw new TypeError("LABS research 动作需要 operation=solve_branch 和 sequence");
       const resource = this.lastObservation?.nearby.find((item) => item.type === "resource" && item.id === action.target);
       const branch = resource?.type === "resource" ? resource.labs_branch as LabsWorldBranch | undefined : undefined;
-      if (!branch || branch.world_fork_id !== this.lastObservation?.world_fork_id) throw new TypeError("当前观察中没有可结算的 LABS 世界分支");
+      if (!branch || branch.economic_network_id !== ECONOMIC_NETWORK_ID) throw new TypeError("当前观察中没有可结算的 LABS 世界分支");
       const {ruleset} = await this.labsRuleset(branch.ruleset_id);
       const {result: labsResult, result_id} = createLabsResult(ruleset, args.sequence);
       const claimType = args.claim_type ?? "reproduction";
       const {signed_claim, claim_id} = signLabsClaim(createClaimBody(result_id, this.identity, claimType, [...(args.evidence_ids ?? []), branch.branch_id]), this.identity);
       const settlement = {candidate_sequence: args.sequence, result: labsResult, result_id, signed_claim, claim_id};
       verifyLabsWorldSubmission(ruleset, branch, settlement, this.identity.agentId);
-      prepared = {...input, arguments: {operation: "settle_branch", branch_id: branch.branch_id, world_fork_id: branch.world_fork_id, ...settlement}};
+      prepared = {...input, arguments: {operation: "settle_branch", branch_id: branch.branch_id, economic_network_id: branch.economic_network_id, ...settlement}};
     }
     const result = await this.requiredClient().callTool({name: "sai_act", arguments: {...prepared}});
     if (result.isError || !result.structuredContent) throw new Error("sai_act 未返回结构化结果");
@@ -93,13 +93,15 @@ export class SaiBridge {
     return {result_id, claim_id, energy: result.energy, frontier: (await this.labsFrontier(rulesetId, forkId)).frontier};
   }
 
-  async labsSync(peerBaseUrl: string, rulesetId = REFERENCE_RULESET_ID, forkId = REFERENCE_FORK_ID): Promise<LabsFrontier> {
+  async labsSync(peerBaseUrl: string, rulesetId = REFERENCE_RULESET_ID, forkId = REFERENCE_FORK_ID): Promise<{frontier: LabsFrontier; economy: WorldSupplyObservation}> {
     const local = await LabsRepository.open(new MemoryLabsPersistence());
     await syncLabsFromPeer(local, peerBaseUrl, rulesetId, forkId);
     const bundle = await local.bundle(rulesetId, forkId);
     const response = await fetch(`${this.baseUrl}/labs/v1/exchange`, {method: "POST", headers: {"content-type": "application/json"}, body: JSON.stringify(bundle)});
     const output = await expectJson<{frontier: LabsFrontier}>(response);
-    return output.frontier;
+    await syncWorldSupplyFromPeer(this.baseUrl, peerBaseUrl);
+    const {supply: economy} = await expectJson<{supply: WorldSupplyObservation}>(await fetch(`${this.baseUrl}/economy/v1`, {headers: {accept: "application/json"}}));
+    return {frontier: output.frontier, economy};
   }
 
   private async postLabsObject(object: {kind: "result" | "claim"; id: string; value: LabsResult | import("../../labs/src/index.js").LabsSignedClaim; fork_id: string}): Promise<void> {
@@ -116,6 +118,7 @@ export class SaiBridge {
     if (!this.token) throw new Error("bridge 尚未连接");
     const targetDescriptor = await expectJson<NodeDescriptor>(await fetch(`${targetBaseUrl}/.well-known/sai-node`));
     await verifyNodeDescriptor(targetDescriptor, Math.floor(Date.now() / 1000));
+    await syncWorldSupplyFromPeer(targetBaseUrl, this.baseUrl);
     const credential = await expectJson<TransferCredential>(await fetch(`${this.baseUrl}/federation/v1/transfers/prepare`, {
       method: "POST", headers: {authorization: `Bearer ${this.token}`, "content-type": "application/json"}, body: JSON.stringify({target_node: targetDescriptor.node_id, target_region: targetRegion}),
     }));

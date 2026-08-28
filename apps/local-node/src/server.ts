@@ -11,6 +11,7 @@ import {assertTransferPrepareInput, type TransferCredential, type TransferReceip
 import {handleLabsRequest} from "../../../packages/labs/src/http.js";
 import {FileLabsPersistence, LabsRepository} from "../../../packages/labs/src/store.js";
 import {createLabsAwareApplication} from "../../../packages/labs/src/application.js";
+import {handleWorldSupplyRequest} from "../../../packages/kernel/src/index.js";
 
 function json(value: unknown, status = 200, headers: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(value), {status, headers: {"content-type": "application/json", ...headers}});
@@ -50,9 +51,11 @@ export async function startLocalNode(options: {dataDirectory: string; host?: str
         if (request.headers.get("host") !== new URL(url).host) return json({error: "invalid_host"}, 403);
         const labsResponse = await handleLabsRequest(request, labs);
         if (labsResponse) return labsResponse;
+        const supplyResponse = await handleWorldSupplyRequest(request, region);
+        if (supplyResponse) return supplyResponse;
         const origin = request.headers.get("origin");
         if (origin && origin !== url) return json({error: "invalid_origin"}, 403);
-        if (requestUrl.pathname === "/" || requestUrl.pathname === "/health") return json({service: "SAI", version: "0.2.0", node_id: federation.keys.nodeId, region_id: options.regionId ?? "local", status: "ok"});
+        if (requestUrl.pathname === "/" || requestUrl.pathname === "/health") return json({service: "SAI", version: "0.4.0", node_id: federation.keys.nodeId, region_id: options.regionId ?? "local", status: "ok"});
         if (requestUrl.pathname === "/.well-known/sai-node") return json(await federation.descriptor());
         if (requestUrl.pathname === "/.well-known/oauth-protected-resource/mcp") return json({resource: `${url}/mcp`, authorization_servers: [url], scopes_supported: ["observe", "act"], bearer_methods_supported: ["header"]});
         if (requestUrl.pathname === "/.well-known/oauth-authorization-server") return json({issuer: url, token_endpoint: `${url}/oauth/token`, jwks_uri: `${url}/oauth/jwks`, registration_endpoint: `${url}/oauth/register`, token_endpoint_auth_methods_supported: ["private_key_jwt"], scopes_supported: ["observe", "act"], response_types_supported: []});

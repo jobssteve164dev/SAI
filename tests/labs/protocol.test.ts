@@ -31,15 +31,16 @@ import {
   referenceContentId,
   referenceEnergy,
   referenceMergeFrontiers,
+  referenceMergeSupplyStates,
   referenceWorldBranch,
+  referenceWorldResource,
   referenceResult,
   referenceRulesetId,
   referenceSymmetries,
-  referenceSubsidyAtHeight,
-  referenceSupplyAtHeight,
+  referenceCumulativeSupply,
   referenceSupplyScheduleId,
 } from "../../reference/labs-reference.mjs";
-import {WORLD_MAX_SUPPLY, WORLD_SUPPLY_SCHEDULE_BODY, WORLD_SUPPLY_SCHEDULE_ID, assertForkScopedSupplyImportAllowed, createWorld, validateState, worldIssuedAtHeight, worldSubsidyAtHeight} from "../../packages/kernel/src/index.js";
+import {ECONOMIC_NETWORK_ID, WORLD_BRANCHES_PER_STRATUM, WORLD_MAX_SUPPLY, WORLD_REWARDED_BRANCH_COUNT, WORLD_RESOURCE_STRATA, WORLD_SUPPLY_SCHEDULE_BODY, WORLD_SUPPLY_SCHEDULE_ID, assertEcosystemSupplyImportAllowed, createWorld, createWorldSupplyState, mergeWorldSupplyStates, validateState, worldResourceBranch} from "../../packages/kernel/src/index.js";
 
 function syntheticRuleset(): LabsRuleset {
   const sequence = canonicalLabsSequence("00000000000");
@@ -103,20 +104,19 @@ describe("LABS exact protocol", () => {
     expect(mergeLabsFrontiers(a, b).lengths[451]?.result_ids).toEqual([id("a"), id("b")].sort());
   });
 
-  it("derives a world-scoped finite-resource branch without minting resources", () => {
-    const ruleset = syntheticRuleset();
-    const scope = {world_fork_id: "fork:resource-test", region_id: "region-a", resource_id: "resource-a", schedule_id: WORLD_SUPPLY_SCHEDULE_ID, research_height: 0, subsidy: 8, previous_settlement_id: WORLD_SUPPLY_SCHEDULE_ID, length: 11};
-    const branch = createLabsWorldBranch(ruleset, scope);
-    expect(branch).toEqual(referenceWorldBranch(ruleset, scope));
-    expect(createLabsWorldBranch(ruleset, {...scope, research_height: 1}).branch_id).not.toBe(branch.branch_id);
+  it("derives an ecosystem-scoped finite-resource branch without minting resources", () => {
+    const branch = worldResourceBranch(0).labs_branch;
+    const {branch_id: _branchId, ...scope} = branch;
+    expect(branch).toEqual(referenceWorldBranch(REFERENCE_RULESET, scope));
+    expect(createLabsWorldBranch(REFERENCE_RULESET, {...scope, branch_ordinal: 1}).branch_id).not.toBe(branch.branch_id);
   });
 
-  it("does not import fork-scoped supply through a migration credential without world proof", () => {
+  it("does not import ecosystem supply through migration without its economic proof", () => {
     const state = createWorld("import-boundary");
-    expect(() => assertForkScopedSupplyImportAllowed(state, {id: "agent:test", x: 0, y: 0, energy: 5, inventory: {crystal: 1}})).toThrow("fork_scoped_supply_requires_world_proof");
-    expect(() => assertForkScopedSupplyImportAllowed(state, {id: "agent:test", x: 0, y: 0, energy: 5, inventory: {ore: 1}})).not.toThrow();
+    expect(() => assertEcosystemSupplyImportAllowed(state, {id: "agent:test", x: 0, y: 0, energy: 5, inventory: {crystal: 1}})).toThrow("economic_network_sync_required");
+    expect(() => assertEcosystemSupplyImportAllowed(state, {id: "agent:test", x: 0, y: 0, energy: 5, inventory: {ore: 1}})).not.toThrow();
     state.agents["agent:forged"] = {id: "agent:forged", x: 0, y: 0, energy: 5, inventory: {crystal: 1}};
-    expect(() => validateState(state)).toThrow("库存超过该资源已释放存量");
+    expect(() => validateState(state)).toThrow("经济网络不一致");
   });
 
   it("retains every equal-energy result received concurrently", async () => {
@@ -147,29 +147,25 @@ describe("LABS exact protocol", () => {
     }
     expect(referenceContentId(REFERENCE_FRONTIER)).toBe(labsContentId(REFERENCE_FRONTIER));
     expect(referenceMergeFrontiers(REFERENCE_FRONTIER, REFERENCE_FRONTIER)).toEqual(mergeLabsFrontiers(REFERENCE_FRONTIER, REFERENCE_FRONTIER));
-    const scope = {world_fork_id: REFERENCE_FRONTIER.fork_id, region_id: "public", resource_id: "resource-alpha", schedule_id: WORLD_SUPPLY_SCHEDULE_ID, research_height: 0, subsidy: 8, previous_settlement_id: WORLD_SUPPLY_SCHEDULE_ID, length: 451};
-    expect(referenceWorldBranch(REFERENCE_RULESET, scope)).toEqual(createLabsWorldBranch(REFERENCE_RULESET, scope));
     expect(referenceSupplyScheduleId(WORLD_SUPPLY_SCHEDULE_BODY)).toBe(WORLD_SUPPLY_SCHEDULE_ID);
-    for (const height of [0, 2_099, 2_100, 4_200, 6_300, 8_399, 8_400]) {
-      expect(referenceSubsidyAtHeight(height, WORLD_SUPPLY_SCHEDULE_BODY)).toBe(worldSubsidyAtHeight(height));
-      expect(referenceSupplyAtHeight(height, WORLD_SUPPLY_SCHEDULE_BODY)).toBe(worldIssuedAtHeight(height));
-    }
-    expect(WORLD_MAX_SUPPLY).toBe(31_500);
+    for (const ordinal of [0, 1, 4_095, 4_096, 1_048_575, WORLD_REWARDED_BRANCH_COUNT - 1]) expect(referenceWorldResource(REFERENCE_RULESET, WORLD_SUPPLY_SCHEDULE_BODY, ordinal)).toEqual(worldResourceBranch(ordinal));
+    expect(referenceMergeSupplyStates(createWorldSupplyState(), createWorldSupplyState())).toEqual(mergeWorldSupplyStates(createWorldSupplyState(), createWorldSupplyState()));
+    expect(WORLD_MAX_SUPPLY).toBe(276_824_064);
   });
 
-  it("keeps issuance monotonic, exact, and permanently capped at every research height", () => {
-    expect(WORLD_SUPPLY_SCHEDULE_BODY.allocations.reduce((sum, allocation) => sum + allocation.amount, 0)).toBe(WORLD_MAX_SUPPLY);
+  it("derives its own exact permanent supply from finite geography and 32 strata", () => {
+    expect(WORLD_REWARDED_BRANCH_COUNT).toBe(2 ** 24);
+    expect(WORLD_BRANCHES_PER_STRATUM).toBe(2 ** 19);
+    expect(WORLD_RESOURCE_STRATA).toBe(32);
     let previous = 0;
-    for (let height = 0; height <= WORLD_SUPPLY_SCHEDULE_BODY.terminal_height; height += 1) {
-      const issued = worldIssuedAtHeight(height);
-      expect(issued).toBeGreaterThanOrEqual(previous);
-      expect(issued).toBeLessThanOrEqual(WORLD_MAX_SUPPLY);
-      if (height > 0) expect(issued - previous).toBe(worldSubsidyAtHeight(height - 1));
-      previous = issued;
+    for (let stratum = 0; stratum <= WORLD_RESOURCE_STRATA; stratum += 1) {
+      const total = referenceCumulativeSupply(stratum, WORLD_SUPPLY_SCHEDULE_BODY);
+      expect(total).toBe(WORLD_BRANCHES_PER_STRATUM * stratum * (stratum + 1) / 2);
+      expect(total).toBeGreaterThanOrEqual(previous);
+      previous = total;
     }
     expect(previous).toBe(WORLD_MAX_SUPPLY);
-    expect(worldIssuedAtHeight(WORLD_SUPPLY_SCHEDULE_BODY.terminal_height + 10_000)).toBe(WORLD_MAX_SUPPLY);
-    expect(worldSubsidyAtHeight(WORLD_SUPPLY_SCHEDULE_BODY.terminal_height)).toBe(0);
+    expect(WORLD_SUPPLY_SCHEDULE_BODY.season_reset).toBe(false);
   });
 
   it("rejects forged energy, oversized input, worse-than-baseline spam, and malicious frontiers", async () => {

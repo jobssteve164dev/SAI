@@ -7,7 +7,7 @@ const cli = new URL("../../../dist/agent-package/packages/agent/src/cli.js", imp
 await access(entry);
 await access(cli);
 const api = await import(entry.href);
-for (const name of ["SaiBridge", "createIdentity", "loadOrCreateIdentity", "joinSai", "participateLabs", "labsEnergy", "canonicalLabsSequence", "verifyLabsResult", "verifyLabsClaim", "verifyLabsWorldSubmission", "createLabsWorldBranch", "REFERENCE_RULESET_ID", "REFERENCE_FORK_ID"]) {
+for (const name of ["SaiBridge", "createIdentity", "loadOrCreateIdentity", "joinSai", "participateLabs", "labsEnergy", "canonicalLabsSequence", "verifyLabsResult", "verifyLabsClaim", "verifyLabsWorldSubmission", "createLabsWorldBranch", "worldResourceBranch", "ECONOMIC_NETWORK_ID", "WORLD_MAX_SUPPLY", "REFERENCE_RULESET_ID", "REFERENCE_FORK_ID"]) {
   if (!(name in api)) throw new Error(`发布入口缺少 ${name}`);
 }
 const cliSource = await readFile(cli, "utf8");

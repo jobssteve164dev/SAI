@@ -17,7 +17,7 @@ describe("M1 双节点迁移", () => {
     let targetBridge: SaiBridge | undefined;
     try {
       expect(source.region.currentState().world_fork_id).not.toBe(target.region.currentState().world_fork_id);
-      expect(source.region.currentState().supply?.schedule_id).not.toBe(target.region.currentState().supply?.schedule_id);
+      expect(source.region.currentState().supply?.schedule_id).toBe(target.region.currentState().supply?.schedule_id);
       await bridge.register(); await bridge.connect();
       const before = source.region.exportAgent(identity.agentId);
       const targetDescriptor = await target.federation.descriptor();

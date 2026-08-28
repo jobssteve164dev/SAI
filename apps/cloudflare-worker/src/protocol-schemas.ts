@@ -2,18 +2,20 @@ import claimSchema from "../../../spec/labs/1.0.0/claim.schema.json" with {type:
 import frontierSchema from "../../../spec/labs/1.0.0/frontier.schema.json" with {type: "json"};
 import resultSchema from "../../../spec/labs/1.0.0/result.schema.json" with {type: "json"};
 import rulesetSchema from "../../../spec/labs/2.0.0/ruleset.schema.json" with {type: "json"};
-import worldBranchSchema from "../../../spec/labs/3.0.0/world-branch.schema.json" with {type: "json"};
-import supplyScheduleSchema from "../../../spec/sai/0.3.0/world-supply-schedule.schema.json" with {type: "json"};
-import supplyStateSchema from "../../../spec/sai/0.3.0/world-supply-state.schema.json" with {type: "json"};
+import worldBranchSchema from "../../../spec/labs/4.0.0/world-branch.schema.json" with {type: "json"};
+import supplyBlockSchema from "../../../spec/sai/0.4.0/world-supply-block.schema.json" with {type: "json"};
+import supplyScheduleSchema from "../../../spec/sai/0.4.0/world-supply-schedule.schema.json" with {type: "json"};
+import supplyStateSchema from "../../../spec/sai/0.4.0/world-supply-state.schema.json" with {type: "json"};
 
 const PROTOCOL_SCHEMAS: Record<string, unknown> = {
   "/spec/labs/1.0.0/result.schema.json": resultSchema,
   "/spec/labs/1.0.0/claim.schema.json": claimSchema,
   "/spec/labs/1.0.0/frontier.schema.json": frontierSchema,
   "/spec/labs/2.0.0/ruleset.schema.json": rulesetSchema,
-  "/spec/labs/3.0.0/world-branch.schema.json": worldBranchSchema,
-  "/spec/sai/0.3.0/world-supply-schedule.schema.json": supplyScheduleSchema,
-  "/spec/sai/0.3.0/world-supply-state.schema.json": supplyStateSchema,
+  "/spec/labs/4.0.0/world-branch.schema.json": worldBranchSchema,
+  "/spec/sai/0.4.0/world-supply-schedule.schema.json": supplyScheduleSchema,
+  "/spec/sai/0.4.0/world-supply-block.schema.json": supplyBlockSchema,
+  "/spec/sai/0.4.0/world-supply-state.schema.json": supplyStateSchema,
 };
 
 export const PROTOCOL_SCHEMA_PATHS = Object.freeze(Object.keys(PROTOCOL_SCHEMAS));

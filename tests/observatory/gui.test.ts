@@ -42,8 +42,8 @@ describe("SAI 世界观察器", () => {
     expect(page).toContain('<html lang="en">');
     expect(page).toContain("A finite world.<br>Every unit matters.");
     expect(page).toContain("Local fork overview");
-    expect(page).toContain("LABS knowledge and permanent supply");
-    expect(page).toContain("not a unique global history");
+    expect(page).toContain("LABS research and ecosystem supply");
+    expect(page).toContain("A world history may fork; the economic supply does not");
     expect(page).toContain('href="/" hreflang="zh-CN">中文</a>');
     expect(page).toContain('hreflang="en" href="https://social.szlk.ai/en"');
     expect(OBSERVATORY_SCRIPT).toContain("Math.min(snapshot.region.width, 32)");
@@ -70,6 +70,6 @@ describe("SAI 世界观察器", () => {
     }]);
     expect(JSON.stringify(snapshot)).not.toContain("private-request-id");
     expect(JSON.stringify(snapshot)).not.toContain(wait.action_id);
-    expect(snapshot.supply).toEqual(expect.objectContaining({max_supply: 31_500, reserve_supply: 31_500, issued_supply: 0, research_height: 0, current_subsidy: 8, next_halving_height: 2_100, season_reset: false}));
+    expect(snapshot.supply).toEqual(expect.objectContaining({protocol: "sai-world-supply-observation/2", max_supply: 276_824_064, reserve_supply: 276_824_064, issued_supply: 0, rewarded_branch_count: 16_777_216, settled_branch_count: 0, strata: 32, branches_per_stratum: 524_288, active_height: 0, season_reset: false}));
   });
 });

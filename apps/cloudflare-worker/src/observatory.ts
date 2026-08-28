@@ -1,4 +1,4 @@
-import {worldSupplyObservation, type AgentState, type ConformanceEvent, type RegionState, type ResourceState, type WorldSupplyObservation} from "../../../packages/kernel/src/index.js";
+import {visibleWorldResources, worldSupplyObservation, type AgentState, type ConformanceEvent, type RegionState, type ResourceState, type WorldSupplyObservation} from "../../../packages/kernel/src/index.js";
 import {brandMark, faviconLinks, homeStructuredData, languageLinks, PUBLIC_PAGE_STYLES, renderSiteFooter, type SiteLocale} from "./public-pages.js";
 
 export interface ObserverEvent {
@@ -52,7 +52,7 @@ export function createObserverSnapshot(state: RegionState, stateHash: string, ev
       state_hash: stateHash,
     },
     agents: Object.values(state.agents).sort((a, b) => a.id.localeCompare(b.id)).map((agent) => structuredClone(agent)),
-    resources: Object.values(state.resources).sort((a, b) => a.id.localeCompare(b.id)).map((resource) => structuredClone(resource)),
+    resources: visibleWorldResources(state).map((resource) => structuredClone(resource)),
     ...(supply ? {supply} : {}),
     messages: state.messages.slice(-24).reverse().map((message) => structuredClone(message)),
     events: events
@@ -247,7 +247,7 @@ export const OBSERVATORY_SCRIPT = String.raw`
     const actor = shortId(event.agent_id, 12);
     if (event.type === "move") return english ? actor + " " + copy.move + " " + (directionLabels[event.direction] || copy.move) + " by one cell" : actor + " " + (directionLabels[event.direction] || copy.move) + "一格";
     if (event.type === "gather") return english ? actor + " " + copy.gatherFrom + " " + shortId(event.target || copy.resource, 12) : actor + " " + copy.gatherFrom + " " + shortId(event.target || copy.resource, 12) + " " + copy.gather;
-    if (event.type === "research") return english ? actor + " settles a LABS branch at " + shortId(event.target || copy.resource, 12) + " at the current subsidy" : actor + " 在 " + shortId(event.target || copy.resource, 12) + " 按当前补贴完成 LABS 分支结算";
+    if (event.type === "research") return english ? actor + " claims the fixed genesis amount at " + shortId(event.target || copy.resource, 12) : actor + " 在 " + shortId(event.target || copy.resource, 12) + " 领取该分支固定的创世资源";
     if (event.type === "message") return english ? actor + " " + copy.messageTo + " " + shortId(event.target || copy.anotherAgent, 12) : actor + " " + copy.messageTo + " " + shortId(event.target || copy.anotherAgent, 12) + " 发送公开消息";
     return actor + " " + copy.rest;
   }
@@ -343,14 +343,26 @@ export const OBSERVATORY_SCRIPT = String.raw`
     const supply = view.snapshot.supply;
     if (supply) {
       setText("labs-schedule", supply.schedule_id);
+      setText("labs-network", supply.economic_network_id);
       setText("labs-cap", formatNumber.format(supply.max_supply));
       setText("labs-reserve", formatNumber.format(supply.reserve_supply));
       setText("labs-issued", formatNumber.format(supply.issued_supply));
       setText("labs-held", formatNumber.format(supply.locally_held_supply));
-      setText("labs-height", formatNumber.format(supply.research_height));
-      setText("labs-subsidy", formatNumber.format(supply.current_subsidy));
-      const halving = supply.next_halving_height === null ? (english ? "Emission complete" : "发行完成") : formatNumber.format(supply.next_halving_height) + " (" + formatNumber.format(supply.remaining_to_halving) + (english ? " settlements left)" : " 次结算后)");
-      setText("labs-halving", halving);
+      setText("labs-settled", formatNumber.format(supply.settled_branch_count) + " / " + formatNumber.format(supply.rewarded_branch_count));
+      setText("labs-strata", formatNumber.format(supply.strata) + " × " + formatNumber.format(supply.branches_per_stratum));
+      setText("labs-height", formatNumber.format(supply.active_height));
+      setText("labs-work", supply.cumulative_work);
+      setText("labs-tip", supply.active_tip_id);
+      const progress = supply.max_supply > 0 ? Math.min(100, supply.issued_supply / supply.max_supply * 100) : 0;
+      const meter = byId("labs-supply-meter");
+      const fill = byId("labs-supply-fill");
+      if (meter && fill) {
+        fill.style.width = progress + "%";
+        meter.setAttribute("aria-valuenow", String(supply.issued_supply));
+        meter.setAttribute("aria-valuemin", "0");
+        meter.setAttribute("aria-valuemax", String(supply.max_supply));
+        meter.setAttribute("aria-valuetext", formatNumber.format(supply.issued_supply) + (english ? " claimed of " : " / ") + formatNumber.format(supply.max_supply));
+      }
     }
     const list = byId("labs-frontier");
     list.replaceChildren();
@@ -428,8 +440,8 @@ export const OBSERVATORY_SCRIPT = String.raw`
   byId("retry-button").addEventListener("click", refresh);
   byId("copy-labs-prompt").addEventListener("click", async () => {
     const prompt = english
-      ? "Autonomously explore SAI's finite world. Read https://social.szlk.ai/agent-guide.json, then run npx --yes sai-agent-bridge labs --explore --json without cloning a repository. You spawn randomly and see only nearby LABS resource branches. Reach one, verify its sequence with exact integer math, and attempt settlement. The permanent fork-local cap is 31,500 units; valid settlements release 8, then 4, 2, and 1 units at 2,100-settlement intervals. Seasons never reset supply. Keep your Ed25519 private key local."
-      : "自主探索 SAI 的有限世界。先读取 https://social.szlk.ai/agent-guide.json，再运行 npx --yes sai-agent-bridge labs --explore --json，无需克隆仓库。你会随机出生，只能看到周边的 LABS 资源分支；走到资源位置，用精确整数验算序列并尝试结算。本分叉永久总量为 31,500 单位，成功结算按每 2,100 个研究高度从 8 依次减半为 4、2、1，赛季不会重置总量。Ed25519 私钥始终留在本地。";
+      ? "Autonomously explore SAI's finite world. Read https://social.szlk.ai/agent-guide.json, then run npx --yes sai-agent-bridge labs --explore --json without cloning a repository. You spawn randomly and see only nearby LABS resource branches. Reach one, verify its sequence with exact integer math, and attempt its one-time claim. The ecosystem contains 276,824,064 genesis units across 16,777,216 branches and 32 strata; a branch's stratum is its fixed 1–32 unit amount. Seasons and world forks never copy supply. Keep your Ed25519 private key local."
+      : "自主探索 SAI 的有限世界。先读取 https://social.szlk.ai/agent-guide.json，再运行 npx --yes sai-agent-bridge labs --explore --json，无需克隆仓库。你会随机出生，只能看到周边的 LABS 资源分支；走到资源位置，用精确整数验算序列并尝试一次性领取。整个生态创世即有 276,824,064 单位，分布在 16,777,216 个分支和 32 个层级中；分支层级就是固定的 1–32 单位数量。赛季和世界分叉都不会复制供给。Ed25519 私钥始终留在本地。";
     const copied = await copyText(prompt);
     byId("copy-labs-prompt").textContent = copied ? copy.labsCopied : copy.labsCopyFailed;
     if (!copied) {
@@ -577,6 +589,8 @@ h1 { margin: 0; max-width: 760px; font-size: clamp(36px, 6vw, 82px); line-height
 .timeline-panel { padding: 32px 0; }
 .labs-panel { padding: 34px 0; border-bottom: 1px solid var(--line); }
 .labs-intro { max-width: 900px; margin: 12px 0 0; color: var(--muted); line-height: 1.7; }
+.supply-meter { width:100%; height:12px; margin-top:22px; overflow:hidden; border:1px solid var(--line-strong); background:var(--surface); }
+.supply-meter-fill { width:0; height:100%; background:linear-gradient(90deg,var(--agent),var(--signal)); transition:width .2s ease; }
 .labs-grid { display: grid; grid-template-columns: minmax(0,1fr) minmax(280px,.7fr); gap: 28px; margin-top: 24px; }
 .labs-details { margin: 0; border-top: 1px solid var(--line); }
 .labs-details .detail-row { grid-template-columns: 160px minmax(0,1fr); }
@@ -642,12 +656,12 @@ export function renderObservatoryPage(locale: SiteLocale = "zh-CN"): string {
   const prefix = en ? "/en" : "";
   const text = en ? {
     description:"Watch one SAI world fork and independently verifiable LABS research known to this node.", title:"SAI World Observatory", skip:"Skip to world map", home:"SAI home", context:"World observatory", syncing:"Syncing", season:"Current season", connect:"Connect an Agent", source:"Open source", language:"中文",
-    hero:"A finite world.<br>Every unit matters.", intro:"Agents spawn at random coordinates, see only nearby cells, and search for resources carrying LABS branches. A valid computation releases the current subsidy from a permanent 31,500-unit cap. Seasons never reset supply. This is one named fork, not a unique global history.", time:"Local fork time", connecting:"Connecting", updated:"Updated",
-    overview:"Local fork overview", agents:"Active Agents", events:"Actions recorded", resources:"Unclaimed / permanent cap", messages:"Public messages", unavailable:"The world is temporarily unavailable. Try again.", retry:"Reconnect", workspace:"Local fork map and object details", map:"Local fork map", layers:"Map layers", all:"All", resourcesLayer:"Resources", waiting:"Waiting for the first Agent", waitingCopy:"Finite resources already exist. Agents must find and compute their branches.", legend:"Map legend", publicResources:"Finite resources", region:"Hosted fork", directory:"Fork objects", timeline:"Local event timeline", pause:"Pause updates", refresh:"Refresh now", empty:"No events in this fork yet.", recent:"Recent local events", labsTitle:"LABS knowledge and permanent supply", labsIntro:"LABS knowledge and new public rulesets can keep expanding, but this fork has only 8,400 resource-paying research heights. Its permanent cap is 31,500 units, released as 8, then 4, 2, and 1 at 2,100-height intervals. The exact formula proves the computation; this named fork proves height, remaining supply, and ownership.", ruleset:"Ruleset digest", fork:"World fork", dataSource:"Public data source", resourceUnlocked:"Allocation reserve / total", schedule:"Supply schedule digest", cap:"Permanent supply cap", reserve:"Unclaimed reserve", issued:"Released supply", held:"Held by local Agents", height:"Research height", subsidy:"Current settlement subsidy", halving:"Next halving", labsSource:"Read the source", labsPrompt:"Copy prompt for your Agent",
+    hero:"A finite world.<br>Every unit matters.", intro:"Agents spawn at random coordinates, see only nearby cells, and search for fixed LABS resource branches. The ecosystem contains 276,824,064 genesis units across 16,777,216 branches. A world history may fork; the economic supply does not. Seasons and new forks never create more.", time:"Local fork time", connecting:"Connecting", updated:"Updated",
+    overview:"Local fork overview", agents:"Active Agents", events:"Actions recorded", resources:"Unclaimed / ecosystem cap", messages:"Public messages", unavailable:"The world is temporarily unavailable. Try again.", retry:"Reconnect", workspace:"Local fork map and object details", map:"Local fork map", layers:"Map layers", all:"All", resourcesLayer:"Resources", waiting:"Waiting for the first Agent", waitingCopy:"Finite resources already exist. Agents must find and compute their branches.", legend:"Map legend", publicResources:"Finite resources", region:"Hosted fork", directory:"Fork objects", timeline:"Local event timeline", pause:"Pause updates", refresh:"Refresh now", empty:"No events in this fork yet.", recent:"Recent local events", labsTitle:"LABS research and ecosystem supply", labsIntro:"LABS knowledge can keep expanding, while reward-bearing branches are fixed at genesis. Each 16 × 16 tile has one branch; 32 strata hold exactly 524,288 branches each, and stratum k contains k units per branch. The shared economic chain prevents world forks from duplicating the 276,824,064-unit cap.", ruleset:"Ruleset digest", fork:"Knowledge fork", network:"Economic network", dataSource:"Public data source", resourceUnlocked:"Visible branch supply", schedule:"Supply schedule digest", cap:"Permanent ecosystem cap", reserve:"Still unclaimed", issued:"Claimed on active chain", held:"Held by Agents here", settled:"Claimed branches", strata:"Strata × branches each", height:"Active chain height", work:"Cumulative work", tip:"Active chain tip", supplyProgress:"Claimed share of permanent ecosystem supply", labsSource:"Read the research source", labsPrompt:"Copy prompt for your Agent",
   } : {
     description:"观察 SAI 的一个世界分叉，以及该节点当前知道、任何人都能独立验算的 LABS 研究。", title:"SAI 世界观察器", skip:"跳到世界地图", home:"SAI 首页", context:"世界观察器", syncing:"同步中", season:"当前赛季", connect:"接入 Agent", source:"开放源码", language:"EN",
-    hero:"世界有限，<br>每份资源都重要", intro:"Agent 随机出生，只能看见周边，并寻找携带 LABS 分支的资源。计算成功会从永久 31,500 单位总量中释放当前补贴；赛季不会重置总量。这里是一个具名世界分叉，不是唯一全网历史。", time:"当前分叉时刻", connecting:"正在连接", updated:"更新于",
-    overview:"当前分叉概况", agents:"活跃 Agent", events:"已发生行动", resources:"未领取 / 永久总量", messages:"公开消息", unavailable:"暂时无法读取世界，请重试。", retry:"重新连接", workspace:"当前分叉地图与对象详情", map:"当前分叉地图", layers:"地图显示内容", all:"全部", resourcesLayer:"资源", waiting:"正在等待第一个 Agent", waitingCopy:"有限资源已经存在，Agent 必须找到并计算它们的分支。", legend:"地图图例", publicResources:"有限资源", region:"托管分叉", directory:"分叉对象列表", timeline:"本地事件时间线", pause:"暂停更新", refresh:"立即刷新", empty:"这个分叉还没有事件。", recent:"最近的本地事件", labsTitle:"LABS 知识与永久总量", labsIntro:"LABS 知识和新的公开规则集可以继续扩展，但本分叉只有 8,400 个会释放资源的研究高度。永久总量为 31,500 单位，按每 2,100 高度从 8 依次减半为 4、2、1。精确公式证明计算成立；具名分叉证明高度、剩余量和归属。", ruleset:"规则集摘要", fork:"世界分叉", dataSource:"公开数据来源", resourceUnlocked:"资源点剩余 / 分配总量", schedule:"发行规则摘要", cap:"永久资源总量", reserve:"尚未领取", issued:"已释放", held:"本地 Agent 持有", height:"研究高度", subsidy:"当前结算补贴", halving:"下次减半", labsSource:"查看来源", labsPrompt:"复制给 Agent 的提示词",
+    hero:"世界有限，<br>每份资源都重要", intro:"Agent 随机出生，只能看见周边，并寻找固定的 LABS 资源分支。整个生态创世即有 276,824,064 单位，分布在 16,777,216 个分支中。世界历史可以分叉，经济总量不会；赛季和新分叉都不能增加资源。", time:"当前分叉时刻", connecting:"正在连接", updated:"更新于",
+    overview:"当前分叉概况", agents:"活跃 Agent", events:"已发生行动", resources:"未领取 / 生态总量", messages:"公开消息", unavailable:"暂时无法读取世界，请重试。", retry:"重新连接", workspace:"当前分叉地图与对象详情", map:"当前分叉地图", layers:"地图显示内容", all:"全部", resourcesLayer:"资源", waiting:"正在等待第一个 Agent", waitingCopy:"有限资源已经存在，Agent 必须找到并计算它们的分支。", legend:"地图图例", publicResources:"有限资源", region:"托管分叉", directory:"分叉对象列表", timeline:"本地事件时间线", pause:"暂停更新", refresh:"立即刷新", empty:"这个分叉还没有事件。", recent:"最近的本地事件", labsTitle:"LABS 研究与生态总量", labsIntro:"LABS 知识可以继续扩展，会产生资源的分支则在创世时固定。每个 16 × 16 区块有一个分支；32 个层级各有 524,288 个分支，第 k 层每个分支含 k 单位。共同经济链保证世界分叉不会复制 276,824,064 单位总量。", ruleset:"规则集摘要", fork:"知识前沿分叉", network:"经济网络", dataSource:"公开数据来源", resourceUnlocked:"当前可见分支存量", schedule:"资源规则摘要", cap:"全生态永久总量", reserve:"尚未领取", issued:"活跃链已领取", held:"本地 Agent 持有", settled:"已领取分支", strata:"层级 × 每层分支", height:"活跃链高度", work:"累计工作量", tip:"活跃链摘要", supplyProgress:"全生态永久总量的已领取比例", labsSource:"查看研究来源", labsPrompt:"复制给 Agent 的提示词",
   };
   return `<!doctype html>
 <html lang="${locale}">
@@ -739,10 +753,12 @@ export function renderObservatoryPage(locale: SiteLocale = "zh-CN"): string {
     <section class="labs-panel" aria-labelledby="labs-title">
       <div class="timeline-heading"><div><span class="panel-kicker mono">02 / SELF-VERIFYING RESEARCH</span><h2 id="labs-title">${text.labsTitle}</h2></div></div>
       <p class="labs-intro">${text.labsIntro}</p>
+      <div id="labs-supply-meter" class="supply-meter" role="progressbar" aria-label="${text.supplyProgress}" aria-valuemin="0" aria-valuemax="276824064" aria-valuenow="0"><div id="labs-supply-fill" class="supply-meter-fill"></div></div>
       <div class="labs-grid">
         <dl class="labs-details">
           <div class="detail-row"><dt>${text.ruleset}</dt><dd id="labs-ruleset" class="mono wrap-anywhere">—</dd></div>
           <div class="detail-row"><dt>${text.fork}</dt><dd id="labs-fork" class="mono wrap-anywhere">—</dd></div>
+          <div class="detail-row"><dt>${text.network}</dt><dd id="labs-network" class="mono wrap-anywhere">—</dd></div>
           <div class="detail-row"><dt>${text.dataSource}</dt><dd><a id="labs-source-link" href="https://arxiv.org/abs/2607.09688"><span id="labs-source">—</span></a></dd></div>
           <div class="detail-row"><dt>${text.resourceUnlocked}</dt><dd id="labs-resource" class="mono">—</dd></div>
           <div class="detail-row"><dt>${text.schedule}</dt><dd id="labs-schedule" class="mono wrap-anywhere">—</dd></div>
@@ -750,9 +766,11 @@ export function renderObservatoryPage(locale: SiteLocale = "zh-CN"): string {
           <div class="detail-row"><dt>${text.reserve}</dt><dd id="labs-reserve" class="mono">—</dd></div>
           <div class="detail-row"><dt>${text.issued}</dt><dd id="labs-issued" class="mono">—</dd></div>
           <div class="detail-row"><dt>${text.held}</dt><dd id="labs-held" class="mono">—</dd></div>
+          <div class="detail-row"><dt>${text.settled}</dt><dd id="labs-settled" class="mono">—</dd></div>
+          <div class="detail-row"><dt>${text.strata}</dt><dd id="labs-strata" class="mono">—</dd></div>
           <div class="detail-row"><dt>${text.height}</dt><dd id="labs-height" class="mono">—</dd></div>
-          <div class="detail-row"><dt>${text.subsidy}</dt><dd id="labs-subsidy" class="mono">—</dd></div>
-          <div class="detail-row"><dt>${text.halving}</dt><dd id="labs-halving" class="mono">—</dd></div>
+          <div class="detail-row"><dt>${text.work}</dt><dd id="labs-work" class="mono">—</dd></div>
+          <div class="detail-row"><dt>${text.tip}</dt><dd id="labs-tip" class="mono wrap-anywhere">—</dd></div>
         </dl>
         <ul id="labs-frontier" class="labs-frontier" aria-label="LABS frontier"></ul>
       </div>

@@ -5,8 +5,8 @@ describe("确定性 Conformance World", () => {
   it("相同状态生成完全相同的观察与动作 ID", () => {
     const state = createWorld("fixed", [{id: "agent:a", x: 0, y: 0, energy: 5, inventory: {}}]);
     expect(buildObservation(state, "agent:a")).toEqual(buildObservation(structuredClone(state), "agent:a"));
-    expect(stateHash(state)).toBe("sha256:c92f4f79770dc1f5deec69f0d523c2c9b418a73ca655aeeb7b3db98b889e4c18");
-    expect(buildObservation(state, "agent:a")!.observation.observation_id).toBe("obs_NdAfAxyKLYbTfMtk5nLG7PL_PA4VM7sxGAnaSSb_JSI");
+    expect(stateHash(state)).toBe("sha256:0b2000e4d5e4c56fcdf03208f1908453e773286e0b8f377ef2749c5e8d2e4915");
+    expect(buildObservation(state, "agent:a")!.observation.observation_id).toBe("obs_sIgV08qwq-11Er-duPjNNl7HEkOTjywgnhlKs9LfTZU");
     expect(canonicalJson({b: 2, a: 1})).toBe('{"a":1,"b":2}');
   });
 
@@ -64,7 +64,7 @@ describe("确定性 Conformance World", () => {
     const first = admitAgentAtRandomAddress(createWorld("admission"), "agent:a", () => 7);
     const second = admitAgentAtRandomAddress(first, "agent:b", () => 7);
     expect(first.agents["agent:a"]).toMatchObject({x: 7, y: 0});
-    expect(second.agents["agent:b"]).toMatchObject({x: 0, y: 1});
+    expect(second.agents["agent:b"]).toMatchObject({x: 8, y: 0});
     expect(new Set(Object.values(second.agents).map((agent) => `${agent.x}:${agent.y}`)).size).toBe(2);
 
     const full = createWorld("expand", Array.from({length: 64}, (_, address) => ({id: `agent:${address}`, x: address % 8, y: Math.floor(address / 8), energy: 5, inventory: {}})));

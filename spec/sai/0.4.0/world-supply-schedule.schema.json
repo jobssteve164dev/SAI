@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://social.szlk.ai/spec/sai/0.4.0/world-supply-schedule.schema.json",
+  "title": "SAI ecosystem world supply schedule",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocol", "base_unit", "world_axis", "world_cells", "resource_tile_axis", "rewarded_branch_count", "strata", "branches_per_stratum", "stratum_amount_formula", "cumulative_supply_formula", "max_supply", "ordinal_permutation", "position_formula", "resource_classes", "proof_bits", "fork_choice", "season_reset", "ruleset_id"],
+  "properties": {
+    "protocol": {"const": "sai-world-supply-schedule/2"},
+    "base_unit": {"const": "world_resource_unit"},
+    "world_axis": {"const": 65536},
+    "world_cells": {"const": 4294967296},
+    "resource_tile_axis": {"const": 16},
+    "rewarded_branch_count": {"const": 16777216},
+    "strata": {"const": 32},
+    "branches_per_stratum": {"const": 524288},
+    "stratum_amount_formula": {"const": "one_based_stratum"},
+    "cumulative_supply_formula": {"const": "2^18*k*(k+1)"},
+    "max_supply": {"const": 276824064},
+    "ordinal_permutation": {
+      "type": "object", "additionalProperties": false,
+      "required": ["algorithm", "multiplier", "offset"],
+      "properties": {"algorithm": {"const": "affine_mod_2^24"}, "multiplier": {"const": 5939339}, "offset": {"const": 11841497}}
+    },
+    "position_formula": {
+      "type": "object", "additionalProperties": false,
+      "required": ["algorithm", "seed"],
+      "properties": {"algorithm": {"const": "sha256_tile_offset"}, "seed": {"const": "sai-world-strata-position-2026-08"}}
+    },
+    "resource_classes": {
+      "type": "array", "minItems": 3, "maxItems": 3,
+      "prefixItems": [
+        {"const": {"kind": "crystal", "length": 451, "energy_at_most": "12625"}},
+        {"const": {"kind": "fiber", "length": 518, "energy_at_most": "18463"}},
+        {"const": {"kind": "catalyst", "length": 573, "energy_at_most": "22558"}}
+      ],
+      "items": false
+    },
+    "proof_bits": {"const": 8},
+    "fork_choice": {"const": "cumulative_work_then_smallest_tip"},
+    "season_reset": {"const": false},
+    "ruleset_id": {"const": "sha256:00e98f457d47ed2de88d956987d66c2398bc26da1292fe9d098bc3120a3db621"}
+  }
+}

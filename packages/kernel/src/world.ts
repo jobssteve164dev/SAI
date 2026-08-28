@@ -3,7 +3,6 @@ import {
   REFERENCE_FORK_ID,
   REFERENCE_RULESET,
   REFERENCE_RULESET_ID,
-  createLabsWorldBranch,
   verifyLabsWorldSubmission,
   type LabsResult,
   type LabsSignedClaim,
@@ -18,18 +17,19 @@ import {
   type Inventory,
   type LegalAction,
   type Observation,
+  type ResourceState,
   type RegionState,
   type RejectedResult,
   type Snapshot,
   type StoredObservation,
   type TransitionResult,
 } from "./types.js";
-import {WORLD_MAX_SUPPLY, WORLD_SUPPLY_ALLOCATIONS, WORLD_SUPPLY_TERMINAL_HEIGHT, createWorldSupplyState, worldIssuedAtHeight, worldSubsidyAtHeight, worldSupplyScheduleId} from "./supply.js";
+import {LEGACY_WORLD_MAX_SUPPLY, LEGACY_WORLD_SUPPLY_ALLOCATIONS, WORLD_MAX_SUPPLY, WORLD_RESOURCE_KINDS, appendWorldSupplyBlock, assertWorldSupplyChain, createWorldSupplyState, mineWorldSupplyBlock, worldResourceAt, worldResourceBranchesInBounds, worldSupplyBalances} from "./supply.js";
 
 const MAX_ENERGY = 10;
 export const MAX_WORLD_ADDRESSES = 2 ** 32;
 export const MAX_WORLD_AXIS = 2 ** 16;
-const INITIAL_WORLD_AXIS = 8;
+const INITIAL_WORLD_AXIS = 16;
 const MESSAGE_SCHEMA = {
   type: "object",
   required: ["content"],
@@ -59,8 +59,8 @@ export function createWorld(regionId = "local", agents: AgentState[] = [], world
     width: INITIAL_WORLD_AXIS,
     height: INITIAL_WORLD_AXIS,
     agents: Object.fromEntries(agents.map((agent) => [agent.id, structuredClone(agent)])),
-    resources: Object.fromEntries(WORLD_SUPPLY_ALLOCATIONS.map((allocation) => [allocation.resource_id, {id: allocation.resource_id, kind: allocation.kind, x: allocation.x, y: allocation.y, initial_amount: allocation.amount, remaining: allocation.amount, labs: {ruleset_id: REFERENCE_RULESET_ID, length: allocation.length, energy_at_most: allocation.energy_at_most}}])),
-    supply: createWorldSupplyState(worldForkId),
+    resources: {},
+    supply: createWorldSupplyState(),
     messages: [],
   };
   validateState(state);
@@ -70,8 +70,8 @@ export function createWorld(regionId = "local", agents: AgentState[] = [], world
 export function upgradeWorldForLabs(state: RegionState): RegionState {
   const next = structuredClone(state);
   next.world_fork_id ||= REFERENCE_FORK_ID;
-  const bindings: Record<string, {initial_amount: number; length: number; energy_at_most: string}> = next.supply
-    ? Object.fromEntries(WORLD_SUPPLY_ALLOCATIONS.map((allocation) => [allocation.resource_id, {initial_amount: allocation.amount, length: allocation.length, energy_at_most: allocation.energy_at_most}]))
+  const bindings: Record<string, {initial_amount: number; length: number; energy_at_most: string}> = next.supply?.protocol === "sai-world-supply-state/1"
+    ? Object.fromEntries(LEGACY_WORLD_SUPPLY_ALLOCATIONS.map((allocation) => [allocation.resource_id, {initial_amount: allocation.amount, length: allocation.length, energy_at_most: allocation.energy_at_most}]))
     : {"resource-alpha": {initial_amount: 8, length: 451, energy_at_most: "12625"}, "resource-beta": {initial_amount: 5, length: 518, energy_at_most: "18463"}};
   for (const resource of Object.values(next.resources)) {
     const known = bindings[resource.id];
@@ -113,7 +113,8 @@ export function admitAgentAtRandomAddress(state: RegionState, agentId: string, r
     if (!occupied.has(address)) break;
   }
   if (occupied.has(address)) throw new Error("world_capacity_exhausted");
-  const agent: AgentState = {id: agentId, x: address % next.width, y: Math.floor(address / next.width), energy: 5, inventory: {}};
+  const economicInventory = next.supply?.protocol === "sai-world-supply-state/2" ? worldSupplyBalances(next.supply)[agentId] ?? {} : {};
+  const agent: AgentState = {id: agentId, x: address % next.width, y: Math.floor(address / next.width), energy: 5, inventory: structuredClone(economicInventory)};
   next.agents[agentId] = agent;
   return next;
 }
@@ -144,17 +145,30 @@ export function validateState(state: RegionState): void {
   if (!/^fork:[A-Za-z0-9._:-]{1,120}$/.test(state.world_fork_id)) throw new TypeError("世界分叉标识无效");
   if (Object.values(state.resources).some((resource) => resource.remaining > resource.initial_amount)) throw new TypeError("资源余额不能超过创世存量");
   if (Object.values(state.resources).some((resource) => resource.labs && (resource.labs.ruleset_id !== REFERENCE_RULESET_ID || !REFERENCE_RULESET.baselines.some((item) => item.length === resource.labs?.length) || !/^(0|[1-9][0-9]*)$/.test(resource.labs.energy_at_most)))) throw new TypeError("资源 LABS 分支绑定无效");
-  if (state.supply) {
-    if (state.supply.protocol !== "sai-world-supply-state/1" || state.supply.schedule_id !== worldSupplyScheduleId(state.world_fork_id) || !/^sha256:[0-9a-f]{64}$/.test(state.supply.previous_settlement_id)) throw new TypeError("世界发行状态无效");
-    if (!Number.isSafeInteger(state.supply.research_height) || state.supply.research_height < 0 || state.supply.research_height > WORLD_SUPPLY_TERMINAL_HEIGHT) throw new TypeError("世界研究高度无效");
-    for (const allocation of WORLD_SUPPLY_ALLOCATIONS) {
+  if (state.supply?.protocol === "sai-world-supply-state/1") {
+    if (!/^sha256:[0-9a-f]{64}$/.test(state.supply.schedule_id) || !/^sha256:[0-9a-f]{64}$/.test(state.supply.previous_settlement_id)) throw new TypeError("旧世界发行状态无效");
+    if (!Number.isSafeInteger(state.supply.research_height) || state.supply.research_height < 0 || state.supply.research_height > 8_400) throw new TypeError("旧世界研究高度无效");
+    for (const allocation of LEGACY_WORLD_SUPPLY_ALLOCATIONS) {
       const resource = state.resources[allocation.resource_id];
       if (!resource || resource.kind !== allocation.kind || resource.initial_amount !== allocation.amount || resource.labs?.length !== allocation.length) throw new TypeError("世界资源分配与发行规则不匹配");
       const locallyHeld = Object.values(state.agents).reduce((sum, agent) => sum + (agent.inventory[allocation.kind] ?? 0), 0);
       if (locallyHeld > allocation.amount - resource.remaining) throw new TypeError("Agent 库存超过该资源已释放存量");
     }
-    const reserve = WORLD_SUPPLY_ALLOCATIONS.reduce((sum, allocation) => sum + (state.resources[allocation.resource_id]?.remaining ?? 0), 0);
-    if (reserve + worldIssuedAtHeight(state.supply.research_height) !== WORLD_MAX_SUPPLY) throw new TypeError("世界资源总量与发行高度不守恒");
+    const reserve = LEGACY_WORLD_SUPPLY_ALLOCATIONS.reduce((sum, allocation) => sum + (state.resources[allocation.resource_id]?.remaining ?? 0), 0);
+    const legacyIssued = state.supply.research_height <= 2_100 ? state.supply.research_height * 8
+      : state.supply.research_height <= 4_200 ? 16_800 + (state.supply.research_height - 2_100) * 4
+      : state.supply.research_height <= 6_300 ? 25_200 + (state.supply.research_height - 4_200) * 2
+      : 29_400 + (state.supply.research_height - 6_300);
+    if (reserve + legacyIssued !== LEGACY_WORLD_MAX_SUPPLY) throw new TypeError("旧世界资源总量与发行高度不守恒");
+  }
+  if (state.supply?.protocol === "sai-world-supply-state/2") {
+    assertWorldSupplyChain(state.supply);
+    const balances = worldSupplyBalances(state.supply);
+    for (const agent of Object.values(state.agents)) {
+      for (const kind of WORLD_RESOURCE_KINDS) if ((agent.inventory[kind] ?? 0) !== (balances[agent.id]?.[kind] ?? 0)) throw new TypeError("Agent 世界资源库存与经济网络不一致");
+    }
+    const issued = Object.values(balances).reduce((sum, inventory) => sum + Object.values(inventory).reduce((inner, amount) => inner + amount, 0), 0);
+    if (issued > WORLD_MAX_SUPPLY) throw new TypeError("世界资源经济网络超过永久总量");
   }
 }
 
@@ -177,26 +191,32 @@ function addAction(commands: Record<string, ActionCommand>, agent: AgentState, a
   commands[id] = {action_id: id, ...action, observed_x: agent.x, observed_y: agent.y};
 }
 
-function labsBranch(state: RegionState, resource: RegionState["resources"][string]) {
-  if (!resource.labs || !state.supply) return undefined;
-  const subsidy = worldSubsidyAtHeight(state.supply.research_height);
-  if (subsidy < 1 || resource.remaining < subsidy) return undefined;
-  return createLabsWorldBranch(REFERENCE_RULESET, {
-    world_fork_id: state.world_fork_id,
-    region_id: state.region_id,
-    resource_id: resource.id,
-    schedule_id: state.supply.schedule_id,
-    research_height: state.supply.research_height,
-    subsidy,
-    previous_settlement_id: state.supply.previous_settlement_id,
-    length: resource.labs.length,
-    energy_at_most: resource.labs.energy_at_most,
-  });
+function claimedBranchOrdinals(state: RegionState): Set<number> {
+  return new Set(state.supply?.protocol === "sai-world-supply-state/2" ? state.supply.active_chain.map((block) => block.branch_ordinal) : []);
+}
+
+export function visibleWorldResources(state: RegionState, limit = 1_024): ResourceState[] {
+  const claimed = claimedBranchOrdinals(state);
+  const generated = state.supply?.protocol === "sai-world-supply-state/2"
+    ? worldResourceBranchesInBounds(state.width, state.height, limit).map((item) => ({id: item.resource_id, kind: item.kind, x: item.x, y: item.y, initial_amount: item.amount, remaining: claimed.has(item.branch_ordinal) ? 0 : item.amount, labs: {ruleset_id: item.labs_branch.ruleset_id, length: item.length, energy_at_most: item.energy_at_most}}))
+    : [];
+  return [...Object.values(state.resources).map((item) => structuredClone(item)), ...generated].sort((a, b) => a.id.localeCompare(b.id));
 }
 
 export function buildObservation(state: RegionState, agentId: string): StoredObservation | undefined {
   const agent = state.agents[agentId];
   if (!agent) return undefined;
+  const claimed = claimedBranchOrdinals(state);
+  const nearbyBranches: Array<NonNullable<ReturnType<typeof worldResourceAt>>> = [];
+  if (state.supply?.protocol === "sai-world-supply-state/2") {
+    for (let y = Math.max(0, agent.y - 2); y <= Math.min(state.height - 1, agent.y + 2); y += 1) {
+      for (let x = Math.max(0, agent.x - 2); x <= Math.min(state.width - 1, agent.x + 2); x += 1) {
+        if (Math.abs(agent.x - x) + Math.abs(agent.y - y) > 2) continue;
+        const branch = worldResourceAt(x, y);
+        if (branch) nearbyBranches.push(branch);
+      }
+    }
+  }
   const commands: Record<string, ActionCommand> = {};
   addAction(commands, agent, {type: "wait"});
   if (agent.energy > 0) {
@@ -211,22 +231,20 @@ export function buildObservation(state: RegionState, agentId: string): StoredObs
       const id = actionId({agent: agent.id, x: agent.x, y: agent.y, type: action.type, target: action.target, remaining: resource.remaining});
       commands[id] = {action_id: id, observed_x: agent.x, observed_y: agent.y, ...action};
     }
-    const branch = labsBranch(state, resource);
-    if (branch && agent.energy > 0 && resource.x === agent.x && resource.y === agent.y) {
-      const action = {type: "research" as const, target: resource.id, observed_target_remaining: resource.remaining, observed_branch_id: branch.branch_id, arguments_schema: RESEARCH_SCHEMA};
-      const id = actionId({agent: agent.id, x: agent.x, y: agent.y, type: action.type, target: action.target, branch_id: branch.branch_id});
-      commands[id] = {action_id: id, observed_x: agent.x, observed_y: agent.y, ...action};
-    }
+  }
+  for (const resource of nearbyBranches) {
+    if (agent.energy < 1 || claimed.has(resource.branch_ordinal) || resource.x !== agent.x || resource.y !== agent.y) continue;
+    const action = {type: "research" as const, target: resource.resource_id, observed_target_remaining: resource.amount, observed_branch_id: resource.labs_branch.branch_id, arguments_schema: RESEARCH_SCHEMA};
+    const id = actionId({agent: agent.id, x: agent.x, y: agent.y, type: action.type, target: action.target, branch_id: resource.labs_branch.branch_id});
+    commands[id] = {action_id: id, observed_x: agent.x, observed_y: agent.y, ...action};
   }
   for (const target of Object.values(state.agents).sort((a, b) => a.id.localeCompare(b.id))) {
     if (target.id !== agent.id && distance(agent, target) <= 1) addAction(commands, agent, {type: "message", target: target.id, arguments_schema: MESSAGE_SCHEMA});
   }
   const nearby: Observation["nearby"] = [
     ...Object.values(state.agents).filter((item) => item.id !== agent.id && distance(agent, item) <= 2).map((item) => ({id: item.id, type: "agent" as const, x: item.x, y: item.y})),
-    ...Object.values(state.resources).filter((item) => distance(agent, item) <= 2).map((item) => {
-      const branch = labsBranch(state, item);
-      return {id: item.id, type: "resource" as const, kind: item.kind, x: item.x, y: item.y, initial_amount: item.initial_amount, remaining: item.remaining, ...(branch ? {labs_branch: branch} : {})};
-    }),
+    ...Object.values(state.resources).filter((item) => distance(agent, item) <= 2).map((item) => ({id: item.id, type: "resource" as const, kind: item.kind, x: item.x, y: item.y, initial_amount: item.initial_amount, remaining: item.remaining})),
+    ...nearbyBranches.map((item) => ({id: item.resource_id, type: "resource" as const, kind: item.kind, x: item.x, y: item.y, initial_amount: item.amount, remaining: claimed.has(item.branch_ordinal) ? 0 : item.amount, ...(!claimed.has(item.branch_ordinal) ? {labs_branch: item.labs_branch} : {})})),
   ].sort((a, b) => a.id.localeCompare(b.id));
   const messages = state.messages
     .filter((message) => message.from === agent.id || message.to === agent.id)
@@ -299,23 +317,21 @@ export function transition(state: RegionState, agentId: string, requestId: strin
     agent.inventory[resource.kind] = (agent.inventory[resource.kind] ?? 0) + 1; received[resource.kind] = 1;
   }
   if (command.type === "research") {
-    const resource = command.target ? next.resources[command.target] : undefined;
-    if (!resource || resource.remaining < 1 || resource.remaining !== command.observed_target_remaining) return {status: "rejected", state, result: reject(requestId, "target_unavailable")};
-    if (resource.x !== agent.x || resource.y !== agent.y) return {status: "rejected", state, result: reject(requestId, "target_out_of_range")};
-    const branch = labsBranch(next, resource);
-    if (!branch || branch.branch_id !== command.observed_branch_id || branch.branch_id !== argumentsValue.branch_id) return {status: "rejected", state, result: reject(requestId, "target_unavailable")};
+    const resource = worldResourceAt(agent.x, agent.y);
+    if (!resource || resource.resource_id !== command.target || resource.amount !== command.observed_target_remaining) return {status: "rejected", state, result: reject(requestId, "target_unavailable")};
+    if (!next.supply || next.supply.protocol !== "sai-world-supply-state/2" || next.supply.active_chain.some((block) => block.branch_ordinal === resource.branch_ordinal)) return {status: "rejected", state, result: reject(requestId, "target_unavailable")};
+    const branch = resource.labs_branch;
+    if (branch.branch_id !== command.observed_branch_id || branch.branch_id !== argumentsValue.branch_id) return {status: "rejected", state, result: reject(requestId, "target_unavailable")};
     const settlement = argumentsValue as LabsSettlementArguments;
-    try { verifyLabsWorldSubmission(REFERENCE_RULESET, branch, settlement, agentId); }
+    try {
+      verifyLabsWorldSubmission(REFERENCE_RULESET, branch, settlement, agentId);
+      next.supply = appendWorldSupplyBlock(next.supply, mineWorldSupplyBlock(next.supply, branch, settlement, agentId));
+    }
     catch { return {status: "rejected", state, result: reject(requestId, "arguments_invalid")}; }
-    const subsidy = branch.subsidy;
-    if (!next.supply || next.supply.research_height !== branch.research_height || next.supply.schedule_id !== branch.schedule_id || next.supply.previous_settlement_id !== branch.previous_settlement_id || resource.remaining < subsidy) return {status: "rejected", state, result: reject(requestId, "target_unavailable")};
-    resource.remaining -= subsidy;
     agent.energy -= 1;
     cost.energy = 1;
-    agent.inventory[resource.kind] = (agent.inventory[resource.kind] ?? 0) + subsidy;
-    received[resource.kind] = subsidy;
-    next.supply.research_height += 1;
-    next.supply.previous_settlement_id = `sha256:${sha256({schedule_id: branch.schedule_id, research_height: branch.research_height, branch_id: branch.branch_id, result_id: settlement.result_id, agent_id: agentId})}`;
+    agent.inventory[resource.kind] = (agent.inventory[resource.kind] ?? 0) + resource.amount;
+    received[resource.kind] = resource.amount;
   }
   if (command.type === "message") {
     const target = command.target ? next.agents[command.target] : undefined;

@@ -1,13 +1,19 @@
 # 研究与技术参考
 
-## 有限发行机制的一手参考
+## 去中心化账本与永久稀缺的一手参考
 
-- [Bitcoin: A Peer-to-Peer Electronic Cash System](https://bitcoin.org/bitcoin.pdf)：参考“预定发行 + 随高度递减”的供给设计，但 SAI 不采用最长链作为唯一世界历史。
-- [Bitcoin Core mainnet chain parameters](https://github.com/bitcoin/bitcoin/blob/master/src/kernel/chainparams.cpp)：主网 `nSubsidyHalvingInterval = 210000`、10 分钟目标间隔和两周目标周期的权威实现来源。SAI 只按比例借鉴高度减半，未复制时间难度重定向。
-- [Bitcoin Developer Guide: Block Chain](https://developer.bitcoin.org/devguide/block_chain.html)：比特币每 2,016 区块调整工作量目标的说明，用于识别 SAI 在无统一时间/工作信号的多分叉环境中不能安全照搬的边界。
-- [Bitcoin FAQ: How are bitcoins created?](https://bitcoin.org/en/faq)：21,000,000 上限的公开说明；SAI 的 31,500 是自身规则按 `2,100×(8+4+2+1)` 推导的世界资源单位，不是比特币或代币。
+- [Bitcoin: A Peer-to-Peer Electronic Cash System](https://bitcoin.org/bitcoin.pdf)：只参考无需特殊服务器的工作证明链、网络分区和累计工作选择；不复制其货币总量、补贴或减半曲线，也不把经济链冒充唯一世界历史。
+- [Bitcoin Core chain selection](https://github.com/bitcoin/bitcoin/blob/master/src/validation.cpp)：用于核对“完整本地验算后按累计工作选择候选链”的实现边界；SAI 当前固定低工作门槛仅供研究协议复现。
+- [Bitcoin Developer Guide: Block Chain](https://developer.bitcoin.org/devguide/block_chain.html)：用于对照区块父摘要、工作目标与网络重组。SAI 的 276,824,064 单位由 `2^32` 世界地理和 32 层创世分支独立推导，不采用比特币发行参数。
 
-这些资料用于形成当前设计基线，不代表 SAI 已复现其结论。
+这些资料用于审计去中心化链的安全边界，不是 SAI 供给曲线或品牌定位的来源。
+
+## LABS 数学基线的一手来源
+
+- Packebusch & Mertens (2015), [Low Autocorrelation Binary Sequences](https://arxiv.org/abs/1512.02475)：给出 LABS 精确能量定义、互补/反转/交替取反形成的八元等价类，并完整求得 `L ≤ 66` 的最优序列，用于核对协议数学与对称规范化。
+- Pšeničnik et al. (2026), [Prioritizing Search Space Regions in the Low Autocorrelation Binary Sequences Problem](https://arxiv.org/abs/2607.09688)：2026-08-28 通过 arXiv v1 与论文 Table 3 回读核对；首个自包含规则集逐字收录其中 `L=451、518、573` 的十六进制序列，并在本地重新计算得到能量 `12625、18463、22558`。论文网页只作为来源说明，验算不依赖网页或动态排行榜。
+
+首个参考规则集把完整二元序列、精确能量、公式、对象上限与来源元数据一起纳入内容摘要。若外部页面不可用，规则集和三个参考结果仍可由兼容参与者独立保存、交换和逐字节复现。
 
 ## Agent 社会与开放环境
 

@@ -1,5 +1,5 @@
 import {randomBytes, randomUUID} from "node:crypto";
-import {admitAgentAtRandomAddress, assertForkScopedSupplyImportAllowed, buildObservation, createWorld, expandWorldForPopulation, transition, type ActInput, type ActResult, type AgentState, type ConformanceEvent, type Observation, type RegionState, type StoredObservation} from "../../../packages/kernel/src/index.js";
+import {admitAgentAtRandomAddress, assertEcosystemSupplyImportAllowed, buildObservation, createWorld, expandWorldForPopulation, mergeWorldSupplyStates, reconcileWorldSupplyInventories, transition, validateState, type ActInput, type ActResult, type AgentState, type ConformanceEvent, type EcosystemWorldSupplyState, type Observation, type RegionState, type StoredObservation} from "../../../packages/kernel/src/index.js";
 import {FileStore} from "./store.js";
 
 export class RegionService {
@@ -28,7 +28,7 @@ export class RegionService {
 
   async importAgent(agent: AgentState): Promise<void> {
     await this.serial(async () => {
-      assertForkScopedSupplyImportAllowed(this.state, agent);
+      assertEcosystemSupplyImportAllowed(this.state, agent);
       const existing = this.state.agents[agent.id];
       if (existing && JSON.stringify(existing) !== JSON.stringify(agent)) throw new Error("目标区域已存在不同状态的 Agent");
       if (existing) return;
@@ -53,6 +53,17 @@ export class RegionService {
       if (this.state.agents[agentId]) return;
       this.state = admitAgentAtRandomAddress(this.state, agentId, () => randomBytes(4).readUInt32BE(0));
       await this.store.saveSnapshot(this.state);
+    });
+  }
+
+  async mergeSupply(incoming: EcosystemWorldSupplyState): Promise<EcosystemWorldSupplyState> {
+    return this.serial(async () => {
+      if (!this.state.supply || this.state.supply.protocol !== "sai-world-supply-state/2") throw new Error("economic_network_unavailable");
+      const merged = mergeWorldSupplyStates(this.state.supply, incoming);
+      this.state = reconcileWorldSupplyInventories({...this.state, supply: merged});
+      validateState(this.state);
+      await this.store.saveSnapshot(this.state);
+      return structuredClone(merged);
     });
   }
 

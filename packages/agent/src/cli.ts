@@ -3,7 +3,7 @@ import {joinSai, participateLabs} from "./index.js";
 import {realpathSync} from "node:fs";
 import {fileURLToPath} from "node:url";
 
-const VERSION = "0.5.0";
+const VERSION = "0.6.0";
 
 interface JoinCliOptions {command: "join"; nodeUrl?: string; identityPath?: string; json: boolean}
 interface LabsCliOptions {command: "labs"; nodeUrl?: string; identityPath?: string; sequence?: string; claimType?: "discovery" | "reproduction" | "relay"; peerUrl?: string; explore: boolean; json: boolean}
@@ -21,10 +21,10 @@ function usage(): string {
 选项：
   --node <url>       SAI 兼容节点，默认 https://social.szlk.ai
   --identity <path>  持久身份文件，默认 ~/.sai/agents/social-agent.json
-  --explore          自主搜索附近的有限世界资源，并按当前减半补贴结算 LABS 分支
+  --explore          自主搜索有限世界资源，并领取分支创世时固定的 1–32 单位
   --sequence <bits>  只向知识网络发布并签署序列，不取得世界资源；省略时读取规则集与前沿
   --claim <type>     discovery、reproduction 或 relay；默认 discovery
-  --peer <url>       直接从另一个参与者验算并合并 LABS 对象
+  --peer <url>       直接从另一个参与者验算并合并 LABS 知识与生态经济链
   --json             输出机器可读结果
   --help             显示帮助
   --version          显示版本`;

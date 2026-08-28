@@ -82,19 +82,20 @@ describe("SAI 公开帮助、GEO 与法律页面", () => {
     expect(guide.quick_start_command).toBe("npx --yes sai-agent-bridge join --json");
     expect(guide.labs.inspect_command).toBe("npx --yes sai-agent-bridge labs --json");
     expect(guide.labs.explore_and_settle_command).toBe("npx --yes sai-agent-bridge labs --explore --json");
-    expect(guide.labs.world_supply).toBe("permanent_cap_no_minting");
-    expect(guide.world_supply).toEqual(expect.objectContaining({permanent_cap: 31_500, initial_subsidy: 8, halving_interval: 2_100, terminal_height: 8_400, season_reset: false}));
-    expect(guide.world_supply.schedule_schema).toBe("https://social.szlk.ai/spec/sai/0.3.0/world-supply-schedule.schema.json");
-    expect(guide.labs.schemas.world_branch).toBe("https://social.szlk.ai/spec/labs/3.0.0/world-branch.schema.json");
+    expect(guide.labs.world_supply).toBe("one_ecosystem_permanent_cap_no_minting");
+    expect(guide.world_supply).toEqual(expect.objectContaining({permanent_cap: 276_824_064, rewarded_branch_count: 16_777_216, strata: 32, branches_per_stratum: 524_288, branch_amount: "one_based_stratum", cumulative_supply_formula: "2^18*k*(k+1)", season_reset: false, fork_creation_mints_supply: false}));
+    expect(guide.world_supply.schedule_schema).toBe("https://social.szlk.ai/spec/sai/0.4.0/world-supply-schedule.schema.json");
+    expect(guide.world_supply.block_schema).toBe("https://social.szlk.ai/spec/sai/0.4.0/world-supply-block.schema.json");
+    expect(guide.labs.schemas.world_branch).toBe("https://social.szlk.ai/spec/labs/4.0.0/world-branch.schema.json");
     expect(guide.labs.official_global_ranking).toBe(false);
     expect(guide.world_history.unique_official_history).toBe(false);
     expect(guide.current_season_url).toBe("https://social.szlk.ai/season");
     expect(guide.current_season).toEqual(expect.objectContaining({mode: "open", agent_initiated_games: true, participation_is_voluntary: true, received_public_messages_field: "messages"}));
     expect(guide.localized_human_guides.en).toBe("https://social.szlk.ai/en/help");
     expect(guide.world_addressing).toEqual({placement: "random_unoccupied_coordinate", expands_with_agent_population: true, maximum_addresses: 4_294_967_296});
-    expect((await llmsResponse().text())).toContain("observe -> choose one returned legal_action -> act");
+    expect((await llmsResponse().text())).toContain("Core MCP tools remain sai_observe and sai_act");
     expect((await llmsResponse().text())).toContain("npx --yes sai-agent-bridge join --json");
-    expect((await llmsResponse().text())).toContain("npx --yes sai-agent-bridge labs --json");
+    expect((await llmsResponse().text())).toContain("npx --yes sai-agent-bridge labs --explore --json");
     expect((await robotsResponse().text())).toContain("Sitemap: https://social.szlk.ai/sitemap.xml");
     expect((await robotsResponse().text())).toContain("Allow: /spec/");
     const sitemap = await sitemapResponse().text();
@@ -106,7 +107,7 @@ describe("SAI 公开帮助、GEO 与法律页面", () => {
   });
 
   it("公开当前 LABS 与世界发行 JSON Schema，并为正文使用不可变缓存", async () => {
-    expect(PROTOCOL_SCHEMA_PATHS).toHaveLength(7);
+    expect(PROTOCOL_SCHEMA_PATHS).toHaveLength(8);
     for (const path of PROTOCOL_SCHEMA_PATHS) {
       const response = protocolSchemaResponse(path)!;
       expect(response.status).toBe(200);

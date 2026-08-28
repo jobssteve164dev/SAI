@@ -9,7 +9,8 @@ export const LABS_FRONTIER_PROTOCOL = "sai-labs-frontier/1" as const;
 export const LABS_MAX_OBJECT_BYTES = 131_072;
 export const LABS_MAX_SEQUENCE_LENGTH = 4_096;
 export const LEGACY_REFERENCE_FORK_ID = "fork:sai-public-world-1";
-export const REFERENCE_FORK_ID = "fork:sai-emission-world-1";
+export const PREVIOUS_REFERENCE_FORK_ID = "fork:sai-emission-world-1";
+export const REFERENCE_FORK_ID = "fork:sai-strata-world-1";
 
 export type LabsClaimType = "discovery" | "reproduction" | "relay";
 
@@ -76,15 +77,17 @@ export interface LabsFrontier {
 }
 
 export interface LabsWorldBranch {
-  protocol: "sai-labs-world-branch/2";
+  protocol: "sai-labs-world-branch/3";
   branch_id: string;
-  world_fork_id: string;
-  region_id: string;
-  resource_id: string;
+  economic_network_id: string;
   schedule_id: string;
-  research_height: number;
-  subsidy: number;
-  previous_settlement_id: string;
+  branch_ordinal: number;
+  resource_id: string;
+  resource_kind: string;
+  resource_amount: number;
+  x: number;
+  y: number;
+  stratum: number;
   ruleset_id: string;
   length: number;
   energy_at_most: string;
@@ -306,26 +309,29 @@ export function addResultToFrontier(frontier: LabsFrontier, result: LabsResult, 
   return mergeLabsFrontiers(frontier, candidate);
 }
 
-export function createLabsWorldBranch(ruleset: LabsRuleset, scope: {world_fork_id: string; region_id: string; resource_id: string; schedule_id: string; research_height: number; subsidy: number; previous_settlement_id: string; length: number; energy_at_most?: string}): LabsWorldBranch {
+export function createLabsWorldBranch(ruleset: LabsRuleset, scope: {economic_network_id: string; schedule_id: string; branch_ordinal: number; resource_id: string; resource_kind: string; resource_amount: number; x: number; y: number; stratum: number; length: number; energy_at_most?: string}): LabsWorldBranch {
   const baseline = ruleset.baselines.find((item) => item.length === scope.length);
   if (!baseline) throw new RangeError("LABS 世界分支长度不在规则集内");
-  if (!/^fork:[A-Za-z0-9._:-]{1,120}$/.test(scope.world_fork_id)) throw new TypeError("LABS world_fork_id 无效");
-  if (!/^sha256:[0-9a-f]{64}$/.test(scope.schedule_id) || !/^sha256:[0-9a-f]{64}$/.test(scope.previous_settlement_id)) throw new TypeError("LABS 世界分支发行绑定无效");
-  if (!Number.isSafeInteger(scope.research_height) || scope.research_height < 0 || !Number.isSafeInteger(scope.subsidy) || scope.subsidy < 1) throw new RangeError("LABS 世界分支研究高度或补贴无效");
+  if (!/^network:sha256:[0-9a-f]{64}$/.test(scope.economic_network_id) || !/^sha256:[0-9a-f]{64}$/.test(scope.schedule_id)) throw new TypeError("LABS 世界分支经济网络绑定无效");
+  const integers = [scope.branch_ordinal, scope.resource_amount, scope.x, scope.y, scope.stratum];
+  if (integers.some((value) => !Number.isSafeInteger(value) || value < 0) || scope.resource_amount < 1 || scope.stratum < 1 || scope.stratum > 32) throw new RangeError("LABS 世界分支资源参数无效");
+  if (!/^resource:world:[0-9]{1,8}$/.test(scope.resource_id) || !/^[a-z][a-z0-9_-]{0,31}$/.test(scope.resource_kind)) throw new TypeError("LABS 世界分支资源身份无效");
   const energyAtMost = assertDecimal(scope.energy_at_most ?? baseline.energy, "energy_at_most");
   if (energyAtMost > BigInt(baseline.energy)) throw new RangeError("LABS 世界分支门槛不能弱于公开基线");
   const variants = labsSymmetries(baseline.sequence);
-  const candidate = variants[scope.research_height % variants.length] as string;
-  const prefixLength = Math.min(candidate.length, 64 + Math.floor(scope.research_height / variants.length) * 16);
+  const candidate = variants[scope.branch_ordinal % variants.length] as string;
+  const prefixLength = Math.min(candidate.length, 32 + (32 - scope.stratum) * 8);
   const body = {
-    protocol: "sai-labs-world-branch/2" as const,
-    world_fork_id: scope.world_fork_id,
-    region_id: scope.region_id,
-    resource_id: scope.resource_id,
+    protocol: "sai-labs-world-branch/3" as const,
+    economic_network_id: scope.economic_network_id,
     schedule_id: scope.schedule_id,
-    research_height: scope.research_height,
-    subsidy: scope.subsidy,
-    previous_settlement_id: scope.previous_settlement_id,
+    branch_ordinal: scope.branch_ordinal,
+    resource_id: scope.resource_id,
+    resource_kind: scope.resource_kind,
+    resource_amount: scope.resource_amount,
+    x: scope.x,
+    y: scope.y,
+    stratum: scope.stratum,
     ruleset_id: rulesetId(ruleset),
     length: scope.length,
     energy_at_most: energyAtMost.toString(),
@@ -370,7 +376,7 @@ function referenceBaseline(length: number, hex: string, energy: string): LabsBas
 export const REFERENCE_RULESET: LabsRuleset = {
   protocol: LABS_RULESET_PROTOCOL,
   name: "SAI LABS Open Records 2026-08",
-  summary: "Self-contained public LABS records for lengths 451, 518, and 573; lower exact energy advances a fork-local knowledge frontier.",
+  summary: "Self-contained public LABS records for lengths 451, 518, and 573; lower exact energy advances an independently mergeable knowledge frontier.",
   objective: "minimize_aperiodic_autocorrelation_energy",
   sequence_alphabet: "binary_pm1",
   symmetry: "complement_reverse_alternating_group_8",

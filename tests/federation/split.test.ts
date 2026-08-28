@@ -52,7 +52,7 @@ describe("热区域拆分原型", () => {
     expect(routeDuringSplit(cutover, 1, 2).status).toBe("redirect");
   });
 
-  it("拒绝把同一有限供给发行高度机械复制到两个子区域", () => {
-    expect(() => splitRegion(createWorld("finite-supply"), "x", 4, ["west", "east"])).toThrow("fork_scoped_supply_split_requires_new_schedule");
+  it("拒绝用旧局部坐标拆分器破坏全生态资源坐标", () => {
+    expect(() => splitRegion(createWorld("finite-supply"), "x", 4, ["west", "east"])).toThrow("ecosystem_supply_split_requires_global_coordinate_routing");
   });
 });

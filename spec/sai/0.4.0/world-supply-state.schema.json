@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://social.szlk.ai/spec/sai/0.4.0/world-supply-state.schema.json",
+  "title": "SAI ecosystem world supply state",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocol", "economic_network_id", "schedule_id", "active_chain"],
+  "properties": {
+    "protocol": {"const": "sai-world-supply-state/2"},
+    "economic_network_id": {"const": "network:sha256:ba1e35330ba996ff4aa7d1b1bdeb443723d6e331cc9ee324f500c5c5f197f2c1"},
+    "schedule_id": {"const": "sha256:ba1e35330ba996ff4aa7d1b1bdeb443723d6e331cc9ee324f500c5c5f197f2c1"},
+    "active_chain": {"type": "array", "maxItems": 16777216, "items": {"$ref": "https://social.szlk.ai/spec/sai/0.4.0/world-supply-block.schema.json"}}
+  }
+}

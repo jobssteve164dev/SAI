@@ -80,17 +80,19 @@ export function referenceWorldBranch(ruleset, scope) {
   const baseline = ruleset.baselines.find((item) => item.length === scope.length);
   if (!baseline) throw new RangeError("unknown LABS branch length");
   const variants = referenceSymmetries(baseline.sequence);
-  const candidate = variants[scope.research_height % variants.length];
-  const prefixLength = Math.min(candidate.length, 64 + Math.floor(scope.research_height / variants.length) * 16);
+  const candidate = variants[scope.branch_ordinal % variants.length];
+  const prefixLength = Math.min(candidate.length, 32 + (32 - scope.stratum) * 8);
   const body = {
-    protocol: "sai-labs-world-branch/2",
-    world_fork_id: scope.world_fork_id,
-    region_id: scope.region_id,
-    resource_id: scope.resource_id,
+    protocol: "sai-labs-world-branch/3",
+    economic_network_id: scope.economic_network_id,
     schedule_id: scope.schedule_id,
-    research_height: scope.research_height,
-    subsidy: scope.subsidy,
-    previous_settlement_id: scope.previous_settlement_id,
+    branch_ordinal: scope.branch_ordinal,
+    resource_id: scope.resource_id,
+    resource_kind: scope.resource_kind,
+    resource_amount: scope.resource_amount,
+    x: scope.x,
+    y: scope.y,
+    stratum: scope.stratum,
     ruleset_id: referenceRulesetId(ruleset),
     length: scope.length,
     energy_at_most: scope.energy_at_most ?? baseline.energy,
@@ -103,20 +105,42 @@ export function referenceSupplyScheduleId(schedule) {
   return referenceContentId(schedule);
 }
 
-export function referenceSubsidyAtHeight(height, schedule) {
-  if (!Number.isSafeInteger(height) || height < 0) throw new RangeError("invalid research height");
-  const epoch = Math.floor(height / schedule.halving_interval);
-  const terminalEpoch = schedule.terminal_height / schedule.halving_interval;
-  return epoch >= terminalEpoch ? 0 : schedule.initial_subsidy / (2 ** epoch);
+export function referenceCumulativeSupply(stratum, schedule) {
+  if (!Number.isSafeInteger(stratum) || stratum < 0 || stratum > schedule.strata) throw new RangeError("invalid stratum");
+  return schedule.branches_per_stratum * stratum * (stratum + 1) / 2;
 }
 
-export function referenceSupplyAtHeight(height, schedule) {
-  const bounded = Math.min(height, schedule.terminal_height);
-  let issued = 0;
-  for (let cursor = 0; cursor < bounded;) {
-    const epochEnd = Math.min(bounded, (Math.floor(cursor / schedule.halving_interval) + 1) * schedule.halving_interval);
-    issued += (epochEnd - cursor) * referenceSubsidyAtHeight(cursor, schedule);
-    cursor = epochEnd;
-  }
-  return issued;
+export function referenceWorldResource(ruleset, schedule, ordinal) {
+  if (!Number.isSafeInteger(ordinal) || ordinal < 0 || ordinal >= schedule.rewarded_branch_count) throw new RangeError("invalid branch ordinal");
+  const schedule_id = referenceSupplyScheduleId(schedule);
+  const economic_network_id = `network:${schedule_id}`;
+  const permuted = Number((BigInt(ordinal) * BigInt(schedule.ordinal_permutation.multiplier) + BigInt(schedule.ordinal_permutation.offset)) % (1n << 24n));
+  const stratum = Math.floor(permuted / schedule.branches_per_stratum) + 1;
+  const resourceClass = schedule.resource_classes[permuted % schedule.resource_classes.length];
+  const positionHex = createHash("sha256").update(referenceCanonicalJson({algorithm: "sha256_tile_offset", seed: schedule.position_formula.seed, ordinal})).digest("hex");
+  const tileX = ordinal % 4096;
+  const tileY = Math.floor(ordinal / 4096);
+  const scope = {
+    economic_network_id,
+    schedule_id,
+    branch_ordinal: ordinal,
+    resource_id: `resource:world:${ordinal}`,
+    resource_kind: resourceClass.kind,
+    resource_amount: stratum,
+    x: tileX * schedule.resource_tile_axis + (Number.parseInt(positionHex.slice(0, 2), 16) % schedule.resource_tile_axis),
+    y: tileY * schedule.resource_tile_axis + (Number.parseInt(positionHex.slice(2, 4), 16) % schedule.resource_tile_axis),
+    stratum,
+    length: resourceClass.length,
+    energy_at_most: resourceClass.energy_at_most,
+  };
+  return {branch_ordinal: ordinal, resource_id: scope.resource_id, kind: scope.resource_kind, amount: scope.resource_amount, x: scope.x, y: scope.y, stratum, length: scope.length, energy_at_most: scope.energy_at_most, labs_branch: referenceWorldBranch(ruleset, scope)};
+}
+
+export function referenceMergeSupplyStates(left, right) {
+  if (left.economic_network_id !== right.economic_network_id || left.schedule_id !== right.schedule_id) throw new TypeError("economic network mismatch");
+  const tip = (state) => state.active_chain.length ? referenceContentId(state.active_chain[state.active_chain.length - 1]) : state.schedule_id;
+  const chosen = left.active_chain.length > right.active_chain.length ? left
+    : right.active_chain.length > left.active_chain.length ? right
+      : tip(left) <= tip(right) ? left : right;
+  return structuredClone(chosen);
 }
