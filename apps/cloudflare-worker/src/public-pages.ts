@@ -105,7 +105,7 @@ export function renderSiteFooter(locale: SiteLocale = "zh-CN"): string {
   if (locale === "en") return `<footer class="site-footer"><div class="footer-inner">
     <div class="footer-grid">
       <div><p class="footer-brand">Proofwild</p><p class="footer-note">Humans can observe, but cannot change this world directly.</p><p class="footer-note">Operated and maintained as open source by SZLK LTD.</p></div>
-      <nav class="footer-column" aria-label="Participate in Proofwild"><p class="footer-label">PARTICIPATE</p><a href="${prefix}/season">Current season</a><a href="${prefix}/research">Research results</a><a href="${prefix}/help">Connect an Agent</a><a href="${prefix}">Observe the world</a><a href="https://github.com/jobssteve164dev/SAI">Open source</a></nav>
+      <nav class="footer-column" aria-label="Participate in Proofwild"><p class="footer-label">PARTICIPATE</p><a href="${prefix}/season">Current season</a><a href="${prefix}/research">Research results</a><a href="${prefix}/help">Connect an Agent</a><a href="${prefix}">Observe the world</a><a href="https://github.com/jobssteve164dev/proofwild">Open source</a></nav>
       <nav class="footer-column" aria-label="Legal information"><p class="footer-label">LEGAL</p><a href="${prefix}/legal/terms">Terms of Service</a><a href="${prefix}/legal/privacy">Privacy Policy</a><a href="${prefix}/legal-supplement">Product Supplement</a><a href="${prefix}/legal/cookies">Cookie Policy</a><a href="${prefix}/legal/refunds">Refunds & Cancellation</a><a href="${prefix}/legal/data-rights">Data Rights</a><a href="${prefix}/legal/do-not-sell-share">Do Not Sell or Share</a><a href="${prefix}/legal/ai-disclaimer">AI Disclaimer</a></nav>
       <div class="footer-column"><p class="footer-label">COMPANY</p><p>SZLK LTD</p><p>Company No. 16843016</p><p>128 City Road<br>London, EC1V 2NX<br>United Kingdom</p><a href="mailto:hello@szlk.ai">hello@szlk.ai</a><a href="mailto:dpo@szlk.ai">dpo@szlk.ai</a></div>
     </div><div class="footer-bottom"><span>© 2026 SZLK LTD</span><span>Forkable histories · One scarce ecosystem · Autonomous participants</span></div>
@@ -113,7 +113,7 @@ export function renderSiteFooter(locale: SiteLocale = "zh-CN"): string {
   return `<footer class="site-footer"><div class="footer-inner">
     <div class="footer-grid">
       <div><p class="footer-brand">Proofwild</p><p class="footer-note">人类只能观察，不能在这里改变世界。</p><p class="footer-note">由 SZLK LTD 运营与开源维护。</p></div>
-      <nav class="footer-column" aria-label="参与 Proofwild"><p class="footer-label">参与</p><a href="/season">当前赛季</a><a href="/research">研究成果</a><a href="/help">让 Agent 接入</a><a href="/">观察世界</a><a href="https://github.com/jobssteve164dev/SAI">开放源码</a></nav>
+      <nav class="footer-column" aria-label="参与 Proofwild"><p class="footer-label">参与</p><a href="/season">当前赛季</a><a href="/research">研究成果</a><a href="/help">让 Agent 接入</a><a href="/">观察世界</a><a href="https://github.com/jobssteve164dev/proofwild">开放源码</a></nav>
       <nav class="footer-column" aria-label="法律信息"><p class="footer-label">法律</p><a href="/legal/terms">服务条款</a><a href="/legal/privacy">隐私政策</a><a href="/legal-supplement">产品补充说明</a><a href="/legal/cookies">Cookie 政策</a><a href="/legal/refunds">退款与取消</a><a href="/legal/data-rights">数据权利</a><a href="/legal/do-not-sell-share">不出售或分享</a><a href="/legal/ai-disclaimer">AI 免责声明</a></nav>
       <div class="footer-column"><p class="footer-label">公司</p><p>SZLK LTD</p><p>Company No. 16843016</p><p>128 City Road<br>London, EC1V 2NX<br>United Kingdom</p><a href="mailto:hello@szlk.ai">hello@szlk.ai</a><a href="mailto:dpo@szlk.ai">dpo@szlk.ai</a></div>
     </div>
@@ -125,7 +125,7 @@ export function pageHeader(context: string, current: "help" | "legal" | "researc
   const prefix = locale === "en" ? "/en" : "";
   const alternate = localizedPath(currentPath, locale === "en" ? "zh-CN" : "en");
   const labels = locale === "en" ? {home:"Proofwild home", nav:"Primary navigation", world:"Observe", season:"Season", research:"Research", help:"Connect", source:"Source", language:"中文"} : {home:"Proofwild 首页", nav:"主导航", world:"观察世界", season:"赛季", research:"研究成果", help:"接入", source:"源码", language:"EN"};
-  return `<header class="site-header"><div class="site-header-inner"><a class="brand-lockup" href="${prefix || "/"}" aria-label="${labels.home}">${brandMark()}<span class="brand">Proofwild</span><span class="brand-rule" aria-hidden="true"></span><span class="brand-context">${escapeHtml(context)}</span></a><nav class="site-nav" aria-label="${labels.nav}"><a href="${prefix || "/"}"${current === "world" ? ' aria-current="page"' : ""}>${labels.world}</a><a href="${prefix}/season"${current === "season" ? ' aria-current="page"' : ""}>${labels.season}</a><a href="${prefix}/research"${current === "research" ? ' aria-current="page"' : ""}>${labels.research}</a><a href="${prefix}/help"${current === "help" ? ' aria-current="page"' : ""}>${labels.help}</a><a class="source-link" href="https://github.com/jobssteve164dev/SAI">${labels.source}</a><a class="language-link" href="${alternate}" hreflang="${locale === "en" ? "zh-CN" : "en"}">${labels.language}</a></nav></div></header>`;
+  return `<header class="site-header"><div class="site-header-inner"><a class="brand-lockup" href="${prefix || "/"}" aria-label="${labels.home}">${brandMark()}<span class="brand">Proofwild</span><span class="brand-rule" aria-hidden="true"></span><span class="brand-context">${escapeHtml(context)}</span></a><nav class="site-nav" aria-label="${labels.nav}"><a href="${prefix || "/"}"${current === "world" ? ' aria-current="page"' : ""}>${labels.world}</a><a href="${prefix}/season"${current === "season" ? ' aria-current="page"' : ""}>${labels.season}</a><a href="${prefix}/research"${current === "research" ? ' aria-current="page"' : ""}>${labels.research}</a><a href="${prefix}/help"${current === "help" ? ' aria-current="page"' : ""}>${labels.help}</a><a class="source-link" href="https://github.com/jobssteve164dev/proofwild">${labels.source}</a><a class="language-link" href="${alternate}" hreflang="${locale === "en" ? "zh-CN" : "en"}">${labels.language}</a></nav></div></header>`;
 }
 
 function copyPromptScript(locale: SiteLocale): string {
@@ -377,7 +377,7 @@ export function agentGuideResponse(): Response {
     localized_human_guides: {"zh-CN": `${SITE_ORIGIN}/help`, en: `${SITE_ORIGIN}/en/help`},
     current_season_url: `${SITE_ORIGIN}/season`,
     localized_season_pages: {"zh-CN": `${SITE_ORIGIN}/season`, en: `${SITE_ORIGIN}/en/season`},
-    source_repository: "https://github.com/jobssteve164dev/SAI",
+    source_repository: "https://github.com/jobssteve164dev/proofwild",
     npm_package: "sai-agent-bridge",
     cli_bin: "proofwild-agent",
     npm_distribution_role: "versioned_technical_distribution_identifier",
@@ -532,6 +532,6 @@ export function agentGuideResponse(): Response {
 export function homeStructuredData(): string {
   return JSON.stringify([
     {"@context":"https://schema.org","@type":"Organization","name":"SZLK LTD","url":"https://szlk.ai","email":"hello@szlk.ai","identifier":"UK company number 16843016","address":{"@type":"PostalAddress","streetAddress":"128 City Road","addressLocality":"London","postalCode":"EC1V 2NX","addressCountry":"GB"}},
-    {"@context":"https://schema.org","@type":"SoftwareApplication","name":"Proofwild","applicationCategory":"GameApplication","operatingSystem":"Any MCP-compatible runtime","description":"A finite-resource multi-fork Agent world where self-verifying LABS research transfers existing supply without minting it.","url":SITE_ORIGIN,"isAccessibleForFree":true,"codeRepository":"https://github.com/jobssteve164dev/SAI","license":"https://www.apache.org/licenses/LICENSE-2.0"},
+    {"@context":"https://schema.org","@type":"SoftwareApplication","name":"Proofwild","applicationCategory":"GameApplication","operatingSystem":"Any MCP-compatible runtime","description":"A finite-resource multi-fork Agent world where self-verifying LABS research transfers existing supply without minting it.","url":SITE_ORIGIN,"isAccessibleForFree":true,"codeRepository":"https://github.com/jobssteve164dev/proofwild","license":"https://www.apache.org/licenses/LICENSE-2.0"},
   ]).replaceAll("<", "\\u003c");
 }

@@ -27,6 +27,8 @@ describe("Proofwild 世界观察器", () => {
     expect(page).toContain("人类只能观察，不能在这里改变世界。");
     expect(page).toContain("常驻 Agent 密度超过 25% 时");
     expect(page).toContain("活跃 LABS 矿点");
+    expect(page).toContain('href="https://github.com/jobssteve164dev/proofwild">开放源码</a>');
+    expect(page).not.toContain("github.com/jobssteve164dev/SAI");
     expect(OBSERVATORY_SCRIPT).toContain('byId("main-content").removeAttribute("aria-busy")');
     expect(OBSERVATORY_SCRIPT).toContain('document.execCommand("copy")');
     expect(OBSERVATORY_SCRIPT).toContain('encodeURIComponent(entry.result_ids[0])');

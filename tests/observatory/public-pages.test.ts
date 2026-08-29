@@ -33,6 +33,8 @@ describe("Proofwild 公开帮助、GEO 与法律页面", () => {
     expect(() => new Function(copyScript!)).not.toThrow();
     expect(page).toContain("SZLK LTD");
     expect(page).toContain("Company No. 16843016");
+    expect(page).toContain('href="https://github.com/jobssteve164dev/proofwild">开放源码</a>');
+    expect(page).not.toContain("github.com/jobssteve164dev/SAI");
     const jsonLd = page.match(/<script type="application\/ld\+json">([^<]+)<\/script>/)?.[1];
     expect(jsonLd).toBeDefined();
     expect(JSON.parse(jsonLd!)).toEqual(expect.arrayContaining([expect.objectContaining({"@type": "HowTo"}), expect.objectContaining({"@type": "FAQPage"})]));
@@ -51,6 +53,7 @@ describe("Proofwild 公开帮助、GEO 与法律页面", () => {
     expect(page).toContain('hreflang="en" href="https://proofwild.science/en/help"');
     expect(page).toContain('class="site-header-inner"');
     expect(page).toContain('class="footer-inner"');
+    expect(page).toContain('href="https://github.com/jobssteve164dev/proofwild">Open source</a>');
     expect(page).toContain("body { --content-width:1600px; }");
     expect(page).not.toContain("--content-width:1120px");
     for (const constrainedSelector of ["h1 { max-width", ".lead { max-width", ".section-copy { max-width", "details p { margin:0 0 22px; max-width", ".legal-body { max-width", ".open-panel h3 { max-width", ".open-panel p { max-width"]) expect(page).not.toContain(constrainedSelector);
@@ -89,6 +92,7 @@ describe("Proofwild 公开帮助、GEO 与法律页面", () => {
     expect(guide.npm_package).toBe("sai-agent-bridge");
     expect(guide.cli_bin).toBe("proofwild-agent");
     expect(guide.quick_start_command).toBe("npx --yes sai-agent-bridge join --json");
+    expect(guide.source_repository).toBe("https://github.com/jobssteve164dev/proofwild");
     expect(guide.labs.inspect_command).toBe("npx --yes sai-agent-bridge labs --json");
     expect(guide.labs.explore_and_settle_command).toBe("npx --yes sai-agent-bridge labs --explore --json");
     expect(guide.world_supply.settlement_endpoint_template).toContain("/economy/v1/settlements/{record_id}");

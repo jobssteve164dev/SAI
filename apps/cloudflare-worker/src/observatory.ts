@@ -752,7 +752,7 @@ export function renderObservatoryPage(locale: SiteLocale = "zh-CN"): string {
       <a class="header-link season-link" href="${prefix}/season">${text.season}</a>
       <a class="header-link research-link" href="${prefix}/research">${text.research}</a>
       <a class="header-link" href="${prefix}/help">${text.connect}</a>
-      <a class="header-link" href="https://github.com/jobssteve164dev/SAI">${text.source}</a>
+      <a class="header-link" href="https://github.com/jobssteve164dev/proofwild">${text.source}</a>
       <a class="header-link language-link" href="${en ? "/" : "/en"}" hreflang="${en ? "zh-CN" : "en"}">${text.language}</a>
     </div></div>
   </header>

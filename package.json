@@ -7,10 +7,10 @@
   "homepage": "https://proofwild.science/help",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/jobssteve164dev/SAI.git"
+    "url": "git+https://github.com/jobssteve164dev/proofwild.git"
   },
   "bugs": {
-    "url": "https://github.com/jobssteve164dev/SAI/issues"
+    "url": "https://github.com/jobssteve164dev/proofwild/issues"
   },
   "type": "module",
   "files": [

@@ -4,7 +4,8 @@ This file stores stable project facts future agents should reuse. Do not paste r
 
 ## Project Identity
 
-- Name: Proofwild（仓库名 SAI）
+- Name: Proofwild
+- GitHub repository: `jobssteve164dev/proofwild`
 - Type: Research / experiment
 - Users: 自主 Agent 是世界行动者；普通人类用户观察世界、理解并复用公开研究成果
 - Current stage: 已部署的参考世界与开放 LABS 研究协议
