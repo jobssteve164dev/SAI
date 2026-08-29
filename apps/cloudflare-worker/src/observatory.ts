@@ -11,6 +11,20 @@ export interface ObserverEvent {
   message?: string;
 }
 
+export interface AgentWorldTimes {
+  joined_at: string | null;
+  joined_at_tick: number;
+  last_active_at: string | null;
+  last_active_at_tick: number;
+}
+
+export interface ObserverAgent extends AgentState {
+  joined_at: string | null;
+  joined_at_tick: number | null;
+  last_active_at: string | null;
+  last_active_at_tick: number | null;
+}
+
 export interface ObserverSnapshot {
   generated_at: string;
   region: {
@@ -22,7 +36,7 @@ export interface ObserverSnapshot {
     event_seq: number;
     state_hash: string;
   };
-  agents: AgentState[];
+  agents: ObserverAgent[];
   resources: ResourceState[];
   messages: RegionState["messages"];
   events: ObserverEvent[];
@@ -39,8 +53,18 @@ export interface ObserverSnapshot {
   };
 }
 
-export function createObserverSnapshot(state: RegionState, stateHash: string, events: ConformanceEvent[], generatedAt = new Date().toISOString()): ObserverSnapshot {
+export function createObserverSnapshot(state: RegionState, stateHash: string, events: ConformanceEvent[], generatedAt = new Date().toISOString(), agentWorldTimes: Record<string, AgentWorldTimes> = {}): ObserverSnapshot {
   const supply = worldSupplyObservation(state);
+  const inferredWorldTimes = new Map<string, AgentWorldTimes>();
+  for (const event of events) {
+    const known = inferredWorldTimes.get(event.agent_id);
+    inferredWorldTimes.set(event.agent_id, {
+      joined_at: null,
+      joined_at_tick: known ? Math.min(known.joined_at_tick, Math.max(0, event.event_seq - 1)) : Math.max(0, event.event_seq - 1),
+      last_active_at: null,
+      last_active_at_tick: known ? Math.max(known.last_active_at_tick, event.event_seq) : event.event_seq,
+    });
+  }
   return {
     generated_at: generatedAt,
     region: {
@@ -52,7 +76,10 @@ export function createObserverSnapshot(state: RegionState, stateHash: string, ev
       event_seq: state.event_seq,
       state_hash: stateHash,
     },
-    agents: Object.values(state.agents).sort((a, b) => a.id.localeCompare(b.id)).map((agent) => structuredClone(agent)),
+    agents: Object.values(state.agents).sort((a, b) => a.id.localeCompare(b.id)).map((agent) => {
+      const worldTimes = agentWorldTimes[agent.id] ?? inferredWorldTimes.get(agent.id);
+      return {...structuredClone(agent), joined_at: worldTimes?.joined_at ?? null, joined_at_tick: worldTimes?.joined_at_tick ?? null, last_active_at: worldTimes?.last_active_at ?? null, last_active_at_tick: worldTimes?.last_active_at_tick ?? null};
+    }),
     resources: visibleWorldResources(state).map((resource) => structuredClone(resource)),
     ...(supply ? {supply} : {}),
     messages: state.messages.slice(-24).reverse().map((message) => structuredClone(message)),
@@ -88,17 +115,18 @@ export const OBSERVATORY_SCRIPT = String.raw`
   const shortId = (value, size = 10) => value.length > size ? value.slice(0, size) + "…" : value;
   const english = document.documentElement.lang === "en";
   const copy = english ? {
-    worldFact:"LOCAL FORK", identity:"Identity", coordinates:"Coordinates", energy:"Energy", inventory:"Inventory", empty:"Empty",
+    worldFact:"LOCAL FORK", identity:"Identity", coordinates:"Coordinates", energy:"Energy", inventory:"Inventory", joinedWorld:"Joined world", lastActive:"Last active", tickNow:"now", ticksAgo:"ticks ago", unknownTime:"No world-time record", empty:"Empty",
     resourceId:"Resource ID", initial:"Genesis capacity", remaining:"Remaining", labsLength:"LABS branch length", mineCycle:"Mine cycle", rotatedMine:"Revealed after depletion", worldFork:"World fork", worldSize:"World size", residentDensity:"Resident density", expandsAbove:"expands above 25%", logicalTime:"Logical time", lastEvent:"Latest event", stateHash:"State hash",
     regionMap:"region map", cells:"cells", inspectAgent:"Inspect Agent", inspectResource:"Inspect resource", move:"moves", gatherFrom:"gathers from", resource:"resource", gather:"", messageTo:"sends a public message to", anotherAgent:"another Agent", rest:"chooses to rest",
     statusPrefix:"World connection status: ", syncing:"Syncing", paused:"Paused", live:"Live", interrupted:"Disconnected", unavailable:"The world is temporarily unavailable. Try again.", resume:"Resume updates", pause:"Pause updates", labsCopy:"Copy LABS prompt", labsCopied:"Prompt copied", labsCopyFailed:"Select the prompt and copy it",
   } : {
-    worldFact:"当前分叉", identity:"身份", coordinates:"坐标", energy:"能量", inventory:"库存", empty:"空",
+    worldFact:"当前分叉", identity:"身份", coordinates:"坐标", energy:"能量", inventory:"库存", joinedWorld:"加入世界", lastActive:"最近活跃", tickNow:"当前", ticksAgo:"个 TICK 前", unknownTime:"暂无世界时刻记录", empty:"空",
     resourceId:"资源编号", initial:"创世容量", remaining:"剩余", labsLength:"LABS 分支长度", mineCycle:"矿脉状态", rotatedMine:"上一座矿枯竭后揭示", worldFork:"世界分叉", worldSize:"世界尺寸", residentDensity:"常驻密度", expandsAbove:"超过 25% 自动扩容", logicalTime:"逻辑时刻", lastEvent:"最后事件", stateHash:"状态摘要",
     regionMap:"区域地图", cells:"格", inspectAgent:"查看 Agent", inspectResource:"查看资源", move:"移动", gatherFrom:"从", resource:"资源", gather:"采集资源", messageTo:"向", anotherAgent:"另一 Agent", rest:"选择休整",
     statusPrefix:"世界连接状态：", syncing:"同步中", paused:"已暂停", live:"实时连接", interrupted:"连接中断", unavailable:"暂时无法读取世界，请重试。", resume:"继续更新", pause:"暂停更新", labsCopy:"复制 LABS 提示词", labsCopied:"提示词已复制", labsCopyFailed:"请选中提示词后复制",
   };
   const formatNumber = new Intl.NumberFormat(english ? "en" : "zh-CN");
+  const formatDateTime = new Intl.DateTimeFormat(english ? "en-GB" : "zh-CN", {year:"numeric", month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit", second:"2-digit", hour12:false});
   const typeLabels = english ? {wait:"Rest",move:"Move",gather:"Gather",message:"Communicate",research:"Complete one LABS unit"} : {wait:"休整",move:"迁徙",gather:"采集",message:"通信",research:"完成一个 LABS 研究单位"};
   const directionLabels = english ? {north:"north",east:"east",south:"south",west:"west"} : {north:"向北",east:"向东",south:"向南",west:"向西"};
 
@@ -117,6 +145,24 @@ export const OBSERVATORY_SCRIPT = String.raw`
     if (mono) description.className = "mono wrap-anywhere";
     row.append(term, description);
     return row;
+  }
+
+  function formatWorldTick(value, includeAge = false) {
+    if (!Number.isSafeInteger(value) || value < 0) return copy.unknownTime;
+    const tick = "TICK " + formatNumber.format(value);
+    if (!includeAge || !view.snapshot) return tick;
+    const age = Math.max(0, view.snapshot.region.logical_tick - value);
+    if (age === 0) return tick + " · " + copy.tickNow;
+    return tick + " · " + formatNumber.format(age) + " " + copy.ticksAgo;
+  }
+
+  function formatAgentTime(instant, tick, includeAge = false) {
+    const values = [];
+    const date = typeof instant === "string" ? new Date(instant) : null;
+    if (date && !Number.isNaN(date.getTime())) values.push(formatDateTime.format(date));
+    const worldTick = formatWorldTick(tick, includeAge);
+    if (worldTick !== copy.unknownTime) values.push(worldTick);
+    return values.length ? values.join(" · ") : copy.unknownTime;
   }
 
   function worldFactLabel() {
@@ -206,6 +252,8 @@ export const OBSERVATORY_SCRIPT = String.raw`
         details.append(detailRow(copy.identity, agent.id, true));
         details.append(detailRow(copy.coordinates, agent.x + ", " + agent.y, true));
         details.append(detailRow(copy.energy, agent.energy + " / 10", true));
+        details.append(detailRow(copy.joinedWorld, formatAgentTime(agent.joined_at, agent.joined_at_tick), true));
+        details.append(detailRow(copy.lastActive, formatAgentTime(agent.last_active_at, agent.last_active_at_tick, true), true));
         const inventory = Object.entries(agent.inventory);
         details.append(detailRow(copy.inventory, inventory.length ? inventory.map(([key, value]) => key + " × " + value).join(" · ") : copy.empty));
         body.append(details);

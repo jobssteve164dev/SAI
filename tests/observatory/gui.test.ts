@@ -32,6 +32,8 @@ describe("Proofwild 世界观察器", () => {
     expect(OBSERVATORY_SCRIPT).toContain('encodeURIComponent(entry.result_ids[0])');
     expect(OBSERVATORY_SCRIPT).toContain('marker.classList.add("is-rotated")');
     expect(OBSERVATORY_SCRIPT).toContain('copy.residentDensity');
+    expect(OBSERVATORY_SCRIPT).toContain('copy.joinedWorld');
+    expect(OBSERVATORY_SCRIPT).toContain('copy.lastActive');
     expect(OBSERVATORY_SCRIPT).not.toContain('byId("world-shell")');
     expect(OBSERVATORY_SCRIPT).not.toContain('cell.setAttribute("aria-hidden", "true")');
     expect(() => new Function(OBSERVATORY_SCRIPT)).not.toThrow();
@@ -67,9 +69,13 @@ describe("Proofwild 世界观察器", () => {
     expect(outcome.status).toBe("applied");
     if (outcome.status !== "applied") return;
 
-    const snapshot = createObserverSnapshot(outcome.state, stateHash(outcome.state), [outcome.event as ConformanceEvent], "2026-08-27T00:00:00.000Z");
+    const snapshot = createObserverSnapshot(outcome.state, stateHash(outcome.state), [outcome.event as ConformanceEvent], "2026-08-27T00:00:00.000Z", {
+      "agent:ed25519-v1:zeta": {joined_at: "2026-08-26T23:59:58.000Z", joined_at_tick: 0, last_active_at: "2026-08-27T00:00:00.000Z", last_active_at_tick: 1},
+    });
     expect(snapshot.generated_at).toBe("2026-08-27T00:00:00.000Z");
     expect(snapshot.agents.map((agent) => agent.id)).toEqual(["agent:ed25519-v1:alpha", "agent:ed25519-v1:zeta"]);
+    expect(snapshot.agents[0]).toMatchObject({id: "agent:ed25519-v1:alpha", joined_at: null, joined_at_tick: null, last_active_at: null, last_active_at_tick: null});
+    expect(snapshot.agents[1]).toMatchObject({id: "agent:ed25519-v1:zeta", joined_at: "2026-08-26T23:59:58.000Z", joined_at_tick: 0, last_active_at: "2026-08-27T00:00:00.000Z", last_active_at_tick: 1});
     expect(snapshot.events).toEqual([{
       event_id: "observer-test:1",
       event_seq: 1,

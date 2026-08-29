@@ -5,7 +5,7 @@ import {AuthService, type AuthSnapshot} from "../../../packages/auth/src/index.j
 import {assertTransferPrepareInput, createNodeDescriptor, createNodeKeyPair, createTransferCancellation, createTransferCredential, createTransferReceipt, verifyTransferCancellation, verifyTransferCredential, verifyTransferReceipt, type NodeDescriptor, type NodeKeyPair, type TransferCancellation, type TransferCredential, type TransferReceipt} from "../../../packages/federation/src/index.js";
 import {LABS_CONFORMANCE_VECTORS, WORLD_MAX_SUPPLY, WORLD_SUPPLY_SCHEDULE_BODY, WORLD_SUPPLY_SCHEDULE_ID, admitAgentAtRandomAddress, assertEcosystemSupplyImportAllowed, buildObservation, createWorld, expandWorldForPopulation, handleWorldSupplyRequest, mergeWorldSupplyStates, reconcileWorldMines, reconcileWorldSupplyInventories, stateHash, transition, upgradeWorldForLabs, validateState, worldSupplyObservation, type ActInput, type ActResult, type AgentState, type ConformanceEvent, type EcosystemWorldSupplyState, type Observation, type RegionState, type StoredObservation} from "../../../packages/kernel/src/index.js";
 import {createSaiMcpHandler} from "../../../packages/mcp/src/index.js";
-import {createObserverSnapshot, observatoryResponse, type ObserverSnapshot} from "./observatory.js";
+import {createObserverSnapshot, observatoryResponse, type AgentWorldTimes, type ObserverSnapshot} from "./observatory.js";
 import {agentGuideResponse, faviconResponse, helpResponse, legalResponse, llmsResponse, resolveLegalRoute, robotsResponse, seasonResponse, sitemapResponse} from "./public-pages.js";
 import {handleLabsRequest} from "../../../packages/labs/src/http.js";
 import {LabsRepository, type LabsPersistence, type LabsStoredObject} from "../../../packages/labs/src/store.js";
@@ -21,6 +21,8 @@ interface Env {
 }
 
 interface PreparedTransfer {credential: TransferCredential; status: "locked" | "completed" | "recovered"; receipt?: TransferReceipt}
+
+const AGENT_WORLD_TIMES_PREFIX = "agent-world-times:";
 
 class DurableLabsPersistence implements LabsPersistence {
   constructor(private readonly storage: DurableObjectStorage) {}
@@ -45,16 +47,21 @@ class DurableRegionApplication {
 
   async admit(agentId: string): Promise<void> {
     const state = await this.state();
-    if (state.agents[agentId]) return;
-    await this.storage.put("world", admitAgentAtRandomAddress(state, agentId, () => randomBytes(4).readUInt32BE(0)));
+    if (state.agents[agentId]) { await this.touchAgent(agentId, state.logical_tick); return; }
+    const next = admitAgentAtRandomAddress(state, agentId, () => randomBytes(4).readUInt32BE(0));
+    const now = new Date().toISOString();
+    const worldTimes: AgentWorldTimes = {joined_at: now, joined_at_tick: state.logical_tick, last_active_at: now, last_active_at_tick: state.logical_tick};
+    await this.storage.put({world: next, [this.agentWorldTimesKey(agentId)]: worldTimes});
   }
 
   async observe(agentId: string, input: {cursor?: string; max_bytes?: number} = {}): Promise<Observation> {
     if (await this.storage.get(`agent-lock:${agentId}`)) throw new Error("agent_in_transit");
-    const stored = buildObservation(await this.state(), agentId);
+    const state = await this.state();
+    const stored = buildObservation(state, agentId);
     if (!stored) throw new Error("agent_not_found");
     if (new TextEncoder().encode(JSON.stringify(stored.observation)).byteLength > (input.max_bytes ?? 4096)) throw new Error("observation_exceeds_max_bytes");
     await this.storage.put(`observation:${stored.observation.observation_id}`, stored);
+    await this.touchAgent(agentId, state.logical_tick);
     return stored.observation;
   }
 
@@ -62,7 +69,12 @@ class DurableRegionApplication {
     return this.serial(async () => {
       const requestKey = `request:${agentId}:${this.regionId}:${input.request_id}`;
       const known = await this.storage.get<ActResult>(requestKey);
-      if (known) return known;
+      if (known) {
+        const state = await this.state();
+        if (state.agents[agentId]) await this.touchAgent(agentId, state.logical_tick);
+        return known;
+      }
+      let activityState = await this.state();
       let result: ActResult;
       if (await this.storage.get(`agent-lock:${agentId}`)) result = {request_id: input.request_id, status: "rejected", reason: "target_unavailable", available_correction: "observe_again"};
       else {
@@ -72,13 +84,17 @@ class DurableRegionApplication {
           const command = stored.commands[input.action_id];
           if (!command) result = {request_id: input.request_id, status: "rejected", reason: "action_not_found", available_correction: "choose_another_action"};
           else {
-            const outcome = transition(await this.state(), agentId, input.request_id, command, input.arguments ?? {});
+            const outcome = transition(activityState, agentId, input.request_id, command, input.arguments ?? {});
             result = outcome.result;
-            if (outcome.status === "applied") await this.storage.put({world: outcome.state, [`event:${outcome.event.event_seq}`]: outcome.event});
+            if (outcome.status === "applied") {
+              activityState = outcome.state;
+              await this.storage.put({world: outcome.state, [`event:${outcome.event.event_seq}`]: outcome.event});
+            }
           }
         }
       }
       await this.storage.put(requestKey, result);
+      if (activityState.agents[agentId]) await this.touchAgent(agentId, activityState.logical_tick);
       return result;
     });
   }
@@ -86,8 +102,19 @@ class DurableRegionApplication {
   async exportAgent(agentId: string): Promise<AgentState> { const agent = (await this.state()).agents[agentId]; if (!agent) throw new Error("agent_not_found"); return structuredClone(agent); }
   async lock(agentId: string): Promise<void> { await this.exportAgent(agentId); await this.storage.put(`agent-lock:${agentId}`, true); }
   async unlock(agentId: string): Promise<void> { await this.storage.delete(`agent-lock:${agentId}`); }
-  async importAgent(agent: AgentState): Promise<void> { const state = await this.state(); assertEcosystemSupplyImportAllowed(state, agent); const existing = state.agents[agent.id]; if (existing && JSON.stringify(existing) !== JSON.stringify(agent)) throw new Error("目标区域已存在不同状态的 Agent"); if (existing) return; const expanded = expandWorldForPopulation(state, Object.keys(state.agents).length + 1, {width: agent.x + 1, height: agent.y + 1}); expanded.agents[agent.id] = structuredClone(agent); await this.storage.put("world", expanded); }
-  async removeAgent(agentId: string): Promise<void> { const state = await this.state(); delete state.agents[agentId]; await this.storage.put("world", state); await this.unlock(agentId); }
+  async importAgent(agent: AgentState): Promise<void> {
+    const state = await this.state();
+    assertEcosystemSupplyImportAllowed(state, agent);
+    const existing = state.agents[agent.id];
+    if (existing && JSON.stringify(existing) !== JSON.stringify(agent)) throw new Error("目标区域已存在不同状态的 Agent");
+    if (existing) { await this.touchAgent(agent.id, state.logical_tick); return; }
+    const expanded = expandWorldForPopulation(state, Object.keys(state.agents).length + 1, {width: agent.x + 1, height: agent.y + 1});
+    expanded.agents[agent.id] = structuredClone(agent);
+    const now = new Date().toISOString();
+    const worldTimes: AgentWorldTimes = {joined_at: now, joined_at_tick: state.logical_tick, last_active_at: now, last_active_at_tick: state.logical_tick};
+    await this.storage.put({world: expanded, [this.agentWorldTimesKey(agent.id)]: worldTimes});
+  }
+  async removeAgent(agentId: string): Promise<void> { const state = await this.state(); delete state.agents[agentId]; await this.storage.put("world", state); await this.storage.delete(this.agentWorldTimesKey(agentId)); await this.unlock(agentId); }
 
   async mergeSupply(incoming: EcosystemWorldSupplyState): Promise<EcosystemWorldSupplyState> {
     return this.serial(async () => {
@@ -107,7 +134,56 @@ class DurableRegionApplication {
     const keys = Array.from({length: Math.max(0, state.event_seq - first + 1)}, (_, index) => `event:${first + index}`);
     const stored = keys.length ? await this.storage.get<ConformanceEvent>(keys) : new Map<string, ConformanceEvent>();
     const events = keys.map((key) => stored.get(key)).filter((event): event is ConformanceEvent => event !== undefined);
-    return createObserverSnapshot(state, stateHash(state), events);
+    return createObserverSnapshot(state, stateHash(state), events, new Date().toISOString(), await this.agentWorldTimes(state));
+  }
+
+  private agentWorldTimesKey(agentId: string): string { return `${AGENT_WORLD_TIMES_PREFIX}${agentId}`; }
+
+  private async touchAgent(agentId: string, tick: number, now = new Date().toISOString()): Promise<void> {
+    const key = this.agentWorldTimesKey(agentId);
+    const stored = await this.storage.get<AgentWorldTimes>(key);
+    let worldTimes = stored;
+    if (!worldTimes) {
+      const events = await this.storage.list<ConformanceEvent>({prefix: "event:"});
+      let firstEventTick: number | undefined;
+      let lastEventTick: number | undefined;
+      for (const event of events.values()) {
+        if (event.agent_id !== agentId) continue;
+        firstEventTick = firstEventTick === undefined ? event.event_seq : Math.min(firstEventTick, event.event_seq);
+        lastEventTick = lastEventTick === undefined ? event.event_seq : Math.max(lastEventTick, event.event_seq);
+      }
+      worldTimes = firstEventTick !== undefined && lastEventTick !== undefined
+        ? {joined_at: null, joined_at_tick: Math.max(0, firstEventTick - 1), last_active_at: null, last_active_at_tick: lastEventTick}
+        : {joined_at: now, joined_at_tick: tick, last_active_at: now, last_active_at_tick: tick};
+    }
+    await this.storage.put(key, {...worldTimes, joined_at: worldTimes.joined_at ?? null, last_active_at: now, last_active_at_tick: Math.max(tick, worldTimes.last_active_at_tick)});
+  }
+
+  private async agentWorldTimes(state: RegionState): Promise<Record<string, AgentWorldTimes>> {
+    const stored = await this.storage.list<AgentWorldTimes>({prefix: AGENT_WORLD_TIMES_PREFIX});
+    const resolved = Object.fromEntries([...stored.entries()].map(([key, value]) => [key.slice(AGENT_WORLD_TIMES_PREFIX.length), {...value, joined_at: value.joined_at ?? null, last_active_at: value.last_active_at ?? null}]));
+    const missing = Object.keys(state.agents).filter((agentId) => !resolved[agentId]);
+    if (!missing.length) return resolved;
+    const events = await this.storage.list<ConformanceEvent>({prefix: "event:"});
+    const eventTicks = new Map<string, {first: number; last: number}>();
+    for (const event of events.values()) {
+      if (!state.agents[event.agent_id]) continue;
+      const ticks = eventTicks.get(event.agent_id);
+      eventTicks.set(event.agent_id, ticks
+        ? {first: Math.min(ticks.first, event.event_seq), last: Math.max(ticks.last, event.event_seq)}
+        : {first: event.event_seq, last: event.event_seq});
+    }
+    const updates: Record<string, AgentWorldTimes> = {};
+    for (const agentId of missing) {
+      const ticks = eventTicks.get(agentId);
+      const worldTimes = ticks
+        ? {joined_at: null, joined_at_tick: Math.max(0, ticks.first - 1), last_active_at: null, last_active_at_tick: ticks.last}
+        : {joined_at: null, joined_at_tick: state.logical_tick, last_active_at: null, last_active_at_tick: state.logical_tick};
+      resolved[agentId] = worldTimes;
+      updates[this.agentWorldTimesKey(agentId)] = worldTimes;
+    }
+    await this.storage.put(updates);
+    return resolved;
   }
 
   private async serial<T>(operation: () => Promise<T>): Promise<T> {
