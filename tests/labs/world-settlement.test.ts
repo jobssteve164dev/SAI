@@ -1,5 +1,5 @@
 import {describe, expect, it} from "vitest";
-import {WORLD_MAX_SUPPLY, buildObservation, createWorld, expandWorldForPopulation, replay, stateHash, transition, worldResourceBranch, worldSupplyActiveTip, worldSupplyObservation, type ActionCommand, type RegionState} from "../../packages/kernel/src/index.js";
+import {WORLD_MAX_SUPPLY, buildObservation, createWorld, createWorldSupplyState, expandWorldForPopulation, reconcileWorldMines, reconcileWorldSupplyInventories, replay, stateHash, transition, validateState, visibleWorldResources, worldMinePlacement, worldResourceBranch, worldSupplyActiveTip, worldSupplyObservation, type ActionCommand, type RegionState} from "../../packages/kernel/src/index.js";
 import {createIdentity, type AgentIdentity} from "../../packages/identity/src/index.js";
 import {REFERENCE_RULESET, createClaimBody, executeLabsWorldResearch, signLabsClaim, type LabsWorldBranch} from "../../packages/labs/src/index.js";
 
@@ -216,6 +216,7 @@ describe("LABS finite-world settlement", () => {
     state.agents[identity.agentId]!.x = branch.x;
     state.agents[identity.agentId]!.y = branch.y;
     const contributionIds = new Set<string>();
+    let finalParentId = "";
     for (let expectedUnit = 0; expectedUnit < branch.amount; expectedUnit += 1) {
       const work = await prepared(state, identity.agentId, identity);
       expect(work.branch.unit_index).toBe(expectedUnit);
@@ -225,6 +226,7 @@ describe("LABS finite-world settlement", () => {
       expect(outcome.status).toBe("applied");
       if (outcome.status !== "applied") return;
       state = outcome.state;
+      finalParentId = outcome.result.economic_settlement!.parent_id;
       expect(worldSupplyObservation(state)!.issued_supply).toBe(expectedUnit + 1);
       expect(state.agents[identity.agentId]!.inventory[branch.kind]).toBe(expectedUnit + 1);
     }
@@ -232,8 +234,23 @@ describe("LABS finite-world settlement", () => {
     const finalResource = finalObservation.nearby.find((item) => item.type === "resource" && item.id === branch.resource_id);
     expect(finalResource).toBeUndefined();
     expect(finalObservation.legal_actions.some((item) => item.type === "research" && item.target === branch.resource_id)).toBe(false);
+    const exhausted = state.resources[branch.resource_id]!;
+    const replacement = visibleWorldResources(state).find((resource) => resource.rotation?.status === "active" && resource.rotation.sector_ordinal === 1)!;
+    expect(exhausted.rotation).toMatchObject({source: "genesis_sector", status: "exhausted", sector_ordinal: 1, replaced_by_resource_id: replacement.id});
+    expect(replacement.id).not.toBe(branch.resource_id);
+    expect(replacement.rotation).toMatchObject({source: "reserve_rotation", status: "active", sector_ordinal: 1, activation_parent_id: finalParentId, previous_resource_id: branch.resource_id});
+    expect({x: replacement.x, y: replacement.y}).toEqual(worldMinePlacement(state.world_fork_id, 1, Number(replacement.id.split(":").at(-1)), finalParentId, exhausted));
+    expect(Math.floor(replacement.x / 16)).toBe(1);
+    expect(Math.floor(replacement.y / 16)).toBe(0);
     expect(worldSupplyObservation(state)!.settled_branch_count).toBe(1);
     expect(worldSupplyObservation(state)!.verified_new_canonical_candidates).toBe(String(branch.amount * 65_536));
+
+    const rolledBack = reconcileWorldMines(reconcileWorldSupplyInventories({...state, supply: createWorldSupplyState()}));
+    const restored = visibleWorldResources(rolledBack).find((resource) => resource.id === branch.resource_id)!;
+    expect(restored).toMatchObject({remaining: branch.amount, x: branch.x, y: branch.y});
+    expect(restored.rotation).toBeUndefined();
+    expect(Object.values(rolledBack.resources).some((resource) => resource.rotation)).toBe(false);
+    expect(() => validateState(rolledBack)).not.toThrow();
   }, 30_000);
 
   it("binds branch capacity to genesis while every settlement remains one verified research unit", () => {

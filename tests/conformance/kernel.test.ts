@@ -1,5 +1,5 @@
 import {describe, expect, it} from "vitest";
-import {ARCHIVED_ECOSYSTEM_WORLD_SUPPLY_SCHEDULE_IDS, ECONOMIC_NETWORK_ID, WORLD_SUPPLY_SCHEDULE_ID, admitAgentAtRandomAddress, buildObservation, canonicalJson, createWorld, expandWorldForPopulation, MAX_WORLD_ADDRESSES, stateHash, transition, upgradeWorldForLabs, validateState, worldAddressCapacity} from "../../packages/kernel/src/index.js";
+import {ARCHIVED_ECOSYSTEM_WORLD_SUPPLY_SCHEDULE_IDS, ECONOMIC_NETWORK_ID, WORLD_SUPPLY_SCHEDULE_ID, admitAgentAtRandomAddress, buildObservation, canonicalJson, createWorld, expandWorldForPopulation, MAX_WORLD_ADDRESSES, stateHash, transition, upgradeWorldForLabs, validateState, visibleWorldResources, worldAddressCapacity} from "../../packages/kernel/src/index.js";
 
 describe("确定性 Conformance World", () => {
   it("相同状态生成完全相同的观察与动作 ID", () => {
@@ -75,7 +75,7 @@ describe("确定性 Conformance World", () => {
     expect(buildObservation(outcome.state, "agent:c")!.observation.messages).toEqual([]);
   });
 
-  it("为新 Agent 分配随机空地址，并随人口自动扩容", () => {
+  it("为新 Agent 分配随机空地址，并在常驻密度超过 25% 时自动扩容", () => {
     const first = admitAgentAtRandomAddress(createWorld("admission"), "agent:a", () => 7);
     const second = admitAgentAtRandomAddress(first, "agent:b", () => 7);
     expect(first.agents["agent:a"]).toMatchObject({x: 7, y: 0});
@@ -84,8 +84,12 @@ describe("确定性 Conformance World", () => {
 
     const full = createWorld("expand", Array.from({length: 64}, (_, address) => ({id: `agent:${address}`, x: address % 8, y: Math.floor(address / 8), energy: 5, inventory: {}})));
     const expanded = admitAgentAtRandomAddress(full, "agent:64", () => 0);
-    expect({width: expanded.width, height: expanded.height, capacity: worldAddressCapacity(expanded)}).toEqual({width: 16, height: 16, capacity: 256});
+    expect({width: expanded.width, height: expanded.height, capacity: worldAddressCapacity(expanded)}).toEqual({width: 32, height: 32, capacity: 1_024});
     expect(expanded.agents["agent:64"]).toMatchObject({x: 8, y: 0});
+    expect(expandWorldForPopulation(createWorld("density-boundary"), 64)).toMatchObject({width: 16, height: 16});
+    expect(expandWorldForPopulation(createWorld("density-over"), 65)).toMatchObject({width: 32, height: 32});
+    expect(expandWorldForPopulation({...createWorld("density-next"), width: 32, height: 32}, 257)).toMatchObject({width: 64, height: 64});
+    expect(visibleWorldResources(expandWorldForPopulation(createWorld("four-mines"), 65)).map((resource) => resource.initial_amount)).toEqual([23, 2, 24, 4]);
     const split = {...createWorld("split"), width: 4, height: 8};
     expect(expandWorldForPopulation(split, 1, {width: 4, height: 8})).toMatchObject({width: 4, height: 8});
   });

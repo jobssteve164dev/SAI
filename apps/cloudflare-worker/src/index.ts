@@ -3,7 +3,7 @@ import {randomBytes, randomUUID, type JsonWebKey} from "node:crypto";
 import type {AuthInfo} from "@modelcontextprotocol/server";
 import {AuthService, type AuthSnapshot} from "../../../packages/auth/src/index.js";
 import {assertTransferPrepareInput, createNodeDescriptor, createNodeKeyPair, createTransferCancellation, createTransferCredential, createTransferReceipt, verifyTransferCancellation, verifyTransferCredential, verifyTransferReceipt, type NodeDescriptor, type NodeKeyPair, type TransferCancellation, type TransferCredential, type TransferReceipt} from "../../../packages/federation/src/index.js";
-import {LABS_CONFORMANCE_VECTORS, WORLD_MAX_SUPPLY, WORLD_SUPPLY_SCHEDULE_BODY, WORLD_SUPPLY_SCHEDULE_ID, admitAgentAtRandomAddress, assertEcosystemSupplyImportAllowed, buildObservation, createWorld, expandWorldForPopulation, handleWorldSupplyRequest, mergeWorldSupplyStates, reconcileWorldSupplyInventories, stateHash, transition, upgradeWorldForLabs, validateState, worldSupplyObservation, type ActInput, type ActResult, type AgentState, type ConformanceEvent, type EcosystemWorldSupplyState, type Observation, type RegionState, type StoredObservation} from "../../../packages/kernel/src/index.js";
+import {LABS_CONFORMANCE_VECTORS, WORLD_MAX_SUPPLY, WORLD_SUPPLY_SCHEDULE_BODY, WORLD_SUPPLY_SCHEDULE_ID, admitAgentAtRandomAddress, assertEcosystemSupplyImportAllowed, buildObservation, createWorld, expandWorldForPopulation, handleWorldSupplyRequest, mergeWorldSupplyStates, reconcileWorldMines, reconcileWorldSupplyInventories, stateHash, transition, upgradeWorldForLabs, validateState, worldSupplyObservation, type ActInput, type ActResult, type AgentState, type ConformanceEvent, type EcosystemWorldSupplyState, type Observation, type RegionState, type StoredObservation} from "../../../packages/kernel/src/index.js";
 import {createSaiMcpHandler} from "../../../packages/mcp/src/index.js";
 import {createObserverSnapshot, observatoryResponse, type ObserverSnapshot} from "./observatory.js";
 import {agentGuideResponse, faviconResponse, helpResponse, legalResponse, llmsResponse, resolveLegalRoute, robotsResponse, seasonResponse, sitemapResponse} from "./public-pages.js";
@@ -94,7 +94,7 @@ class DurableRegionApplication {
       const state = await this.state();
       if (!state.supply || state.supply.protocol !== "sai-world-supply-state/3") throw new Error("economic_network_unavailable");
       const merged = mergeWorldSupplyStates(state.supply, incoming);
-      const next = reconcileWorldSupplyInventories({...state, supply: merged});
+      const next = reconcileWorldMines(reconcileWorldSupplyInventories({...state, supply: merged}));
       validateState(next);
       await this.storage.put("world", next);
       return structuredClone(merged);

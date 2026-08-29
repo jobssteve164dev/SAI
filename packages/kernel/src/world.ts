@@ -28,13 +28,18 @@ import {
   type Snapshot,
   type StoredObservation,
   type TransitionResult,
+  type WorldSupplyBlock,
 } from "./types.js";
-import {ARCHIVED_ECOSYSTEM_WORLD_SUPPLY_SCHEDULE_IDS, ECONOMIC_NETWORK_ID, LEGACY_WORLD_MAX_SUPPLY, LEGACY_WORLD_SUPPLY_ALLOCATIONS, WORLD_MAX_SUPPLY, WORLD_RESOURCE_KINDS, appendWorldSupplyBlock, assertWorldSupplyChain, createWorldSupplyState, mineWorldSupplyBlock, worldResourceAt, worldResourceBranchesInBounds, worldSupplyActiveTip, worldSupplyBalances, worldSupplyBlockId, worldSupplyClaimedUnits, worldSupplyNextUnitIndex, worldSupplyUnitKey} from "./supply.js";
+import {ARCHIVED_ECOSYSTEM_WORLD_SUPPLY_SCHEDULE_IDS, ECONOMIC_NETWORK_ID, LEGACY_WORLD_MAX_SUPPLY, LEGACY_WORLD_SUPPLY_ALLOCATIONS, WORLD_MAX_SUPPLY, WORLD_RESOURCE_KINDS, WORLD_RESOURCE_TILE_AXIS, WORLD_REWARDED_BRANCH_COUNT, WORLD_SUPPLY_SCHEDULE_ID, appendWorldSupplyBlock, assertWorldSupplyChain, createWorldSupplyState, mineWorldSupplyBlock, worldResourceBranch, worldSupplyActiveTip, worldSupplyBalances, worldSupplyBlockId, worldSupplyClaimedUnits, worldSupplyNextUnitIndex, worldSupplyUnitKey} from "./supply.js";
 
 const MAX_ENERGY = 10;
 export const MAX_WORLD_ADDRESSES = 2 ** 32;
 export const MAX_WORLD_AXIS = 2 ** 16;
 const INITIAL_WORLD_AXIS = 16;
+export const WORLD_EXPANSION_DENSITY_NUMERATOR = 1;
+export const WORLD_EXPANSION_DENSITY_DENOMINATOR = 4;
+export const WORLD_EXPANSION_DENSITY = WORLD_EXPANSION_DENSITY_NUMERATOR / WORLD_EXPANSION_DENSITY_DENOMINATOR;
+export const WORLD_MINE_ROTATION_PROTOCOL = "sai-world-mine-rotation/1" as const;
 const MESSAGE_SCHEMA = {
   type: "object",
   required: ["content"],
@@ -66,8 +71,9 @@ export function createWorld(regionId = "local", agents: AgentState[] = [], world
     supply: createWorldSupplyState(),
     messages: [],
   };
-  validateState(state);
-  return state;
+  const expanded = expandWorldForPopulation(state, agents.length);
+  validateState(expanded);
+  return expanded;
 }
 
 export function upgradeWorldForLabs(state: RegionState): RegionState {
@@ -89,8 +95,10 @@ export function upgradeWorldForLabs(state: RegionState): RegionState {
     resource.initial_amount ??= known?.initial_amount ?? resource.remaining;
     if (known && !resource.labs) resource.labs = {ruleset_id: REFERENCE_RULESET_ID, length: known.length, energy_at_most: known.energy_at_most};
   }
-  validateState(next);
-  return next;
+  const expanded = expandWorldForPopulation(next, Object.keys(next.agents).length);
+  const reconciled = reconcileWorldMines(expanded);
+  validateState(reconciled);
+  return reconciled;
 }
 
 export function worldAddressCapacity(state: Pick<RegionState, "width" | "height">): number {
@@ -102,9 +110,12 @@ export function expandWorldForPopulation(state: RegionState, population: number,
   const minimums = [minimumDimensions.width, minimumDimensions.height];
   if (minimums.some((value) => !Number.isSafeInteger(value) || value < 1)) throw new TypeError("世界尺寸要求必须是正安全整数");
   if (population > MAX_WORLD_ADDRESSES || minimums.some((value) => value > MAX_WORLD_AXIS)) throw new Error("world_capacity_exhausted");
-  if (worldAddressCapacity(state) >= population && state.width >= minimumDimensions.width && state.height >= minimumDimensions.height) return structuredClone(state);
-  let axis = Math.max(INITIAL_WORLD_AXIS, state.width, state.height, minimumDimensions.width, minimumDimensions.height);
-  while (axis * axis < population && axis < MAX_WORLD_AXIS) axis *= 2;
+  const densityWithinThreshold = population * WORLD_EXPANSION_DENSITY_DENOMINATOR <= worldAddressCapacity(state) * WORLD_EXPANSION_DENSITY_NUMERATOR;
+  if (worldAddressCapacity(state) >= population && densityWithinThreshold && state.width >= minimumDimensions.width && state.height >= minimumDimensions.height) return structuredClone(state);
+  const requiredAxis = Math.max(INITIAL_WORLD_AXIS, state.width, state.height, minimumDimensions.width, minimumDimensions.height);
+  let axis = INITIAL_WORLD_AXIS;
+  while (axis < requiredAxis && axis < MAX_WORLD_AXIS) axis *= 2;
+  while ((axis * axis < population || population * WORLD_EXPANSION_DENSITY_DENOMINATOR > axis * axis * WORLD_EXPANSION_DENSITY_NUMERATOR) && axis < MAX_WORLD_AXIS) axis *= 2;
   if (axis > MAX_WORLD_AXIS || axis * axis < population) throw new Error("world_capacity_exhausted");
   return axis === state.width && axis === state.height ? structuredClone(state) : {...structuredClone(state), width: axis, height: axis};
 }
@@ -156,6 +167,30 @@ export function validateState(state: RegionState): void {
   if (!/^fork:[A-Za-z0-9._:-]{1,120}$/.test(state.world_fork_id)) throw new TypeError("世界分叉标识无效");
   if (Object.values(state.resources).some((resource) => resource.remaining > resource.initial_amount)) throw new TypeError("资源余额不能超过创世存量");
   if (Object.values(state.resources).some((resource) => resource.labs && (resource.labs.ruleset_id !== REFERENCE_RULESET_ID || !REFERENCE_RULESET.baselines.some((item) => item.length === resource.labs?.length) || !/^(0|[1-9][0-9]*)$/.test(resource.labs.energy_at_most)))) throw new TypeError("资源 LABS 分支绑定无效");
+  const activeMineSectors = new Set<number>();
+  for (const [key, resource] of Object.entries(state.resources)) {
+    if (!resource.rotation) continue;
+    const ordinal = worldBranchOrdinal(resource.id);
+    const rotation = resource.rotation;
+    if (key !== resource.id || ordinal === undefined || rotation.protocol !== WORLD_MINE_ROTATION_PROTOCOL || !Number.isSafeInteger(rotation.sector_ordinal) || rotation.sector_ordinal < 0 || rotation.sector_ordinal >= WORLD_REWARDED_BRANCH_COUNT) throw new TypeError("轮换矿点身份无效");
+    if (!/^sha256:[0-9a-f]{64}$/.test(rotation.activation_parent_id) || !["genesis_sector", "reserve_rotation"].includes(rotation.source) || !["active", "exhausted"].includes(rotation.status)) throw new TypeError("轮换矿点状态无效");
+    if (worldMineSectorOrdinal(resource.x, resource.y) !== rotation.sector_ordinal) throw new TypeError("轮换矿点超出所属区域");
+    const branch = worldResourceBranch(ordinal);
+    if (!resource.labs || resource.kind !== branch.kind || resource.initial_amount !== branch.amount || resource.labs.length !== branch.length || resource.labs.energy_at_most !== branch.baseline_energy) throw new TypeError("轮换矿点与有限容量票不一致");
+    if (rotation.status === "active") {
+      if (activeMineSectors.has(rotation.sector_ordinal) || resource.remaining < 1) throw new TypeError("同一区域只能有一座有效活跃矿");
+      activeMineSectors.add(rotation.sector_ordinal);
+    }
+    if (rotation.status === "exhausted" && resource.remaining !== 0) throw new TypeError("枯竭矿点不能保留资源余额");
+    if (rotation.source === "genesis_sector" && (ordinal !== rotation.sector_ordinal || rotation.activation_parent_id !== WORLD_SUPPLY_SCHEDULE_ID || rotation.previous_resource_id !== null || rotation.status !== "exhausted")) throw new TypeError("初始矿点轮换历史无效");
+    if (rotation.source === "reserve_rotation") {
+      const previous = rotation.previous_resource_id ? state.resources[rotation.previous_resource_id] : undefined;
+      const expected = previous?.rotation ? worldMinePlacement(state.world_fork_id, rotation.sector_ordinal, ordinal, rotation.activation_parent_id, previous) : undefined;
+      const previousOrdinal = previous ? worldBranchOrdinal(previous.id) : undefined;
+      const completed = previousOrdinal === undefined ? undefined : completionBlock(state, previousOrdinal);
+      if (!previous?.rotation || previous.rotation.sector_ordinal !== rotation.sector_ordinal || previous.rotation.status !== "exhausted" || previous.rotation.replaced_by_resource_id !== resource.id || completed?.parent_id !== rotation.activation_parent_id || expected?.x !== resource.x || expected?.y !== resource.y) throw new TypeError("轮换矿点位置证明无效");
+    }
+  }
   if (state.supply?.protocol === "sai-world-supply-state/1") {
     if (!/^sha256:[0-9a-f]{64}$/.test(state.supply.schedule_id) || !/^sha256:[0-9a-f]{64}$/.test(state.supply.previous_settlement_id)) throw new TypeError("旧世界发行状态无效");
     if (!Number.isSafeInteger(state.supply.research_height) || state.supply.research_height < 0 || state.supply.research_height > 8_400) throw new TypeError("旧世界研究高度无效");
@@ -174,6 +209,11 @@ export function validateState(state: RegionState): void {
   }
   if (state.supply?.protocol === "sai-world-supply-state/3") {
     assertWorldSupplyChain(state.supply);
+    const claimed = worldSupplyClaimedUnits(state.supply);
+    for (const resource of rotationResources(state)) {
+      const ordinal = worldBranchOrdinal(resource.id)!;
+      if (resource.remaining !== branchRemaining(claimed, ordinal)) throw new TypeError("轮换矿点余额与经济网络不一致");
+    }
     const balances = worldSupplyBalances(state.supply);
     for (const agent of Object.values(state.agents)) {
       for (const kind of WORLD_RESOURCE_KINDS) if ((agent.inventory[kind] ?? 0) !== (balances[agent.id]?.[kind] ?? 0)) throw new TypeError("Agent 世界资源库存与经济网络不一致");
@@ -212,27 +252,225 @@ function claimedUnitsForBranch(claimed: Set<string>, branchOrdinal: number, amou
   return count;
 }
 
+type ActiveWorldResource = ReturnType<typeof worldResourceBranch> & {x: number; y: number; rotation?: ResourceState["rotation"]};
+
+function worldBranchOrdinal(resourceId: string): number | undefined {
+  const matched = resourceId.match(/^resource:world:(0|[1-9][0-9]*)$/);
+  if (!matched) return undefined;
+  const ordinal = Number(matched[1]);
+  return Number.isSafeInteger(ordinal) && ordinal < WORLD_REWARDED_BRANCH_COUNT ? ordinal : undefined;
+}
+
+function worldMineSectorOrdinal(x: number, y: number): number {
+  return Math.floor(y / WORLD_RESOURCE_TILE_AXIS) * 4_096 + Math.floor(x / WORLD_RESOURCE_TILE_AXIS);
+}
+
+function worldMineSectorInBounds(sectorOrdinal: number, width: number, height: number): boolean {
+  const tileX = sectorOrdinal % 4_096;
+  const tileY = Math.floor(sectorOrdinal / 4_096);
+  return tileX * WORLD_RESOURCE_TILE_AXIS < width && tileY * WORLD_RESOURCE_TILE_AXIS < height;
+}
+
+export function worldMinePlacement(worldForkId: string, sectorOrdinal: number, branchOrdinal: number, activationParentId: string, previous?: {x: number; y: number}): {x: number; y: number} {
+  if (!/^fork:[A-Za-z0-9._:-]{1,120}$/.test(worldForkId) || !/^sha256:[0-9a-f]{64}$/.test(activationParentId)) throw new TypeError("矿点轮换种子无效");
+  if (![sectorOrdinal, branchOrdinal].every((value) => Number.isSafeInteger(value) && value >= 0 && value < WORLD_REWARDED_BRANCH_COUNT)) throw new RangeError("矿点轮换序号超出范围");
+  const digest = sha256({protocol: WORLD_MINE_ROTATION_PROTOCOL, world_fork_id: worldForkId, sector_ordinal: sectorOrdinal, branch_ordinal: branchOrdinal, activation_parent_id: activationParentId});
+  let offset = Number.parseInt(digest.slice(0, 8), 16) % (WORLD_RESOURCE_TILE_AXIS ** 2);
+  const tileX = sectorOrdinal % 4_096;
+  const tileY = Math.floor(sectorOrdinal / 4_096);
+  let position = {x: tileX * WORLD_RESOURCE_TILE_AXIS + offset % WORLD_RESOURCE_TILE_AXIS, y: tileY * WORLD_RESOURCE_TILE_AXIS + Math.floor(offset / WORLD_RESOURCE_TILE_AXIS)};
+  if (previous && position.x === previous.x && position.y === previous.y) {
+    offset = (offset + 1) % (WORLD_RESOURCE_TILE_AXIS ** 2);
+    position = {x: tileX * WORLD_RESOURCE_TILE_AXIS + offset % WORLD_RESOURCE_TILE_AXIS, y: tileY * WORLD_RESOURCE_TILE_AXIS + Math.floor(offset / WORLD_RESOURCE_TILE_AXIS)};
+  }
+  return position;
+}
+
+function rotationResources(state: RegionState): ResourceState[] {
+  return Object.values(state.resources).filter((resource) => resource.rotation?.protocol === WORLD_MINE_ROTATION_PROTOCOL);
+}
+
+function activeRotationBySector(state: RegionState): Map<number, ResourceState> {
+  return new Map(rotationResources(state).filter((resource) => resource.rotation?.status === "active").map((resource) => [resource.rotation!.sector_ordinal, resource]));
+}
+
+function relocatedBranchOrdinals(state: RegionState): Set<number> {
+  return new Set(rotationResources(state).filter((resource) => resource.rotation?.source === "reserve_rotation").map((resource) => worldBranchOrdinal(resource.id)).filter((ordinal): ordinal is number => ordinal !== undefined));
+}
+
+function branchRemaining(claimed: Set<string>, branchOrdinal: number): number {
+  const branch = worldResourceBranch(branchOrdinal);
+  return branch.amount - claimedUnitsForBranch(claimed, branchOrdinal, branch.amount);
+}
+
+function activeWorldResourceForSector(state: RegionState, sectorOrdinal: number, claimed = claimedResearchUnits(state), rotations = activeRotationBySector(state), relocated = relocatedBranchOrdinals(state), unitIndex?: number): ActiveWorldResource | undefined {
+  const rotated = rotations.get(sectorOrdinal);
+  const branchOrdinal = rotated ? worldBranchOrdinal(rotated.id) : relocated.has(sectorOrdinal) ? undefined : sectorOrdinal;
+  if (branchOrdinal === undefined || branchRemaining(claimed, branchOrdinal) < 1) return undefined;
+  const nextUnitIndex = unitIndex ?? (state.supply?.protocol === "sai-world-supply-state/3" ? worldSupplyNextUnitIndex(state.supply, branchOrdinal) : 0);
+  if (nextUnitIndex === undefined) return undefined;
+  const branch = worldResourceBranch(branchOrdinal, nextUnitIndex);
+  const x = rotated?.x ?? branch.x;
+  const y = rotated?.y ?? branch.y;
+  if (x >= state.width || y >= state.height) return undefined;
+  return {...branch, x, y, ...(rotated?.rotation ? {rotation: structuredClone(rotated.rotation)} : {})};
+}
+
+function completionBlock(state: RegionState, branchOrdinal: number): WorldSupplyBlock | undefined {
+  if (state.supply?.protocol !== "sai-world-supply-state/3") return undefined;
+  const amount = worldResourceBranch(branchOrdinal).amount;
+  let count = 0;
+  for (const block of state.supply.active_chain) {
+    if (block.branch_ordinal !== branchOrdinal) continue;
+    count += 1;
+    if (count === amount) return block;
+  }
+  return undefined;
+}
+
+function nextRotationBranch(state: RegionState, claimed: Set<string>): number | undefined {
+  const used = new Set(rotationResources(state).map((resource) => worldBranchOrdinal(resource.id)).filter((ordinal): ordinal is number => ordinal !== undefined));
+  const reserveHistory = rotationResources(state).filter((resource) => resource.rotation?.source === "reserve_rotation").map((resource) => worldBranchOrdinal(resource.id)).filter((ordinal): ordinal is number => ordinal !== undefined);
+  for (let ordinal = (reserveHistory.length ? Math.min(...reserveHistory) - 1 : WORLD_REWARDED_BRANCH_COUNT - 1); ordinal >= 0; ordinal -= 1) {
+    if (used.has(ordinal) || worldMineSectorInBounds(ordinal, state.width, state.height) || branchRemaining(claimed, ordinal) !== worldResourceBranch(ordinal).amount) continue;
+    return ordinal;
+  }
+  return undefined;
+}
+
+function rotatedResource(branchOrdinal: number, position: {x: number; y: number}, rotation: NonNullable<ResourceState["rotation"]>, claimed: Set<string>): ResourceState {
+  const branch = worldResourceBranch(branchOrdinal);
+  return {id: branch.resource_id, kind: branch.kind, x: position.x, y: position.y, initial_amount: branch.amount, remaining: branchRemaining(claimed, branchOrdinal), labs: {ruleset_id: branch.labs_branch.ruleset_id, length: branch.length, energy_at_most: branch.baseline_energy}, rotation};
+}
+
+function truncateRotationChain(state: RegionState, resourceId: string): void {
+  const root = state.resources[resourceId];
+  const previousId = root?.rotation?.previous_resource_id;
+  const previous = previousId ? state.resources[previousId] : undefined;
+  if (previous?.rotation?.replaced_by_resource_id === resourceId) delete previous.rotation.replaced_by_resource_id;
+  const pending = [resourceId];
+  while (pending.length) {
+    const currentId = pending.pop()!;
+    for (const child of rotationResources(state)) if (child.rotation?.previous_resource_id === currentId) pending.push(child.id);
+    delete state.resources[currentId];
+  }
+}
+
+function normalizeRotationHistory(state: RegionState, claimed: Set<string>): void {
+  for (const resource of rotationResources(state)) {
+    const ordinal = worldBranchOrdinal(resource.id);
+    if (ordinal !== undefined) resource.remaining = branchRemaining(claimed, ordinal);
+  }
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const resource of rotationResources(state).sort((a, b) => a.id.localeCompare(b.id))) {
+      const ordinal = worldBranchOrdinal(resource.id);
+      const rotation = resource.rotation!;
+      if (ordinal === undefined) {
+        truncateRotationChain(state, resource.id);
+        changed = true;
+        break;
+      }
+      if (rotation.source === "genesis_sector") {
+        if (ordinal !== rotation.sector_ordinal || resource.remaining > 0) {
+          truncateRotationChain(state, resource.id);
+          changed = true;
+          break;
+        }
+        rotation.status = "exhausted";
+        continue;
+      }
+      const previous = rotation.previous_resource_id ? state.resources[rotation.previous_resource_id] : undefined;
+      const previousOrdinal = previous ? worldBranchOrdinal(previous.id) : undefined;
+      const completed = previousOrdinal === undefined ? undefined : completionBlock(state, previousOrdinal);
+      if (!previous?.rotation || previous.rotation.sector_ordinal !== rotation.sector_ordinal || previous.remaining !== 0 || previous.rotation.replaced_by_resource_id !== resource.id || completed?.parent_id !== rotation.activation_parent_id) {
+        truncateRotationChain(state, resource.id);
+        changed = true;
+        break;
+      }
+      if (resource.remaining > 0) {
+        if (rotation.replaced_by_resource_id) truncateRotationChain(state, rotation.replaced_by_resource_id);
+        rotation.status = "active";
+        delete rotation.replaced_by_resource_id;
+      }
+      else rotation.status = "exhausted";
+    }
+  }
+}
+
+function terminalRotationForSector(state: RegionState, sectorOrdinal: number): ResourceState | undefined {
+  return rotationResources(state).find((resource) => resource.rotation?.sector_ordinal === sectorOrdinal && resource.rotation.status === "exhausted" && !resource.rotation.replaced_by_resource_id);
+}
+
+export function reconcileWorldMines(state: RegionState): RegionState {
+  if (state.supply?.protocol !== "sai-world-supply-state/3") return structuredClone(state);
+  const next = structuredClone(state);
+  const supply = next.supply as Extract<NonNullable<RegionState["supply"]>, {protocol: "sai-world-supply-state/3"}>;
+  const claimed = claimedResearchUnits(next);
+  normalizeRotationHistory(next, claimed);
+  const relocated = relocatedBranchOrdinals(next);
+  const sectors = new Set<number>();
+  for (const resource of rotationResources(next)) if (resource.rotation?.status === "exhausted" && !resource.rotation.replaced_by_resource_id) sectors.add(resource.rotation.sector_ordinal);
+  for (const block of supply.active_chain) {
+    const sectorOrdinal = block.branch_ordinal;
+    if (branchRemaining(claimed, block.branch_ordinal) === 0 && worldMineSectorInBounds(sectorOrdinal, next.width, next.height) && !relocated.has(block.branch_ordinal) && !rotationResources(next).some((resource) => resource.rotation?.sector_ordinal === sectorOrdinal)) sectors.add(sectorOrdinal);
+  }
+  for (const sectorOrdinal of [...sectors].sort((a, b) => a - b)) {
+    const current = terminalRotationForSector(next, sectorOrdinal);
+    const currentOrdinal = current ? worldBranchOrdinal(current.id)! : sectorOrdinal;
+    const completed = completionBlock(next, currentOrdinal);
+    if (!completed) continue;
+    const previousBranch = worldResourceBranch(currentOrdinal);
+    const previousPosition = current ? {x: current.x, y: current.y} : {x: previousBranch.x, y: previousBranch.y};
+    const exhaustedRotation: NonNullable<ResourceState["rotation"]> = current?.rotation
+      ? {...current.rotation, status: "exhausted"}
+      : {protocol: WORLD_MINE_ROTATION_PROTOCOL, sector_ordinal: sectorOrdinal, activation_parent_id: WORLD_SUPPLY_SCHEDULE_ID, previous_resource_id: null, source: "genesis_sector", status: "exhausted"};
+    const replacementOrdinal = nextRotationBranch(next, claimed);
+    if (replacementOrdinal === undefined) {
+      next.resources[previousBranch.resource_id] = rotatedResource(currentOrdinal, previousPosition, exhaustedRotation, claimed);
+      continue;
+    }
+    const replacementBranch = worldResourceBranch(replacementOrdinal);
+    exhaustedRotation.replaced_by_resource_id = replacementBranch.resource_id;
+    next.resources[previousBranch.resource_id] = rotatedResource(currentOrdinal, previousPosition, exhaustedRotation, claimed);
+    const position = worldMinePlacement(next.world_fork_id, sectorOrdinal, replacementOrdinal, completed.parent_id, previousPosition);
+    next.resources[replacementBranch.resource_id] = rotatedResource(replacementOrdinal, position, {protocol: WORLD_MINE_ROTATION_PROTOCOL, sector_ordinal: sectorOrdinal, activation_parent_id: completed.parent_id, previous_resource_id: previousBranch.resource_id, source: "reserve_rotation", status: "active"}, claimed);
+  }
+  return next;
+}
+
 export function visibleWorldResources(state: RegionState, limit = 1_024): ResourceState[] {
   const claimed = claimedResearchUnits(state);
-  const generated = state.supply?.protocol === "sai-world-supply-state/3"
-    ? worldResourceBranchesInBounds(state.width, state.height, limit).map((item) => ({id: item.resource_id, kind: item.kind, x: item.x, y: item.y, initial_amount: item.amount, remaining: item.amount - claimedUnitsForBranch(claimed, item.branch_ordinal, item.amount), labs: {ruleset_id: item.labs_branch.ruleset_id, length: item.length, energy_at_most: item.baseline_energy}}))
-    : [];
-  return [...Object.values(state.resources).map((item) => structuredClone(item)), ...generated].sort((a, b) => a.id.localeCompare(b.id));
+  const generated: ResourceState[] = [];
+  if (state.supply?.protocol === "sai-world-supply-state/3") {
+    const rotations = activeRotationBySector(state);
+    const relocated = relocatedBranchOrdinals(state);
+    const tilesX = Math.ceil(state.width / WORLD_RESOURCE_TILE_AXIS);
+    const tilesY = Math.ceil(state.height / WORLD_RESOURCE_TILE_AXIS);
+    for (let tileY = 0; tileY < tilesY && generated.length < limit; tileY += 1) {
+      for (let tileX = 0; tileX < tilesX && generated.length < limit; tileX += 1) {
+        const resource = activeWorldResourceForSector(state, tileY * 4_096 + tileX, claimed, rotations, relocated);
+        if (resource) generated.push({id: resource.resource_id, kind: resource.kind, x: resource.x, y: resource.y, initial_amount: resource.amount, remaining: branchRemaining(claimed, resource.branch_ordinal), labs: {ruleset_id: resource.labs_branch.ruleset_id, length: resource.length, energy_at_most: resource.baseline_energy}, ...(resource.rotation ? {rotation: structuredClone(resource.rotation)} : {})});
+      }
+    }
+  }
+  const plain = Object.values(state.resources).filter((item) => !item.rotation).map((item) => structuredClone(item));
+  return [...plain, ...generated].sort((a, b) => a.id.localeCompare(b.id));
 }
 
 export function buildObservation(state: RegionState, agentId: string): StoredObservation | undefined {
   const agent = state.agents[agentId];
   if (!agent) return undefined;
   const claimed = claimedResearchUnits(state);
-  const nearbyBranches: Array<NonNullable<ReturnType<typeof worldResourceAt>>> = [];
+  const nearbyBranches: ActiveWorldResource[] = [];
   if (state.supply?.protocol === "sai-world-supply-state/3") {
-    for (let y = Math.max(0, agent.y - 2); y <= Math.min(state.height - 1, agent.y + 2); y += 1) {
-      for (let x = Math.max(0, agent.x - 2); x <= Math.min(state.width - 1, agent.x + 2); x += 1) {
-        if (Math.abs(agent.x - x) + Math.abs(agent.y - y) > 2) continue;
-        const root = worldResourceAt(x, y);
-        if (!root) continue;
-        const unitIndex = worldSupplyNextUnitIndex(state.supply, root.branch_ordinal);
-        if (unitIndex !== undefined) nearbyBranches.push(worldResourceAt(x, y, unitIndex)!);
+    const rotations = activeRotationBySector(state);
+    const relocated = relocatedBranchOrdinals(state);
+    for (let tileY = Math.max(0, Math.floor((agent.y - 2) / WORLD_RESOURCE_TILE_AXIS)); tileY <= Math.floor(Math.min(state.height - 1, agent.y + 2) / WORLD_RESOURCE_TILE_AXIS); tileY += 1) {
+      for (let tileX = Math.max(0, Math.floor((agent.x - 2) / WORLD_RESOURCE_TILE_AXIS)); tileX <= Math.floor(Math.min(state.width - 1, agent.x + 2) / WORLD_RESOURCE_TILE_AXIS); tileX += 1) {
+        const resource = activeWorldResourceForSector(state, tileY * 4_096 + tileX, claimed, rotations, relocated);
+        if (resource && distance(agent, resource) <= 2) nearbyBranches.push(resource);
       }
     }
   }
@@ -264,7 +502,7 @@ export function buildObservation(state: RegionState, agentId: string): StoredObs
   }
   const nearby: Observation["nearby"] = [
     ...Object.values(state.agents).filter((item) => item.id !== agent.id && distance(agent, item) <= 2).map((item) => ({id: item.id, type: "agent" as const, x: item.x, y: item.y})),
-    ...Object.values(state.resources).filter((item) => distance(agent, item) <= 2).map((item) => ({id: item.id, type: "resource" as const, kind: item.kind, x: item.x, y: item.y, initial_amount: item.initial_amount, remaining: item.remaining})),
+    ...Object.values(state.resources).filter((item) => !item.rotation && distance(agent, item) <= 2).map((item) => ({id: item.id, type: "resource" as const, kind: item.kind, x: item.x, y: item.y, initial_amount: item.initial_amount, remaining: item.remaining})),
     ...nearbyBranches.map((item) => ({id: item.resource_id, type: "resource" as const, kind: item.kind, x: item.x, y: item.y, initial_amount: item.amount, remaining: item.amount - claimedUnitsForBranch(claimed, item.branch_ordinal, item.amount), labs_branch: item.labs_branch})),
   ].sort((a, b) => a.id.localeCompare(b.id));
   const messages = state.messages
@@ -347,7 +585,7 @@ export function transition(state: RegionState, agentId: string, requestId: strin
   }
   if (command.type === "research") {
     if (!next.supply || next.supply.protocol !== "sai-world-supply-state/3" || command.observed_unit_index === undefined) return {status: "rejected", state, result: reject(requestId, "target_unavailable")};
-    const resource = worldResourceAt(agent.x, agent.y, command.observed_unit_index);
+    const resource = activeWorldResourceForSector(next, worldMineSectorOrdinal(agent.x, agent.y), worldSupplyClaimedUnits(next.supply), activeRotationBySector(next), relocatedBranchOrdinals(next), command.observed_unit_index);
     const nextUnitIndex = resource ? worldSupplyNextUnitIndex(next.supply, resource.branch_ordinal) : undefined;
     const remaining = resource ? resource.amount - claimedUnitsForBranch(worldSupplyClaimedUnits(next.supply), resource.branch_ordinal, resource.amount) : 0;
     if (!resource || resource.resource_id !== command.target || remaining !== command.observed_target_remaining || nextUnitIndex !== command.observed_unit_index) return {status: "rejected", state, result: reject(requestId, "target_unavailable")};
@@ -374,6 +612,7 @@ export function transition(state: RegionState, agentId: string, requestId: strin
         record_id: block.record_id,
         result_id: block.result_id,
       };
+      next.resources = reconcileWorldMines(next).resources;
     }
     catch { return {status: "rejected", state, result: reject(requestId, "arguments_invalid")}; }
     agent.energy -= 1;

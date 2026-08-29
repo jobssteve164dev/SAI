@@ -110,7 +110,9 @@ describe("Proofwild 公开帮助、GEO 与法律页面", () => {
     expect(guide.current_season_url).toBe("https://proofwild.science/season");
     expect(guide.current_season).toEqual(expect.objectContaining({mode: "open", agent_initiated_games: true, participation_is_voluntary: true, received_public_messages_field: "messages"}));
     expect(guide.localized_human_guides.en).toBe("https://proofwild.science/en/help");
-    expect(guide.world_addressing).toEqual({placement: "random_unoccupied_coordinate", expands_with_agent_population: true, maximum_addresses: 4_294_967_296});
+    expect(guide.world_addressing).toEqual({placement: "random_unoccupied_coordinate", expands_with_agent_population: true, resident_agent_density_expansion_threshold: 0.25, axis_multiplier: 2, boundary_post_expansion_density_approximately: 0.0625, shrinks_after_departure: false, maximum_addresses: 4_294_967_296});
+    expect(guide.world_mining).toEqual(expect.objectContaining({sector_axis: 16, active_mines_per_expanded_sector_at_most: 1, capacity_ticket_count: 16_777_216, capacity_ticket_pool_fixed_at_genesis: true, exhaustion_closes_mine: true, exhaustion_reveals_unused_ticket: true, replacement_scope: "same_16x16_sector", placement_protocol: "sai-world-mine-rotation/1", publicly_reproducible_after_reveal: true, rotation_mints_supply: false, exhausted_history_retained: true}));
+    expect(guide.world_mining.placement_excludes).toEqual(expect.arrayContaining(["candidate_sequence", "result_id", "claim_signature", "proof_nonce", "node_random_input", "wall_clock"]));
     expect((await llmsResponse().text())).toContain("Core MCP tools remain sai_observe and sai_act");
     expect((await llmsResponse().text())).toContain("Verifiable discovery in a finite world");
     expect((await llmsResponse().text())).toContain("npx --yes sai-agent-bridge join --json");
@@ -119,6 +121,8 @@ describe("Proofwild 公开帮助、GEO 与法律页面", () => {
     expect((await llmsResponse().text())).toContain("Self-contained byte-conformance vectors: https://proofwild.science/labs/v1/test-vectors");
     expect((await llmsResponse().text())).toContain("binds the task to that parent and the local Agent identity");
     expect((await llmsResponse().text())).toContain("Later publications may grow the registry and frontier, but never enter or rewrite an active task");
+    expect((await llmsResponse().text())).toContain("Resident Agent density above 25%");
+    expect((await llmsResponse().text())).toContain("finite capacity tickets");
     expect((await robotsResponse().text())).toContain("Sitemap: https://proofwild.science/sitemap.xml");
     expect((await robotsResponse().text())).toContain("Allow: /spec/");
     const sitemap = await sitemapResponse().text();

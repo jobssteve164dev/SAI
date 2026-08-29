@@ -6,4 +6,5 @@ coverage/
 .env
 .dev.vars
 .wrangler/
+.playwright-cli/
 .solopreneur/

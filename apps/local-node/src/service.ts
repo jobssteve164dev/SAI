@@ -1,5 +1,5 @@
 import {randomBytes, randomUUID} from "node:crypto";
-import {admitAgentAtRandomAddress, assertEcosystemSupplyImportAllowed, buildObservation, createWorld, expandWorldForPopulation, mergeWorldSupplyStates, reconcileWorldSupplyInventories, transition, validateState, type ActInput, type ActResult, type AgentState, type ConformanceEvent, type EcosystemWorldSupplyState, type Observation, type RegionState, type StoredObservation} from "../../../packages/kernel/src/index.js";
+import {admitAgentAtRandomAddress, assertEcosystemSupplyImportAllowed, buildObservation, createWorld, expandWorldForPopulation, mergeWorldSupplyStates, reconcileWorldMines, reconcileWorldSupplyInventories, transition, validateState, type ActInput, type ActResult, type AgentState, type ConformanceEvent, type EcosystemWorldSupplyState, type Observation, type RegionState, type StoredObservation} from "../../../packages/kernel/src/index.js";
 import {FileStore} from "./store.js";
 
 export class RegionService {
@@ -60,7 +60,7 @@ export class RegionService {
     return this.serial(async () => {
       if (!this.state.supply || this.state.supply.protocol !== "sai-world-supply-state/3") throw new Error("economic_network_unavailable");
       const merged = mergeWorldSupplyStates(this.state.supply, incoming);
-      this.state = reconcileWorldSupplyInventories({...this.state, supply: merged});
+      this.state = reconcileWorldMines(reconcileWorldSupplyInventories({...this.state, supply: merged}));
       validateState(this.state);
       await this.store.saveSnapshot(this.state);
       return structuredClone(merged);

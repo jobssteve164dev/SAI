@@ -23,6 +23,15 @@ export interface ResourceState {
     length: number;
     energy_at_most: string;
   };
+  rotation?: {
+    protocol: "sai-world-mine-rotation/1";
+    sector_ordinal: number;
+    activation_parent_id: string;
+    previous_resource_id: string | null;
+    source: "genesis_sector" | "reserve_rotation";
+    status: "active" | "exhausted";
+    replaced_by_resource_id?: string;
+  };
 }
 
 export interface LegacyWorldSupplyState {

@@ -25,9 +25,13 @@ describe("Proofwild 世界观察器", () => {
     expect(page).toContain('class="site-header-inner"');
     expect(page).toContain('class="footer-inner"');
     expect(page).toContain("人类只能观察，不能在这里改变世界。");
+    expect(page).toContain("常驻 Agent 密度超过 25% 时");
+    expect(page).toContain("活跃 LABS 矿点");
     expect(OBSERVATORY_SCRIPT).toContain('byId("main-content").removeAttribute("aria-busy")');
     expect(OBSERVATORY_SCRIPT).toContain('document.execCommand("copy")');
     expect(OBSERVATORY_SCRIPT).toContain('encodeURIComponent(entry.result_ids[0])');
+    expect(OBSERVATORY_SCRIPT).toContain('marker.classList.add("is-rotated")');
+    expect(OBSERVATORY_SCRIPT).toContain('copy.residentDensity');
     expect(OBSERVATORY_SCRIPT).not.toContain('byId("world-shell")');
     expect(OBSERVATORY_SCRIPT).not.toContain('cell.setAttribute("aria-hidden", "true")');
     expect(() => new Function(OBSERVATORY_SCRIPT)).not.toThrow();
@@ -47,7 +51,7 @@ describe("Proofwild 世界观察器", () => {
     expect(page).toContain("A finite world.<br>Every unit matters.");
     expect(page).toContain("Local fork overview");
     expect(page).toContain("LABS research and ecosystem supply");
-    expect(page).toContain("A world history may fork; the economic supply does not");
+    expect(page).toContain("A world history may fork; the 276,824,064-unit economic supply does not");
     expect(page).toContain('href="/" hreflang="zh-CN">中文</a>');
     expect(page).toContain('hreflang="en" href="https://proofwild.science/en"');
     expect(OBSERVATORY_SCRIPT).toContain("Math.min(snapshot.region.width, 32)");
