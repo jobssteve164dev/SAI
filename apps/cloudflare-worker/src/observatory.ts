@@ -1,5 +1,5 @@
 import {visibleWorldResources, worldSupplyObservation, type AgentState, type ConformanceEvent, type RegionState, type ResourceState, type WorldSupplyObservation} from "../../../packages/kernel/src/index.js";
-import {brandMark, faviconLinks, homeStructuredData, languageLinks, PUBLIC_PAGE_STYLES, renderSiteFooter, type SiteLocale} from "./public-pages.js";
+import {brandMark, faviconLinks, homeStructuredData, languageLinks, PUBLIC_PAGE_STYLES, renderSiteFooter, socialMetadata, type SiteLocale} from "./public-pages.js";
 
 export interface ObserverEvent {
   event_id: string;
@@ -730,6 +730,7 @@ export function renderObservatoryPage(locale: SiteLocale = "zh-CN"): string {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#071014">
   <meta name="description" content="${text.description}">
+  ${socialMetadata(text.title, text.description, prefix || "/", locale)}
   ${faviconLinks()}
   <link rel="canonical" href="https://proofwild.science${prefix || "/"}">
   ${languageLinks("/")}

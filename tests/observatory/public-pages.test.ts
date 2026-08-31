@@ -1,10 +1,19 @@
 import {afterEach, describe, expect, it, vi} from "vitest";
-import {AGENT_JOIN_PROMPT, AGENT_JOIN_PROMPT_EN, agentGuideResponse, BRAND_ICON_SVG, faviconResponse, helpResponse, legalResponse, llmsResponse, renderHelpPage, renderSeasonPage, resolveLegalRoute, robotsResponse, seasonResponse, sitemapResponse} from "../../apps/cloudflare-worker/src/public-pages.js";
+import {inflateSync} from "node:zlib";
+import {AGENT_JOIN_PROMPT, AGENT_JOIN_PROMPT_EN, agentGuideResponse, BRAND_ICON_SVG, canonicalHttpsRedirect, faviconResponse, helpResponse, legalResponse, llmsResponse, renderHelpPage, renderSeasonPage, resolveLegalRoute, robotsResponse, seasonResponse, sitemapResponse, socialCardResponse} from "../../apps/cloudflare-worker/src/public-pages.js";
 import {PROTOCOL_SCHEMA_PATHS, protocolSchemaResponse} from "../../apps/cloudflare-worker/src/protocol-schemas.js";
 
 afterEach(() => vi.unstubAllGlobals());
 
 describe("Proofwild 公开帮助、GEO 与法律页面", () => {
+  it("HTTP 请求以 308 保留路径和查询参数跳转到唯一 HTTPS 站点", () => {
+    const redirect = canonicalHttpsRedirect(new Request("http://proofwild.science/en/help?source=agent"));
+    expect(redirect?.status).toBe(308);
+    expect(redirect?.headers.get("location")).toBe("https://proofwild.science/en/help?source=agent");
+    expect(canonicalHttpsRedirect(new Request("https://proofwild.science/en/help?source=agent"))).toBeUndefined();
+    expect(canonicalHttpsRedirect(new Request("http://127.0.0.1:8787/en/help?source=agent"))).toBeUndefined();
+  });
+
   it("帮助页同时提供人类行动路径、机器发现入口和与可见内容一致的结构化数据", async () => {
     const page = renderHelpPage();
     expect(page).toContain("让你的 Agent<br>进入这个世界");
@@ -38,6 +47,11 @@ describe("Proofwild 公开帮助、GEO 与法律页面", () => {
     const jsonLd = page.match(/<script type="application\/ld\+json">([^<]+)<\/script>/)?.[1];
     expect(jsonLd).toBeDefined();
     expect(JSON.parse(jsonLd!)).toEqual(expect.arrayContaining([expect.objectContaining({"@type": "HowTo"}), expect.objectContaining({"@type": "FAQPage"})]));
+    expect(page).toContain('<meta property="og:title" content="让你的 Agent 接入 Proofwild">');
+    expect(page).toContain('<meta property="og:url" content="https://proofwild.science/help">');
+    expect(page).toContain('<meta name="twitter:card" content="summary_large_image">');
+    expect(page).toContain('<meta property="og:image" content="https://proofwild.science/social-card.png?v=20260831">');
+    expect(page).toContain('<meta name="twitter:image" content="https://proofwild.science/social-card.png?v=20260831">');
     expect((await helpResponse("HEAD").text())).toBe("");
   });
 
@@ -61,6 +75,16 @@ describe("Proofwild 公开帮助、GEO 与法律页面", () => {
     expect(() => new Function(copyScript!)).not.toThrow();
   });
 
+  it("双语帮助与赛季最终页面保持 canonical 和社交 URL 一致", () => {
+    const pages = [renderHelpPage(), renderHelpPage("en"), renderSeasonPage(), renderSeasonPage("en")];
+    for (const page of pages) {
+      const canonical = page.match(/<link rel="canonical" href="([^"]+)">/)?.[1];
+      const socialUrl = page.match(/<meta property="og:url" content="([^"]+)">/)?.[1];
+      expect(socialUrl).toBe(canonical);
+      for (const field of ["og:title", "og:description", "og:type", "og:image", "og:image:alt", "twitter:card", "twitter:image", "twitter:image:alt"]) expect(page).toContain(field);
+    }
+  });
+
   it("所有公开页面使用可在小尺寸识别的统一 SVG 品牌标记", async () => {
     const page = renderHelpPage();
     expect(page).toContain('<link rel="icon" href="/favicon.svg?v=20260828-proofwild-1" type="image/svg+xml" sizes="any">');
@@ -75,6 +99,30 @@ describe("Proofwild 公开帮助、GEO 与法律页面", () => {
     const ico = faviconResponse("GET", "ico");
     expect(ico.headers.get("content-type")).toBe("image/x-icon");
     expect([...new Uint8Array(await ico.arrayBuffer()).slice(0, 4)]).toEqual([0, 0, 1, 0]);
+    const social = socialCardResponse();
+    expect(social.status).toBe(200);
+    expect(social.headers.get("content-type")).toBe("image/png");
+    expect(social.headers.get("cache-control")).toContain("immutable");
+    const socialBytes = new Uint8Array(await social.arrayBuffer());
+    expect([...socialBytes.slice(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
+    expect(new DataView(socialBytes.buffer).getUint32(16)).toBe(1200);
+    expect(new DataView(socialBytes.buffer).getUint32(20)).toBe(630);
+    expect(socialBytes[24]).toBe(2);
+    expect(socialBytes[25]).toBe(3);
+    const chunks: Buffer[] = [];
+    let offset = 8;
+    let foundEnd = false;
+    while (offset < socialBytes.length) {
+      const length = new DataView(socialBytes.buffer).getUint32(offset);
+      const type = Buffer.from(socialBytes.slice(offset + 4, offset + 8)).toString("ascii");
+      expect(offset + 12 + length).toBeLessThanOrEqual(socialBytes.length);
+      if (type === "IDAT") chunks.push(Buffer.from(socialBytes.slice(offset + 8, offset + 8 + length)));
+      if (type === "IEND") foundEnd = true;
+      offset += 12 + length;
+    }
+    expect(foundEnd).toBe(true);
+    expect(inflateSync(Buffer.concat(chunks))).toHaveLength((Math.ceil(1200 * 2 / 8) + 1) * 630);
+    expect(await socialCardResponse("HEAD").text()).toBe("");
     const csp = helpResponse().headers.get("content-security-policy");
     expect(csp).toContain("img-src 'self'");
     expect(csp).toContain("script-src 'unsafe-inline' https://static.cloudflareinsights.com");
@@ -136,6 +184,15 @@ describe("Proofwild 公开帮助、GEO 与法律页面", () => {
     expect(sitemap).toContain("<loc>https://proofwild.science/legal-supplement</loc>");
     expect(sitemap).toContain("<loc>https://proofwild.science/en/help</loc>");
     expect(sitemap).toContain('hreflang="en" href="https://proofwild.science/en/season"');
+    expect(sitemap).toContain('hreflang="x-default" href="https://proofwild.science/season"');
+    const entries = [...sitemap.matchAll(/<url>([\s\S]*?)<\/url>/g)].map((match) => match[1]!);
+    expect(entries).toHaveLength(24);
+    for (const entry of entries) {
+      expect(entry.match(/hreflang="zh-CN"/g)).toHaveLength(1);
+      expect(entry.match(/hreflang="en"/g)).toHaveLength(1);
+      expect(entry.match(/hreflang="x-default"/g)).toHaveLength(1);
+      expect(entry).toContain("<lastmod>2026-08-31</lastmod>");
+    }
     expect((await robotsResponse().text())).toContain("Allow: /research");
     expect(JSON.stringify(guide)).not.toContain("social.szlk.ai");
     expect([renderHelpPage(), renderHelpPage("en"), await llmsResponse().text(), sitemap, await robotsResponse().text()].join("\n")).not.toContain("social.szlk.ai");
@@ -195,13 +252,27 @@ describe("Proofwild 公开帮助、GEO 与法律页面", () => {
     expect(page).toContain("正式来源 SZLKlaws");
     expect(page).toContain("overflow-wrap:anywhere");
     expect(page).not.toContain("产品法律补充说明</h1>");
+    expect(page).toContain('<meta property="og:type" content="article">');
+    const jsonLd = page.match(/<script type="application\/ld\+json">([^<]+)<\/script>/)?.[1];
+    expect(JSON.parse(jsonLd!)).toEqual(expect.objectContaining({"@type": "WebPage", name: "隐私政策"}));
+    expect(JSON.parse(jsonLd!)).not.toHaveProperty("dateModified");
+  });
+
+  it("动态法律标题在 HTML 元数据与 JSON-LD 中保持同一真实文本", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({success:true,document:{title:'Privacy & <Rights> "2026"',version:"v2",effective_at:"2026-08-31",composition:[{scope:"common",sections:[{title:"Scope",body_markdown:"Body"}]}]}}), {status:200})));
+    const page = await legalResponse(new Request("https://proofwild.science/en/legal/privacy"), "/legal/privacy", "en").then((response) => response.text());
+    expect(page).toContain('content="Privacy &amp; &lt;Rights&gt; &quot;2026&quot;"');
+    const jsonLd = page.match(/<script type="application\/ld\+json">([^<]+)<\/script>/)?.[1];
+    expect(JSON.parse(jsonLd!).name).toBe('Privacy & <Rights> "2026"');
   });
 
   it("SZLKlaws 无正式版本时明确失败且不伪造本地副本", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({success: false, error: {code: "unsupported_product"}}), {status: 400, headers: {"content-type": "application/json"}})));
     const response = await legalResponse(new Request("https://proofwild.science/legal-supplement"), "/legal-supplement");
     expect(response.status).toBe(503);
-    expect(await response.text()).toContain("没有用旧副本替代正式版本");
+    const page = await response.text();
+    expect(page).toContain("没有用旧副本替代正式版本");
+    expect(page).not.toContain('type="application/ld+json"');
   });
 
   it("英文法律路由读取 SZLKlaws 英文正式版本", async () => {
@@ -214,5 +285,9 @@ describe("Proofwild 公开帮助、GEO 与法律页面", () => {
     expect(page).toContain('<html lang="en">');
     expect(page).toContain("Official English text.");
     expect(page).toContain("Official source: SZLKlaws");
+    expect(page).toContain('<link rel="canonical" href="https://proofwild.science/en/legal/privacy">');
+    expect(page).toContain('<meta property="og:url" content="https://proofwild.science/en/legal/privacy">');
+    expect(page).toContain('<meta property="og:locale" content="en_US">');
+    for (const field of ["og:image", "og:image:alt", "twitter:card", "twitter:image", "twitter:image:alt"]) expect(page).toContain(field);
   });
 });

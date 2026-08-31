@@ -6,7 +6,7 @@ import {assertTransferPrepareInput, createNodeDescriptor, createNodeKeyPair, cre
 import {LABS_CONFORMANCE_VECTORS, WORLD_MAX_SUPPLY, WORLD_SUPPLY_SCHEDULE_BODY, WORLD_SUPPLY_SCHEDULE_ID, admitAgentAtRandomAddress, assertEcosystemSupplyImportAllowed, buildObservation, createWorld, expandWorldForPopulation, handleWorldSupplyRequest, mergeWorldSupplyStates, reconcileWorldMines, reconcileWorldSupplyInventories, stateHash, transition, upgradeWorldForLabs, validateState, worldSupplyObservation, type ActInput, type ActResult, type AgentState, type ConformanceEvent, type EcosystemWorldSupplyState, type Observation, type RegionState, type StoredObservation} from "../../../packages/kernel/src/index.js";
 import {createSaiMcpHandler} from "../../../packages/mcp/src/index.js";
 import {createObserverSnapshot, observatoryResponse, type AgentWorldTimes, type ObserverSnapshot} from "./observatory.js";
-import {agentGuideResponse, faviconResponse, helpResponse, legalResponse, llmsResponse, resolveLegalRoute, robotsResponse, seasonResponse, sitemapResponse} from "./public-pages.js";
+import {agentGuideResponse, canonicalHttpsRedirect, faviconResponse, helpResponse, legalResponse, llmsResponse, resolveLegalRoute, robotsResponse, seasonResponse, sitemapResponse, socialCardResponse} from "./public-pages.js";
 import {handleLabsRequest} from "../../../packages/labs/src/http.js";
 import {LabsRepository, type LabsPersistence, type LabsStoredObject} from "../../../packages/labs/src/store.js";
 import {LEGACY_REFERENCE_FORK_ID, PREVIOUS_REFERENCE_FORK_ID, REFERENCE_FORK_ID, exactMeritFactor, type LabsFrontier} from "../../../packages/labs/src/index.js";
@@ -238,6 +238,7 @@ export class RegionDurableObject extends DurableObject<Env> {
       const researchMatch = url.pathname.match(/^\/(en\/)?research\/(sha256(?::|%3A)[0-9a-f]{64})$/i);
       if (researchMatch && (request.method === "GET" || request.method === "HEAD")) return researchResponse(request, this.labs, researchMatch[1] ? "en" : "zh-CN", decodeURIComponent(researchMatch[2]!));
       if ((url.pathname === "/favicon.svg" || url.pathname === "/favicon.ico") && (request.method === "GET" || request.method === "HEAD")) return faviconResponse(request.method, url.pathname.endsWith(".ico") ? "ico" : "svg");
+      if (url.pathname === "/social-card.png" && (request.method === "GET" || request.method === "HEAD")) return socialCardResponse(request.method);
       if (url.pathname === "/robots.txt" && request.method === "GET") return robotsResponse();
       if (url.pathname === "/sitemap.xml" && request.method === "GET") return sitemapResponse();
       if (url.pathname === "/llms.txt" && request.method === "GET") return llmsResponse();
@@ -383,6 +384,8 @@ export class RegionDurableObject extends DurableObject<Env> {
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
+    const httpsRedirect = canonicalHttpsRedirect(request);
+    if (httpsRedirect) return httpsRedirect;
     const url = new URL(request.url);
     const legacyArchivePath = `/api/worlds/${encodeURIComponent(LEGACY_REFERENCE_FORK_ID)}/snapshot`;
     const previousArchivePath = `/api/worlds/${encodeURIComponent(PREVIOUS_REFERENCE_FORK_ID)}/snapshot`;

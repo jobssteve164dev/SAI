@@ -2,6 +2,13 @@ import {describe, expect, it} from "vitest";
 import {buildObservation, createWorld, stateHash, transition, type AgentState, type ConformanceEvent} from "../../packages/kernel/src/index.js";
 import {createObserverSnapshot, OBSERVATORY_SCRIPT, observatoryResponse, renderObservatoryPage} from "../../apps/cloudflare-worker/src/observatory.js";
 
+function expectSocialMetadata(page: string, canonical: string, locale: "zh_CN" | "en_US"): void {
+  expect(page).toContain(`<link rel="canonical" href="${canonical}">`);
+  expect(page).toContain(`<meta property="og:url" content="${canonical}">`);
+  expect(page).toContain(`<meta property="og:locale" content="${locale}">`);
+  for (const field of ["og:title", "og:description", "og:image", "og:image:alt", "twitter:card", "twitter:image", "twitter:image:alt"]) expect(page).toContain(field);
+}
+
 const agents: AgentState[] = [
   {id: "agent:ed25519-v1:zeta", x: 2, y: 2, energy: 5, inventory: {}},
   {id: "agent:ed25519-v1:alpha", x: 1, y: 1, energy: 4, inventory: {ore: 1}},
@@ -10,6 +17,12 @@ const agents: AgentState[] = [
 describe("Proofwild 世界观察器", () => {
   it("根页面提供可访问的只读观察界面且最终内联脚本语法有效", async () => {
     const page = renderObservatoryPage();
+    expectSocialMetadata(page, "https://proofwild.science/", "zh_CN");
+    expect(page).toContain('<meta property="og:title" content="Proofwild 世界观察器">');
+    expect(page).toContain('<meta property="og:url" content="https://proofwild.science/">');
+    expect(page).toContain('<meta name="twitter:card" content="summary_large_image">');
+    const jsonLd = page.match(/<script type="application\/ld\+json">([^<]+)<\/script>/)?.[1];
+    expect(JSON.parse(jsonLd!)).toEqual(expect.arrayContaining([expect.objectContaining({"@type": "WebSite", name: "Proofwild", url: "https://proofwild.science"})]));
     expect(page).toContain("<title>Proofwild 世界观察器</title>");
     expect(page).toContain('<link rel="icon" href="/favicon.svg?v=20260828-proofwild-1" type="image/svg+xml" sizes="any">');
     expect(page).toContain('class="brand-mark"');
@@ -51,6 +64,7 @@ describe("Proofwild 世界观察器", () => {
 
   it("英文观察器翻译静态与运行时界面，并限制扩容地图的渲染网格", () => {
     const page = renderObservatoryPage("en");
+    expectSocialMetadata(page, "https://proofwild.science/en", "en_US");
     expect(page).toContain('<html lang="en">');
     expect(page).toContain("A finite world.<br>Every unit matters.");
     expect(page).toContain("Local fork overview");

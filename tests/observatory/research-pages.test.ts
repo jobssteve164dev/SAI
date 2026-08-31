@@ -5,6 +5,13 @@ import {createClaimBody, executeLabsWorldResearch, REFERENCE_RULESET, signLabsCl
 import {LabsRepository, MemoryLabsPersistence} from "../../packages/labs/src/store.js";
 import {renderResearchRegistry, renderResearchResult, researchResponse} from "../../apps/cloudflare-worker/src/research-pages.js";
 
+function expectSocialMetadata(page: string, canonical: string, locale: "zh_CN" | "en_US"): void {
+  expect(page).toContain(`<link rel="canonical" href="${canonical}">`);
+  expect(page).toContain(`<meta property="og:url" content="${canonical}">`);
+  expect(page).toContain(`<meta property="og:locale" content="${locale}">`);
+  for (const field of ["og:title", "og:description", "og:image", "og:image:alt", "twitter:card", "twitter:image", "twitter:image:alt"]) expect(page).toContain(field);
+}
+
 async function registryWithResearch(): Promise<{repository: LabsRepository; resultId: string}> {
   const repository = await LabsRepository.open(new MemoryLabsPersistence());
   const identity = await createIdentity();
@@ -23,6 +30,7 @@ describe("LABS 双语研究成果页面", () => {
   it("把基线与 Agent 搜索记录区分展示，并提供下载和引用入口", async () => {
     const {repository, resultId} = await registryWithResearch();
     const registry = renderResearchRegistry(await repository.registry());
+    expectSocialMetadata(registry, "https://proofwild.science/research", "zh_CN");
     expect(registry).toContain("让 Agent 的计算<br>成为可用成果");
     expect(registry).toContain("LABS 是“低自相关二进制序列”");
     expect(registry).toContain("不是官方全网排名");
@@ -49,9 +57,12 @@ describe("LABS 双语研究成果页面", () => {
     expect(registry).toContain(`/research/${encodeURIComponent(resultId)}`);
     expect(registry).toContain('aria-current="page"');
     expect(registry).toContain("@type\":\"Dataset");
+    expect(registry).toContain('<meta property="og:type" content="website">');
+    expect(registry).toContain('<meta property="og:url" content="https://proofwild.science/research">');
 
     const entry = await repository.registryEntry(resultId);
     const detail = renderResearchResult(entry!);
+    expectSocialMetadata(detail, `https://proofwild.science/research/${resultId}`, "zh_CN");
     expect(detail).toContain("这次究竟计算了什么");
     expect(detail).toContain("65,536 / 65,536");
     expect(detail).toContain("达到一单位研究贡献标准");
@@ -63,11 +74,14 @@ describe("LABS 双语研究成果页面", () => {
     expect(detail).toContain("私钥从不公开");
     expect(detail).toContain('class="sequence"');
     expect(detail).toContain("overflow-wrap:anywhere");
+    expect(detail).toContain('<meta property="og:type" content="article">');
+    expect(detail).toContain(`<meta property="og:url" content="https://proofwild.science/research/${resultId}">`);
   });
 
   it("英文页面提供等价成果语义、分叉边界和移动端布局断点", async () => {
     const {repository, resultId} = await registryWithResearch();
     const registry = renderResearchRegistry(await repository.registry(), "en");
+    expectSocialMetadata(registry, "https://proofwild.science/en/research", "en_US");
     expect(registry).toContain("Agent computation<br>that remains useful");
     expect(registry).toContain("LABS stands for Low-Autocorrelation Binary Sequences");
     expect(registry).toContain("not an official global ranking");
@@ -94,7 +108,9 @@ describe("LABS 双语研究成果页面", () => {
     const response = await researchResponse(new Request(`https://proofwild.science/en/research/${encodeURIComponent(resultId)}`), repository, "en", resultId);
     expect(response.status).toBe(200);
     expect(response.headers.get("content-security-policy")).toContain("default-src 'none'");
-    expect(await response.text()).toContain("What was actually computed");
+    const detail = await response.text();
+    expect(detail).toContain("What was actually computed");
+    expectSocialMetadata(detail, `https://proofwild.science/en/research/${resultId}`, "en_US");
     expect(await researchResponse(new Request("https://proofwild.science/research/missing"), repository, "zh-CN", `sha256:${"f".repeat(64)}`).then((item) => item.status)).toBe(404);
   });
 
