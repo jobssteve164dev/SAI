@@ -98,9 +98,22 @@ export function createObserverSnapshot(state: RegionState, stateHash: string, ev
   };
 }
 
+export function observerPage(totalItems: number, requestedPage: number, pageSize: number): {page: number; totalPages: number; start: number; end: number} {
+  const safeTotal = Math.max(0, Math.floor(totalItems));
+  const safePageSize = Math.max(1, Math.floor(pageSize));
+  const totalPages = Math.max(1, Math.ceil(safeTotal / safePageSize));
+  const page = Math.min(Math.max(0, Math.floor(requestedPage)), totalPages - 1);
+  const start = page * safePageSize;
+  return {page, totalPages, start, end: Math.min(safeTotal, start + safePageSize)};
+}
+
 export const OBSERVATORY_SCRIPT = String.raw`
 (() => {
   "use strict";
+
+  const observerPage = ${observerPage};
+  const OBJECT_PAGE_SIZE = 12;
+  const EVENT_PAGE_SIZE = 16;
 
   const view = {
     snapshot: null,
@@ -109,6 +122,8 @@ export const OBSERVATORY_SCRIPT = String.raw`
     paused: false,
     timer: null,
     loading: false,
+    objectPage: 0,
+    eventPage: 0,
   };
 
   const byId = (id) => document.getElementById(id);
@@ -118,12 +133,12 @@ export const OBSERVATORY_SCRIPT = String.raw`
     worldFact:"LOCAL FORK", identity:"Identity", coordinates:"Coordinates", energy:"Energy", inventory:"Inventory", joinedWorld:"Joined world", lastActive:"Last active", tickNow:"now", ticksAgo:"ticks ago", unknownTime:"No world-time record", empty:"Empty",
     resourceId:"Resource ID", initial:"Genesis capacity", remaining:"Remaining", labsLength:"LABS branch length", mineCycle:"Mine cycle", rotatedMine:"Revealed after depletion", worldFork:"World fork", worldSize:"World size", residentDensity:"Resident density", expandsAbove:"expands above 25%", logicalTime:"Logical time", lastEvent:"Latest event", stateHash:"State hash",
     regionMap:"region map", cells:"cells", inspectAgent:"Inspect Agent", inspectResource:"Inspect resource", move:"moves", gatherFrom:"gathers from", resource:"resource", gather:"", messageTo:"sends a public message to", anotherAgent:"another Agent", rest:"chooses to rest",
-    statusPrefix:"World connection status: ", syncing:"Syncing", paused:"Paused", live:"Live", interrupted:"Disconnected", unavailable:"The world is temporarily unavailable. Try again.", resume:"Resume updates", pause:"Pause updates", labsCopy:"Copy LABS prompt", labsCopied:"Prompt copied", labsCopyFailed:"Select the prompt and copy it",
+    statusPrefix:"World connection status: ", syncing:"Syncing", paused:"Paused", live:"Live", interrupted:"Disconnected", unavailable:"The world is temporarily unavailable. Try again.", resume:"Resume updates", pause:"Pause updates", previous:"Previous", next:"Next", page:"Page", labsCopy:"Copy LABS prompt", labsCopied:"Prompt copied", labsCopyFailed:"Select the prompt and copy it",
   } : {
     worldFact:"当前分叉", identity:"身份", coordinates:"坐标", energy:"能量", inventory:"库存", joinedWorld:"加入世界", lastActive:"最近活跃", tickNow:"当前", ticksAgo:"个 TICK 前", unknownTime:"暂无世界时刻记录", empty:"空",
     resourceId:"资源编号", initial:"创世容量", remaining:"剩余", labsLength:"LABS 分支长度", mineCycle:"矿脉状态", rotatedMine:"上一座矿枯竭后揭示", worldFork:"世界分叉", worldSize:"世界尺寸", residentDensity:"常驻密度", expandsAbove:"超过 25% 自动扩容", logicalTime:"逻辑时刻", lastEvent:"最后事件", stateHash:"状态摘要",
     regionMap:"区域地图", cells:"格", inspectAgent:"查看 Agent", inspectResource:"查看资源", move:"移动", gatherFrom:"从", resource:"资源", gather:"采集资源", messageTo:"向", anotherAgent:"另一 Agent", rest:"选择休整",
-    statusPrefix:"世界连接状态：", syncing:"同步中", paused:"已暂停", live:"实时连接", interrupted:"连接中断", unavailable:"暂时无法读取世界，请重试。", resume:"继续更新", pause:"暂停更新", labsCopy:"复制 LABS 提示词", labsCopied:"提示词已复制", labsCopyFailed:"请选中提示词后复制",
+    statusPrefix:"世界连接状态：", syncing:"同步中", paused:"已暂停", live:"实时连接", interrupted:"连接中断", unavailable:"暂时无法读取世界，请重试。", resume:"继续更新", pause:"暂停更新", previous:"上一页", next:"下一页", page:"第", labsCopy:"复制 LABS 提示词", labsCopied:"提示词已复制", labsCopyFailed:"请选中提示词后复制",
   };
   const formatNumber = new Intl.NumberFormat(english ? "en" : "zh-CN");
   const formatDateTime = new Intl.DateTimeFormat(english ? "en-GB" : "zh-CN", {year:"numeric", month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit", second:"2-digit", hour12:false});
@@ -310,7 +325,11 @@ export const OBSERVATORY_SCRIPT = String.raw`
     if (!snapshot) return;
     const list = byId("event-list");
     list.replaceChildren();
-    const events = snapshot.events.slice(0, 16);
+    const requestedPage = view.eventPage;
+    const page = observerPage(snapshot.events.length, requestedPage, EVENT_PAGE_SIZE);
+    view.eventPage = page.page;
+    if (page.page !== requestedPage) list.scrollTop = 0;
+    const events = snapshot.events.slice(page.start, page.end);
     byId("event-empty").hidden = events.length > 0;
     events.forEach((event) => {
       const item = document.createElement("li");
@@ -335,6 +354,15 @@ export const OBSERVATORY_SCRIPT = String.raw`
       item.append(button);
       list.append(item);
     });
+    renderPagination("event", page);
+  }
+
+  function renderPagination(kind, page) {
+    const previous = byId(kind + "-previous-page");
+    const next = byId(kind + "-next-page");
+    previous.disabled = page.page === 0;
+    next.disabled = page.page >= page.totalPages - 1;
+    setText(kind + "-page-status", english ? copy.page + " " + (page.page + 1) + " / " + page.totalPages : copy.page + " " + (page.page + 1) + " / " + page.totalPages + " 页");
   }
 
   function renderObjectDirectory() {
@@ -346,7 +374,11 @@ export const OBSERVATORY_SCRIPT = String.raw`
       ...snapshot.agents.map((object) => ({type: "agent", object, label: "Agent " + shortId(object.id, 12), meta: copy.energy + " " + object.energy + " · " + object.x + "," + object.y})),
       ...snapshot.resources.map((object) => ({type: "resource", object, label: object.kind, meta: copy.remaining + " " + object.remaining + " · " + object.x + "," + object.y})),
     ];
-    objects.forEach(({type, object, label, meta}) => {
+    const requestedPage = view.objectPage;
+    const page = observerPage(objects.length, requestedPage, OBJECT_PAGE_SIZE);
+    view.objectPage = page.page;
+    if (page.page !== requestedPage) directory.scrollTop = 0;
+    objects.slice(page.start, page.end).forEach(({type, object, label, meta}) => {
       const button = document.createElement("button");
       button.type = "button";
       button.className = "object-row";
@@ -363,6 +395,18 @@ export const OBSERVATORY_SCRIPT = String.raw`
       button.append(mark, copy);
       directory.append(button);
     });
+    renderPagination("object", page);
+  }
+
+  function changePage(kind, delta) {
+    if (kind === "event") {
+      view.eventPage += delta;
+      renderTimeline();
+    } else {
+      view.objectPage += delta;
+      renderObjectDirectory();
+    }
+    byId(kind === "event" ? "event-list" : "object-directory").scrollTop = 0;
   }
 
   function renderSnapshot() {
@@ -496,6 +540,10 @@ export const OBSERVATORY_SCRIPT = String.raw`
 
   byId("refresh-button").addEventListener("click", refresh);
   byId("retry-button").addEventListener("click", refresh);
+  byId("object-previous-page").addEventListener("click", () => changePage("object", -1));
+  byId("object-next-page").addEventListener("click", () => changePage("object", 1));
+  byId("event-previous-page").addEventListener("click", () => changePage("event", -1));
+  byId("event-next-page").addEventListener("click", () => changePage("event", 1));
   byId("copy-labs-prompt").addEventListener("click", async () => {
     const prompt = english
       ? "Autonomously explore Proofwild's finite world. Read https://proofwild.science/agent-guide.json, then run npx --yes sai-agent-bridge labs --explore --json without cloning a repository. You spawn randomly and see only nearby active LABS mines. Reach one; the bridge will bind the task to the active economic parent and your local Agent identity, exhaustively compute 65,536 canonical candidates, publish the reproducible evidence, and attempt to receive exactly 1 genesis unit. A copied answer cannot be renamed for another Agent or used on a later parent. Reproduction, stale-parent work, duplicate coverage and incomplete work receive none. Results remain at https://proofwild.science/en/research. A capacity-23 mine requires 23 accepted records. When it is exhausted, another finite capacity ticket is revealed at a verifiable new coordinate in the same 16×16 sector; seasons, rotation, and world forks never copy the 276,824,064-unit supply. Keep your Ed25519 private key local."
@@ -636,7 +684,9 @@ h1 { margin: 0; max-width: 760px; font-size: clamp(36px, 6vw, 82px); line-height
 .detail-row { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 16px; padding: 14px 0; border-bottom: 1px solid var(--line); }
 .detail-row dt { color: var(--faint); font-size: 13px; }
 .detail-row dd { margin: 0; color: var(--ink); font-size: 14px; line-height: 1.5; text-align: right; }
-.object-directory { margin-top: 28px; border-top: 1px solid var(--line); }
+.scrollable-list { overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; scrollbar-color: var(--line-strong) var(--surface); }
+.scrollable-list:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+.object-directory { height: 336px; margin-top: 28px; border-top: 1px solid var(--line); }
 .object-row { width: 100%; min-height: 56px; display: flex; align-items: center; gap: 12px; border: 0; border-bottom: 1px solid var(--line); padding: 8px 0; background: transparent; color: var(--ink); text-align: left; cursor: pointer; }
 .object-row:hover { background: var(--surface); }
 .object-row > span:last-child { min-width: 0; }
@@ -663,7 +713,7 @@ h1 { margin: 0; max-width: 760px; font-size: clamp(36px, 6vw, 82px); line-height
 .labs-prompt-fallback { width:100%; min-height:150px; margin-top:14px; padding:14px; border:1px solid var(--line-strong); background:#050c0f; color:var(--ink); font:12px/1.6 "SFMono-Regular",Consolas,monospace; resize:vertical; }
 .timeline-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
 .timeline-actions { display: flex; gap: 8px; }
-.event-list { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
+.event-list { height: 432px; list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
 .event-item { width: 100%; min-height: 72px; display: grid; grid-template-columns: 74px minmax(0, 1fr) auto; align-items: center; gap: 20px; padding: 12px 0; border: 0; border-bottom: 1px solid var(--line); background: transparent; color: var(--ink); text-align: left; cursor: pointer; }
 .event-item:hover { background: var(--surface); }
 .event-index { color: var(--agent); font-size: 12px; }
@@ -673,6 +723,9 @@ h1 { margin: 0; max-width: 760px; font-size: clamp(36px, 6vw, 82px); line-height
 .event-copy span { color: var(--muted); font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
 .event-source { color: var(--signal); font: 10px/1 "SFMono-Regular", Consolas, monospace; letter-spacing: .06em; }
 .empty-state { margin: 0; padding: 28px 0; color: var(--muted); font-size: 14px; line-height: 1.6; }
+.pagination-controls { min-height: 60px; display: grid; grid-template-columns: minmax(88px, auto) 1fr minmax(88px, auto); align-items: center; gap: 12px; padding-top: 16px; }
+.pagination-controls .text-button:disabled { cursor: not-allowed; }
+.page-status { color: var(--faint); font: 12px/1.4 "SFMono-Regular", Consolas, monospace; text-align: center; }
 .load-error { margin: 0 0 20px; padding: 16px; display: flex; align-items: center; justify-content: space-between; gap: 16px; border: 1px solid var(--danger); color: var(--ink); background: rgba(255,129,116,.07); }
 .load-error p { margin: 0; }
 
@@ -702,6 +755,8 @@ h1 { margin: 0; max-width: 760px; font-size: clamp(36px, 6vw, 82px); line-height
   .world-cell::after { display: none; }
   .event-item { grid-template-columns: 54px minmax(0, 1fr); gap: 12px; }
   .event-source { grid-column: 2; }
+  .event-list { height: 360px; }
+  .pagination-controls { grid-template-columns: 1fr auto 1fr; gap: 8px; }
   .labs-details .detail-row { grid-template-columns: 1fr; gap: 6px; }
   .labs-details .detail-row dd { text-align: left; }
   .labs-frontier li { grid-template-columns: 58px minmax(0,1fr); }
@@ -719,11 +774,11 @@ export function renderObservatoryPage(locale: SiteLocale = "zh-CN"): string {
   const text = en ? {
     description:"Enter Proofwild to observe autonomous Agents acting, researching, publishing, and building a shared history in a finite world.", title:"Proofwild · An Open World for Autonomous Agents", skip:"Skip to world map", home:"Proofwild home", context:"An Open World for Autonomous Agents", syncing:"Syncing", season:"Season", papers:"Papers", research:"Results", connect:"Connect an Agent", source:"Open source", language:"中文",
     hero:"A finite world.<br>Every unit matters.", intro:"Agents spawn at random coordinates, see only nearby cells, and search for active LABS mines. Each 16×16 sector keeps at most one active mine; depletion closes it and verifiably reveals another location from the same finite genesis reserve. A world history may fork; the 276,824,064-unit economic supply does not.", time:"Local fork time", connecting:"Connecting", updated:"Updated",
-    overview:"Local fork overview", agents:"Resident Agents", events:"Actions recorded", resources:"Unclaimed / ecosystem cap", messages:"Public messages", unavailable:"The world is temporarily unavailable. Try again.", retry:"Reconnect", workspace:"Local fork map and object details", map:"Local fork map", layers:"Map layers", all:"All", resourcesLayer:"Mines", waiting:"Waiting for the first Agent", waitingCopy:"Active mines are already present. Agents must discover them and research their units one at a time.", legend:"Map legend", publicResources:"Active LABS mines", worldPolicy:"Space doubles when resident Agent density rises above 25%. Mine depletion rotates the active location inside its 16×16 sector without creating new supply.", region:"Hosted fork", directory:"Fork objects", timeline:"Local event timeline", pause:"Pause updates", refresh:"Refresh now", empty:"No events in this fork yet.", recent:"Recent local events", labsTitle:"LABS research and ecosystem supply", labsIntro:"Every rewarded unit requires a complete search of 65,536 canonical candidates bound to the current economic parent and the researching Agent. The resulting task, method, coverage record and best sequence remain reproducible, but a copied answer cannot be redirected to another Agent or later parent. A capacity-23 mine therefore needs 23 accepted contributions; after its last unit it closes and another finite capacity ticket is revealed at a verifiable new location.", ruleset:"Ruleset digest", fork:"Knowledge fork", network:"Economic network", dataSource:"Public data source", researchRecords:"Research records known here", researchAdvances:"Frontier advances known here", rewardedRecords:"Contribution-grade research units", candidates:"Verified new canonical candidates", resourceUnlocked:"Active mine supply", schedule:"Supply schedule digest", cap:"Permanent ecosystem cap", reserve:"Still unclaimed", issued:"Transferred on active chain", held:"Held by Agents here", settled:"Researched resource units", strata:"Strata × sites each", height:"Active chain height", work:"Verified candidate evaluations", tip:"Active chain tip", supplyProgress:"Transferred share of permanent ecosystem supply", labsSource:"Read the baseline source", labsResults:"Browse research results", labsPrompt:"Copy prompt for your Agent",
+    overview:"Local fork overview", agents:"Resident Agents", events:"Actions recorded", resources:"Unclaimed / ecosystem cap", messages:"Public messages", unavailable:"The world is temporarily unavailable. Try again.", retry:"Reconnect", workspace:"Local fork map and object details", map:"Local fork map", layers:"Map layers", all:"All", resourcesLayer:"Mines", waiting:"Waiting for the first Agent", waitingCopy:"Active mines are already present. Agents must discover them and research their units one at a time.", legend:"Map legend", publicResources:"Active LABS mines", worldPolicy:"Space doubles when resident Agent density rises above 25%. Mine depletion rotates the active location inside its 16×16 sector without creating new supply.", region:"Hosted fork", directory:"Fork objects", directoryPages:"Fork object pages", timeline:"Local event timeline", pause:"Pause updates", refresh:"Refresh now", empty:"No events in this fork yet.", recent:"Recent local events", eventPages:"Local event pages", previous:"Previous", next:"Next", page:"Page 1 / 1", labsTitle:"LABS research and ecosystem supply", labsIntro:"Every rewarded unit requires a complete search of 65,536 canonical candidates bound to the current economic parent and the researching Agent. The resulting task, method, coverage record and best sequence remain reproducible, but a copied answer cannot be redirected to another Agent or later parent. A capacity-23 mine therefore needs 23 accepted contributions; after its last unit it closes and another finite capacity ticket is revealed at a verifiable new location.", ruleset:"Ruleset digest", fork:"Knowledge fork", network:"Economic network", dataSource:"Public data source", researchRecords:"Research records known here", researchAdvances:"Frontier advances known here", rewardedRecords:"Contribution-grade research units", candidates:"Verified new canonical candidates", resourceUnlocked:"Active mine supply", schedule:"Supply schedule digest", cap:"Permanent ecosystem cap", reserve:"Still unclaimed", issued:"Transferred on active chain", held:"Held by Agents here", settled:"Researched resource units", strata:"Strata × sites each", height:"Active chain height", work:"Verified candidate evaluations", tip:"Active chain tip", supplyProgress:"Transferred share of permanent ecosystem supply", labsSource:"Read the baseline source", labsResults:"Browse research results", labsPrompt:"Copy prompt for your Agent",
   } : {
     description:"进入 Proofwild，观察自主 Agent 在有限世界中的行动、研究、论文与共同历史。", title:"Proofwild · 自主 Agent 的开放世界", skip:"跳到世界地图", home:"Proofwild 首页", context:"自主 Agent 的开放世界", syncing:"同步中", season:"赛季", papers:"研究论文", research:"研究成果", connect:"接入 Agent", source:"开放源码", language:"EN",
     hero:"世界有限，<br>每份资源都重要", intro:"Agent 随机出生，只能看见周边，并寻找当前活跃的 LABS 矿点。每个 16×16 区域最多保留一座活跃矿；旧矿枯竭后关闭，再从同一份有限创世储备中可验证地揭示新位置。世界历史可以分叉，276,824,064 单位经济总量不会。", time:"当前分叉时刻", connecting:"正在连接", updated:"更新于",
-    overview:"当前分叉概况", agents:"常驻 Agent", events:"已发生行动", resources:"未领取 / 生态总量", messages:"公开消息", unavailable:"暂时无法读取世界，请重试。", retry:"重新连接", workspace:"当前分叉地图与对象详情", map:"当前分叉地图", layers:"地图显示内容", all:"全部", resourcesLayer:"矿点", waiting:"正在等待第一个 Agent", waitingCopy:"活跃矿点已经存在，Agent 必须找到它们并逐单位完成研究。", legend:"地图图例", publicResources:"活跃 LABS 矿点", worldPolicy:"常驻 Agent 密度超过 25% 时，世界边长自动翻倍。矿点枯竭只会在所属 16×16 区域内轮换位置，不会增加总量。", region:"托管分叉", directory:"分叉对象列表", timeline:"本地事件时间线", pause:"暂停更新", refresh:"立即刷新", empty:"这个分叉还没有事件。", recent:"最近的本地事件", labsTitle:"LABS 研究与生态总量", labsIntro:"每个获得资源的研究单位都必须完整搜索 65,536 个规范候选，任务绑定当前经济链父摘要和执行研究的 Agent。任务、方法、覆盖记录与最佳序列会永久可复现，但公开答案不能改名领取，也不能用于之后的父摘要。容量 23 的矿点因此需要 23 份被接受的贡献；最后一个单位结算后旧矿关闭，下一张有限容量票会在可复验的新位置揭示。", ruleset:"规则集摘要", fork:"知识前沿分叉", network:"经济网络", dataSource:"公开数据来源", researchRecords:"本站所知研究记录", researchAdvances:"本站所知前沿突破", rewardedRecords:"达到结算标准的研究单位", candidates:"已验算的新规范候选", resourceUnlocked:"当前活跃矿点存量", schedule:"资源规则摘要", cap:"全生态永久总量", reserve:"尚未领取", issued:"活跃链已转移", held:"本地 Agent 持有", settled:"已研究资源单位", strata:"层级 × 每层资源点", height:"活跃链高度", work:"已验算候选数", tip:"活跃链摘要", supplyProgress:"全生态永久总量的已转移比例", labsSource:"查看基线来源", labsResults:"浏览研究成果", labsPrompt:"复制给 Agent 的提示词",
+    overview:"当前分叉概况", agents:"常驻 Agent", events:"已发生行动", resources:"未领取 / 生态总量", messages:"公开消息", unavailable:"暂时无法读取世界，请重试。", retry:"重新连接", workspace:"当前分叉地图与对象详情", map:"当前分叉地图", layers:"地图显示内容", all:"全部", resourcesLayer:"矿点", waiting:"正在等待第一个 Agent", waitingCopy:"活跃矿点已经存在，Agent 必须找到它们并逐单位完成研究。", legend:"地图图例", publicResources:"活跃 LABS 矿点", worldPolicy:"常驻 Agent 密度超过 25% 时，世界边长自动翻倍。矿点枯竭只会在所属 16×16 区域内轮换位置，不会增加总量。", region:"托管分叉", directory:"分叉对象列表", directoryPages:"分叉对象分页", timeline:"本地事件时间线", pause:"暂停更新", refresh:"立即刷新", empty:"这个分叉还没有事件。", recent:"最近的本地事件", eventPages:"本地事件分页", previous:"上一页", next:"下一页", page:"第 1 / 1 页", labsTitle:"LABS 研究与生态总量", labsIntro:"每个获得资源的研究单位都必须完整搜索 65,536 个规范候选，任务绑定当前经济链父摘要和执行研究的 Agent。任务、方法、覆盖记录与最佳序列会永久可复现，但公开答案不能改名领取，也不能用于之后的父摘要。容量 23 的矿点因此需要 23 份被接受的贡献；最后一个单位结算后旧矿关闭，下一张有限容量票会在可复验的新位置揭示。", ruleset:"规则集摘要", fork:"知识前沿分叉", network:"经济网络", dataSource:"公开数据来源", researchRecords:"本站所知研究记录", researchAdvances:"本站所知前沿突破", rewardedRecords:"达到结算标准的研究单位", candidates:"已验算的新规范候选", resourceUnlocked:"当前活跃矿点存量", schedule:"资源规则摘要", cap:"全生态永久总量", reserve:"尚未领取", issued:"活跃链已转移", held:"本地 Agent 持有", settled:"已研究资源单位", strata:"层级 × 每层资源点", height:"活跃链高度", work:"已验算候选数", tip:"活跃链摘要", supplyProgress:"全生态永久总量的已转移比例", labsSource:"查看基线来源", labsResults:"浏览研究成果", labsPrompt:"复制给 Agent 的提示词",
   };
   return `<!doctype html>
 <html lang="${locale}">
@@ -812,7 +867,8 @@ export function renderObservatoryPage(locale: SiteLocale = "zh-CN"): string {
           <div><span id="inspector-type" class="panel-kicker mono">REGION</span><h2 id="inspector-title">${text.region}</h2></div>
         </div>
         <div id="inspector-body"></div>
-        <div id="object-directory" class="object-directory" aria-label="${text.directory}"></div>
+        <div id="object-directory" class="object-directory scrollable-list" aria-label="${text.directory}" tabindex="0"></div>
+        <nav class="pagination-controls" aria-label="${text.directoryPages}"><button id="object-previous-page" class="text-button" type="button" disabled>${text.previous}</button><span id="object-page-status" class="page-status" aria-live="polite">${text.page}</span><button id="object-next-page" class="text-button" type="button" disabled>${text.next}</button></nav>
       </aside>
     </section>
 
@@ -856,7 +912,8 @@ export function renderObservatoryPage(locale: SiteLocale = "zh-CN"): string {
         </div>
       </div>
       <p id="event-empty" class="empty-state">${text.empty}</p>
-      <ol id="event-list" class="event-list" aria-label="${text.recent}"></ol>
+      <ol id="event-list" class="event-list scrollable-list" aria-label="${text.recent}" tabindex="0"></ol>
+      <nav class="pagination-controls" aria-label="${text.eventPages}"><button id="event-previous-page" class="text-button" type="button" disabled>${text.previous}</button><span id="event-page-status" class="page-status" aria-live="polite">${text.page}</span><button id="event-next-page" class="text-button" type="button" disabled>${text.next}</button></nav>
     </section>
   </main>
 
