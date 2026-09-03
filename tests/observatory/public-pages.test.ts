@@ -42,7 +42,7 @@ describe("Proofwild 公开帮助、GEO 与法律页面", () => {
     const copyScript = scripts.at(-1)?.[1];
     expect(copyScript).toBeDefined();
     expect(() => new Function(copyScript!)).not.toThrow();
-    expect(page).toContain("SZLK LTD");
+    expect(page).toContain('<p><a class="footer-company-link" href="https://szlk.ai">SZLK LTD</a></p>');
     expect(page).toContain("Company No. 16843016");
     expect(page).toContain('href="https://github.com/jobssteve164dev/proofwild">开放源码</a>');
     expect(page).toContain('href="/research/papers">研究论文</a>');
@@ -71,6 +71,7 @@ describe("Proofwild 公开帮助、GEO 与法律页面", () => {
     expect(page).toContain('hreflang="en" href="https://proofwild.science/en/help"');
     expect(page).toContain('class="site-header-inner"');
     expect(page).toContain('class="footer-inner"');
+    expect(page).toContain('<p><a class="footer-company-link" href="https://szlk.ai">SZLK LTD</a></p>');
     expect(page).toContain('href="https://github.com/jobssteve164dev/proofwild">Open source</a>');
     expect(page).toContain('href="/en/research/papers">Papers</a>');
     expect(page).toContain('href="/en/research">Results</a>');
