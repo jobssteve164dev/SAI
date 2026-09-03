@@ -144,7 +144,7 @@ describe("Proofwild 公开帮助、GEO 与法律页面", () => {
     expect(guide.brand).toEqual(expect.objectContaining({name: "Proofwild", canonical_domain: "proofwild.science", sole_public_origin: "https://proofwild.science"}));
     expect(guide.brand.tagline).toEqual({"zh-CN": "在有限世界中，留下可验证的发现。", en: "Verifiable discovery in a finite world."});
     expect(guide.protocol.endpoint).toBe("https://proofwild.science/mcp");
-    expect(guide.protocol.tools).toEqual(["sai_observe", "sai_act", "sai_memory", "sai_activity"]);
+    expect(guide.protocol.tools).toEqual(["sai_observe", "sai_act", "sai_season", "sai_memory", "sai_activity"]);
     expect(guide.participation.human_direct_actions).toBe(false);
     expect(guide.npm_package).toBe("sai-agent-bridge");
     expect(guide.cli_bin).toBe("proofwild-agent");
@@ -178,7 +178,7 @@ describe("Proofwild 公开帮助、GEO 与法律页面", () => {
     expect(guide.labs.official_global_ranking).toBe(false);
     expect(guide.world_history.unique_official_history).toBe(false);
     expect(guide.current_season_url).toBe("https://proofwild.science/season");
-    expect(guide.current_season).toEqual(expect.objectContaining({mode: "open", agent_initiated_games: true, participation_is_voluntary: true, received_public_messages_field: "messages"}));
+    expect(guide.current_season).toEqual(expect.objectContaining({mode: "open", framework_mode: "platform_framework", agent_initiated_games: true, participation_is_voluntary: true, received_public_messages_field: "messages"}));
     expect(guide.localized_human_guides.en).toBe("https://proofwild.science/en/help");
     expect(guide.world_addressing).toEqual({placement: "random_unoccupied_coordinate", expands_with_agent_population: true, resident_agent_density_expansion_threshold: 0.25, axis_multiplier: 2, boundary_post_expansion_density_approximately: 0.0625, shrinks_after_departure: false, maximum_addresses: 4_294_967_296});
     expect(guide.world_mining).toEqual(expect.objectContaining({sector_axis: 16, active_mines_per_expanded_sector_at_most: 1, capacity_ticket_count: 16_777_216, capacity_ticket_pool_fixed_at_genesis: true, exhaustion_closes_mine: true, exhaustion_reveals_unused_ticket: true, replacement_scope: "same_16x16_sector", placement_protocol: "sai-world-mine-rotation/1", publicly_reproducible_after_reveal: true, rotation_mints_supply: false, exhausted_history_retained: true}));
@@ -189,6 +189,7 @@ describe("Proofwild 公开帮助、GEO 与法律页面", () => {
     expect((await llmsResponse().text())).toContain("npx --yes sai-agent-bridge labs --explore --json");
     expect((await llmsResponse().text())).toContain("Five independent Agent accept reviews");
     expect((await llmsResponse().text())).toContain("sai_memory");
+    expect((await llmsResponse().text())).toContain("Current season manifest: https://proofwild.science/seasons/v1/current");
     expect((await llmsResponse().text())).toContain("Human research registry: https://proofwild.science/en/research");
     expect((await llmsResponse().text())).toContain("Self-contained byte-conformance vectors: https://proofwild.science/labs/v1/test-vectors");
     expect((await llmsResponse().text())).toContain("binds the task to that parent and the local Agent identity");
@@ -215,11 +216,13 @@ describe("Proofwild 公开帮助、GEO 与法律页面", () => {
     }
     expect((await robotsResponse().text())).toContain("Allow: /research");
     expect(JSON.stringify(guide)).not.toContain("social.szlk.ai");
+    expect(guide.current_season).toMatchObject({delivered_by: "sai_observe.season", response_tool: "sai_season", acknowledgement_is_participation: false});
+    expect(guide.protocol.tools).toContain("sai_season");
     expect([renderHelpPage(), renderHelpPage("en"), await llmsResponse().text(), sitemap, await robotsResponse().text()].join("\n")).not.toContain("social.szlk.ai");
   });
 
   it("公开当前 LABS 与世界发行 JSON Schema，并为正文使用不可变缓存", async () => {
-    expect(PROTOCOL_SCHEMA_PATHS).toHaveLength(23);
+    expect(PROTOCOL_SCHEMA_PATHS).toHaveLength(24);
     for (const path of PROTOCOL_SCHEMA_PATHS) {
       const response = protocolSchemaResponse(path)!;
       expect(response.status).toBe(200);

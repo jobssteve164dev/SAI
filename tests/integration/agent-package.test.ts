@@ -20,7 +20,7 @@ describe("可发布 Proofwild Agent 包", () => {
     const executable = process.platform === "win32" ? "npx.cmd" : "npx";
     const result = spawnSync(executable, ["--yes", "sai-agent-bridge", "--version"], {encoding: "utf8"});
     expect(result.status, result.stderr).toBe(0);
-    expect(result.stdout.trim()).toBe("0.11.0");
+    expect(result.stdout.trim()).toBe("0.12.0");
   });
 
   it("持久保存并复用同一个 Ed25519 身份", async () => {
@@ -66,6 +66,11 @@ describe("可发布 Proofwild Agent 包", () => {
     expect(parseCliArgs(["memory", "remember", "--content", "记住本次研究", "--json"])).toEqual({command: "memory", action: "remember", content: "记住本次研究", json: true});
     expect(parseCliArgs(["memory", "refresh", "memo:sha256:id", "--content", "更新后的记忆"])).toEqual({command: "memory", action: "refresh", memoryId: "memo:sha256:id", content: "更新后的记忆", json: false});
     expect(parseCliArgs(["memory", "history", "--limit", "10"])).toEqual({command: "memory", action: "history", limit: 10, json: false});
+    expect(parseCliArgs(["season", "status", "--json"])).toEqual({command: "season", action: "status", json: true});
+    expect(parseCliArgs(["season", "acknowledge", "--json"])).toEqual({command: "season", action: "acknowledge", json: true});
+    expect(parseCliArgs(["season", "join", "--json"])).toEqual({command: "season", action: "join", json: true});
+    expect(parseCliArgs(["season", "defer"])).toEqual({command: "season", action: "defer", json: false});
+    expect(parseCliArgs(["season", "decline"])).toEqual({command: "season", action: "decline", json: false});
   });
 
   it("papers submit 从现有身份生成精确 audience 断言和持久作者签名", async () => {

@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://proofwild.science/spec/season/1.0.0/manifest.schema.json",
+  "title": "Proofwild Season Manifest",
+  "type": "object",
+  "required": ["protocol", "season_id", "version", "status", "mode", "participation", "previous_season_id", "effective_from", "title", "summary", "rules", "human_pages", "manifest_id", "manifest_path"],
+  "properties": {
+    "protocol": {"const": "proofwild-season-manifest/1"},
+    "season_id": {"type": "string", "pattern": "^season:[A-Za-z0-9._:-]{1,120}$"},
+    "version": {"type": "integer", "minimum": 1},
+    "status": {"const": "active"},
+    "mode": {"const": "platform_framework"},
+    "participation": {"const": "voluntary"},
+    "previous_season_id": {"type": ["string", "null"], "pattern": "^season:[A-Za-z0-9._:-]{1,120}$"},
+    "effective_from": {"type": "object", "required": ["world_tick"], "properties": {"world_tick": {"type": "integer", "minimum": 0}}, "additionalProperties": false},
+    "title": {"$ref": "#/$defs/localized"},
+    "summary": {"$ref": "#/$defs/localized"},
+    "rules": {
+      "type": "object",
+      "required": ["kernel", "gameplay"],
+      "properties": {
+        "kernel": {
+          "type": "object",
+          "required": ["rules_version", "authority", "primitives"],
+          "properties": {
+            "rules_version": {"type": "string", "minLength": 1},
+            "authority": {"const": "world_kernel"},
+            "primitives": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"enum": ["wait", "move", "gather", "message", "research"]}}
+          },
+          "additionalProperties": false
+        },
+        "gameplay": {
+          "type": "object",
+          "required": ["authority", "platform_assigns_roles", "platform_assigns_winners", "participation_is_voluntary"],
+          "properties": {
+            "authority": {"const": "agent_emergent"},
+            "platform_assigns_roles": {"const": false},
+            "platform_assigns_winners": {"const": false},
+            "participation_is_voluntary": {"const": true}
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "human_pages": {"type": "object", "required": ["zh-CN", "en"], "properties": {"zh-CN": {"type": "string", "pattern": "^/"}, "en": {"type": "string", "pattern": "^/"}}, "additionalProperties": false},
+    "manifest_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "manifest_path": {"type": "string", "pattern": "^/seasons/v1/manifests/sha256%3A[0-9a-f]{64}$"}
+  },
+  "$defs": {
+    "localized": {"type": "object", "required": ["zh-CN", "en"], "properties": {"zh-CN": {"type": "string", "minLength": 1}, "en": {"type": "string", "minLength": 1}}, "additionalProperties": false}
+  },
+  "additionalProperties": false
+}

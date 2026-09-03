@@ -3,7 +3,7 @@ import {randomBytes, randomUUID, type JsonWebKey} from "node:crypto";
 import type {AuthInfo} from "@modelcontextprotocol/server";
 import {AuthService, type AuthSnapshot} from "../../../packages/auth/src/index.js";
 import {assertTransferPrepareInput, createNodeDescriptor, createNodeKeyPair, createTransferCancellation, createTransferCredential, createTransferReceipt, verifyTransferCancellation, verifyTransferCredential, verifyTransferReceipt, type NodeDescriptor, type NodeKeyPair, type TransferCancellation, type TransferCredential, type TransferReceipt} from "../../../packages/federation/src/index.js";
-import {LABS_CONFORMANCE_VECTORS, WORLD_MAX_SUPPLY, WORLD_SUPPLY_SCHEDULE_BODY, WORLD_SUPPLY_SCHEDULE_ID, admitAgentAtRandomAddress, assertEcosystemSupplyImportAllowed, buildObservation, createWorld, expandWorldForPopulation, handleWorldSupplyRequest, mergeWorldSupplyStates, reconcileWorldMines, reconcileWorldSupplyInventories, stateHash, transition, upgradeWorldForLabs, validateState, worldSupplyObservation, type ActInput, type ActResult, type AgentState, type ConformanceEvent, type EcosystemWorldSupplyState, type Observation, type RegionState, type StoredObservation} from "../../../packages/kernel/src/index.js";
+import {LABS_CONFORMANCE_VECTORS, WORLD_MAX_SUPPLY, WORLD_SUPPLY_SCHEDULE_BODY, WORLD_SUPPLY_SCHEDULE_ID, admitAgentAtRandomAddress, assertEcosystemSupplyImportAllowed, buildObservation, createWorld, expandWorldForPopulation, handleWorldSupplyRequest, mergeWorldSupplyStates, reconcileWorldMines, reconcileWorldSupplyInventories, stateHash, transition, upgradeWorldForLabs, validateState, worldSupplyObservation, type ActInput, type ActResult, type AgentObservation, type AgentState, type ConformanceEvent, type EcosystemWorldSupplyState, type RegionState, type StoredObservation} from "../../../packages/kernel/src/index.js";
 import {createSaiMcpHandler} from "../../../packages/mcp/src/index.js";
 import {createObserverSnapshot, observatoryResponse, type AgentWorldTimes, type ObserverSnapshot} from "./observatory.js";
 import {agentGuideResponse, canonicalHttpsRedirect, faviconResponse, legalResponse, llmsResponse, resolveLegalRoute, robotsResponse, seasonResponse, sitemapResponse, socialCardResponse} from "./public-pages.js";
@@ -17,6 +17,7 @@ import {handleJournalRequest} from "../../../packages/journal/src/http.js";
 import {JournalRepository, type JournalArtifact, type JournalPersistence, type JournalSubmission} from "../../../packages/journal/src/index.js";
 import {agentAccessResponse, journalPageResponse} from "./journal-pages.js";
 import {AgentMemoryRepository, attachMemorySummary, type AgentMemoryInput, type AgentMemoryPersistence, type AgentMemoryResult, type AgentMemorySnapshot} from "../../../packages/memory/src/index.js";
+import {AgentSeasonRepository, seasonManifestResponse, type AgentSeasonInput, type AgentSeasonPersistence, type AgentSeasonSnapshot, type AgentSeasonState} from "../../../packages/season/src/index.js";
 
 interface Env {
   REGIONS: DurableObjectNamespace<RegionDurableObject>;
@@ -56,6 +57,13 @@ class DurableAgentMemoryPersistence implements AgentMemoryPersistence {
   async put(snapshot: AgentMemorySnapshot): Promise<void> { await this.storage.put(this.key(snapshot.agent_id, snapshot.world_fork_id), snapshot); }
 }
 
+class DurableAgentSeasonPersistence implements AgentSeasonPersistence {
+  constructor(private readonly storage: DurableObjectStorage) {}
+  private key(agentId: string, worldForkId: string): string { return `agent-season:${worldForkId}:${agentId}`; }
+  async getSeason(agentId: string, worldForkId: string): Promise<AgentSeasonSnapshot | undefined> { return this.storage.get<AgentSeasonSnapshot>(this.key(agentId, worldForkId)); }
+  async putSeason(snapshot: AgentSeasonSnapshot): Promise<void> { await this.storage.put(this.key(snapshot.agent_id, snapshot.world_fork_id), snapshot); }
+}
+
 function json(value: unknown, status = 200, headers: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(value), {status, headers: {"content-type": "application/json; charset=utf-8", "cache-control": "no-store", ...headers}});
 }
@@ -63,7 +71,8 @@ function json(value: unknown, status = 200, headers: Record<string, string> = {}
 class DurableRegionApplication {
   private queue: Promise<void> = Promise.resolve();
   private readonly memories: AgentMemoryRepository;
-  constructor(private readonly storage: DurableObjectStorage, readonly regionId: string) { this.memories = new AgentMemoryRepository(new DurableAgentMemoryPersistence(storage)); }
+  private readonly seasons: AgentSeasonRepository;
+  constructor(private readonly storage: DurableObjectStorage, readonly regionId: string) { this.memories = new AgentMemoryRepository(new DurableAgentMemoryPersistence(storage)); this.seasons = new AgentSeasonRepository(new DurableAgentSeasonPersistence(storage)); }
   async state(): Promise<RegionState> { return upgradeWorldForLabs(await this.storage.get<RegionState>("world") ?? createWorld(this.regionId)); }
 
   async admit(agentId: string): Promise<void> {
@@ -75,15 +84,16 @@ class DurableRegionApplication {
     await this.storage.put({world: next, [this.agentWorldTimesKey(agentId)]: worldTimes});
   }
 
-  async observe(agentId: string, input: {cursor?: string; max_bytes?: number} = {}): Promise<Observation> {
+  async observe(agentId: string, input: {cursor?: string; max_bytes?: number} = {}): Promise<AgentObservation> {
     if (await this.storage.get(`agent-lock:${agentId}`)) throw new Error("agent_in_transit");
     const state = await this.state();
     const stored = buildObservation(state, agentId);
     if (!stored) throw new Error("agent_not_found");
+    stored.observation.season = await this.seasons.notice(agentId, state.world_fork_id);
     attachMemorySummary(stored.observation, await this.memories.summary(agentId, state.world_fork_id), input.max_bytes ?? 4096);
     await this.storage.put(`observation:${stored.observation.observation_id}`, stored);
     await this.touchAgent(agentId, state.logical_tick);
-    return stored.observation;
+    return stored.observation as AgentObservation;
   }
 
   async memory(agentId: string, input: AgentMemoryInput): Promise<AgentMemoryResult> {
@@ -91,6 +101,14 @@ class DurableRegionApplication {
       const state = await this.state();
       if (!state.agents[agentId]) throw new Error("agent_not_found");
       return this.memories.perform(agentId, state.world_fork_id, state.logical_tick, input);
+    });
+  }
+
+  async season(agentId: string, input: AgentSeasonInput): Promise<AgentSeasonState> {
+    return this.serial(async () => {
+      const state = await this.state();
+      if (!state.agents[agentId]) throw new Error("agent_not_found");
+      return this.seasons.perform(agentId, state.world_fork_id, input);
     });
   }
 
@@ -284,6 +302,8 @@ export class RegionDurableObject extends DurableObject<Env> {
       if (labsResponse) return labsResponse;
       const supplyResponse = await handleWorldSupplyRequest(request, {currentState: () => this.region.state(), mergeSupply: (state) => this.region.mergeSupply(state)});
       if (supplyResponse) return supplyResponse;
+      const seasonMachineResponse = seasonManifestResponse(url.pathname, request.method);
+      if (seasonMachineResponse) return seasonMachineResponse;
       if (url.pathname === "/" && (request.method === "GET" || request.method === "HEAD")) return observatoryResponse(request.method);
       if (url.pathname === "/en" && (request.method === "GET" || request.method === "HEAD")) return observatoryResponse(request.method, "en");
       if (url.pathname === "/") return json({error: "method_not_allowed"}, 405, {allow: "GET, HEAD"});

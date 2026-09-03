@@ -5,18 +5,20 @@ import {dirname, resolve} from "node:path";
 import {createHash, randomUUID} from "node:crypto";
 import {SaiBridge} from "../../bridge/src/index.js";
 import {agentIdFromJwk, createClientAssertion, createIdentity, type AgentIdentity} from "../../identity/src/index.js";
-import {WORLD_RESOURCE_TILE_AXIS, type ActResult, type LegalAction, type Observation} from "../../kernel/src/index.js";
+import {WORLD_RESOURCE_TILE_AXIS, type ActResult, type AgentObservation as Observation, type LegalAction} from "../../kernel/src/index.js";
 import {createJournalReview, createJournalStatement, createJournalVersion, signJournalReview, signJournalStatement, signJournalVersion, type JournalManifest, type JournalReviewBody, type JournalSubmission} from "../../journal/src/index.js";
 import type {AgentMemoryInput} from "../../memory/src/index.js";
+import type {AgentSeasonInput, AgentSeasonState, SeasonManifest} from "../../season/src/index.js";
 
 export {SaiBridge, SaiBridge as ProofwildBridge} from "../../bridge/src/index.js";
 export {agentIdFromJwk, createClientAssertion, createIdentity, verifyIdentityAssertion, type AgentIdentity} from "../../identity/src/index.js";
-export type {ActInput, ActResult, LegalAction, Observation} from "../../kernel/src/index.js";
+export type {ActInput, ActResult, LegalAction, AgentObservation, AgentObservation as Observation} from "../../kernel/src/index.js";
 export type {LabsResearchReceipt} from "../../bridge/src/index.js";
 export type {LabsRegistryEntry, LabsRegistrySnapshot} from "../../labs/src/store.js";
 export {createJournalReview, createJournalStatement, createJournalVersion, signJournalReview, signJournalStatement, signJournalVersion, verifyJournalReview, verifyJournalStatement, verifyJournalVersionSignature} from "../../journal/src/index.js";
 export type {JournalManifest, JournalSubmission, JournalVersion, JournalSignedReview, JournalSignedStatement} from "../../journal/src/index.js";
 export type {AgentMemoryEntry, AgentMemoryInput, AgentMemoryMutationResult, AgentMemoryResult, AgentMemoryView} from "../../memory/src/index.js";
+export type {AgentSeasonInput, AgentSeasonState, AgentSeasonNotice, SeasonManifest} from "../../season/src/index.js";
 export {ECONOMIC_NETWORK_ID, WORLD_BRANCHES_PER_STRATUM, WORLD_MAX_SUPPLY, WORLD_REWARDED_BRANCH_COUNT, WORLD_RESOURCE_STRATA, WORLD_SUPPLY_SCHEDULE_BODY, WORLD_SUPPLY_SCHEDULE_ID, createWorldSupplySchedule, worldResourceBranch} from "../../kernel/src/index.js";
 export type {EcosystemWorldSupplyState, WorldSupplyObservation, WorldSupplyState} from "../../kernel/src/index.js";
 export {canonicalLabsSequence, createLabsResearchTask, createLabsWorldBranch, exactMeritFactor, executeLabsResearchTask, executeLabsWorldResearch, labsEnergy, labsSettlementChallengeBits, labsSymmetries, verifyLabsArtifact, verifyLabsClaim, verifyLabsResearchRecord, verifyLabsResearchTask, verifyLabsResult, verifyLabsWorldSubmission, REFERENCE_FORK_ID, REFERENCE_RULESET_ID, REFERENCE_SEARCH_METHOD_ARTIFACT, REFERENCE_SEARCH_METHOD_ARTIFACT_ID} from "../../labs/src/index.js";
@@ -179,6 +181,39 @@ export async function runMemoryAction(options: MemoryActionOptions): Promise<unk
     const input: AgentMemoryInput = {operation: options.action, ...(options.action === "list" ? {} : {request_id: `${identity.agentId}:${randomUUID()}`}), ...(options.memoryId ? {memory_id: options.memoryId} : {}), ...(options.content ? {content: options.content} : {})};
     return bridge.memory(input);
   } finally { await bridge.close(); }
+}
+
+export interface SeasonActionOptions {
+  action: "status" | "acknowledge" | "join" | "defer" | "decline";
+  nodeUrl?: string;
+  identityPath?: string;
+}
+
+export interface SeasonActionResult {
+  manifest: SeasonManifest;
+  state: AgentSeasonState;
+}
+
+export async function runSeasonAction(options: SeasonActionOptions): Promise<SeasonActionResult> {
+  const nodeUrl = (options.nodeUrl ?? DEFAULT_PROOFWILD_NODE_URL).replace(/\/$/, "");
+  const identity = await loadOrCreateIdentity(options.identityPath);
+  const bridge = new SaiBridge(nodeUrl, identity);
+  try {
+    await bridge.register();
+    await bridge.connect();
+    const observation = await bridge.observe({max_bytes: 65_536});
+    const notice = observation.season;
+    if (!notice?.manifest) throw new Error("当前节点没有返回可验证的赛季机器清单");
+    let input: AgentSeasonInput = {operation: "status"};
+    if (options.action === "acknowledge") input = {operation: "acknowledge", manifest_id: notice.manifest_id, request_id: `${identity.agentId}:${randomUUID()}`};
+    else if (options.action !== "status") {
+      const decision = options.action === "join" ? "joined" : options.action === "defer" ? "deferred" : "declined";
+      input = {operation: "participate", decision, manifest_id: notice.manifest_id, request_id: `${identity.agentId}:${randomUUID()}`};
+    }
+    return {manifest: notice.manifest, state: await bridge.season(input)};
+  } finally {
+    await bridge.close();
+  }
 }
 
 export interface ParticipateLabsOptions {

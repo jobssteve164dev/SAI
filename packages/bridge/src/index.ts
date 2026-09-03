@@ -1,11 +1,12 @@
 import {randomUUID} from "node:crypto";
 import {Client, StreamableHTTPClientTransport} from "@modelcontextprotocol/client";
 import {createClientAssertion, type AgentIdentity} from "../../identity/src/index.js";
-import {ECONOMIC_NETWORK_ID, syncWorldSupplyFromPeer, worldSupplyBlockId, type ActInput, type ActResult, type EconomicSettlementReceipt, type Observation, type WorldSupplyBlock, type WorldSupplyObservation} from "../../kernel/src/index.js";
+import {ECONOMIC_NETWORK_ID, syncWorldSupplyFromPeer, worldSupplyBlockId, type ActInput, type ActResult, type AgentObservation, type EconomicSettlementReceipt, type WorldSupplyBlock, type WorldSupplyObservation} from "../../kernel/src/index.js";
 import {verifyNodeDescriptor, type NodeDescriptor, type TransferCancellation, type TransferCredential, type TransferReceipt} from "../../federation/src/index.js";
 import {REFERENCE_FORK_ID, REFERENCE_RULESET_ID, createClaimBody, createLabsResult, executeLabsWorldResearch, signLabsClaim, verifyLabsResult, verifyLabsWorldSubmission, type LabsClaimType, type LabsFrontier, type LabsResult, type LabsRuleset, type LabsWorldBranch} from "../../labs/src/index.js";
 import {LabsRepository, MemoryLabsPersistence, syncLabsFromPeer, type LabsExchangeBundle, type LabsRegistryEntry, type LabsRegistrySnapshot} from "../../labs/src/store.js";
 import type {AgentMemoryInput, AgentMemoryResult} from "../../memory/src/index.js";
+import {verifySeasonManifest, type AgentSeasonInput, type AgentSeasonState, type SeasonManifest} from "../../season/src/index.js";
 
 async function expectJson<T>(response: Response): Promise<T> {
   const body = await response.json() as T & {error_description?: string};
@@ -16,8 +17,9 @@ async function expectJson<T>(response: Response): Promise<T> {
 export class SaiBridge {
   private client: Client | undefined;
   private token: string | undefined;
-  private lastObservation: Observation | undefined;
+  private lastObservation: AgentObservation | undefined;
   private lastResearchReceipt: LabsResearchReceipt | undefined;
+  private readonly seasonManifests = new Map<string, SeasonManifest>();
   constructor(readonly baseUrl: string, readonly identity: AgentIdentity) {}
 
   async register(): Promise<void> {
@@ -39,13 +41,27 @@ export class SaiBridge {
     this.client = client;
   }
 
-  async observe(input: {cursor?: string; max_bytes?: number} = {}): Promise<Observation> {
+  async observe(input: {cursor?: string; max_bytes?: number} = {}): Promise<AgentObservation> {
     const result = await this.requiredClient().callTool({name: "sai_observe", arguments: {...input, max_bytes: input.max_bytes ?? 65_536}});
     if (result.isError || !result.structuredContent) {
       const detail = result.content.find((item) => item.type === "text")?.text;
       throw new Error(`sai_observe 未返回结构化结果${detail ? `：${detail}` : ""}`);
     }
-    const observation = result.structuredContent as unknown as Observation;
+    const observation = result.structuredContent as unknown as AgentObservation;
+    if (!observation.season) throw new Error("sai_observe 缺少必需的当前赛季通知");
+    {
+      let manifest = this.seasonManifests.get(observation.season.manifest_id);
+      if (!manifest) {
+        const base = new URL(this.baseUrl);
+        const manifestUrl = new URL(observation.season.manifest_path, base);
+        if (manifestUrl.origin !== base.origin || !/^\/seasons\/v1\/manifests\/sha256%3A[0-9a-f]{64}$/.test(manifestUrl.pathname)) throw new Error("赛季清单地址无效");
+        manifest = await expectJson<SeasonManifest>(await fetch(manifestUrl, {headers: {accept: "application/json"}, redirect: "error"}));
+        verifySeasonManifest(manifest);
+        this.seasonManifests.set(manifest.manifest_id, manifest);
+      }
+      if (manifest.manifest_id !== observation.season.manifest_id || manifest.season_id !== observation.season.season_id || manifest.version !== observation.season.version || manifest.manifest_path !== observation.season.manifest_path) throw new Error("赛季观察与机器清单不一致");
+      observation.season.manifest = structuredClone(manifest);
+    }
     this.lastObservation = observation;
     return observation;
   }
@@ -108,6 +124,15 @@ export class SaiBridge {
     const result = await this.requiredClient().callTool({name: "sai_memory", arguments: {...input}});
     if (result.isError || !result.structuredContent) throw new Error("sai_memory 未返回结构化结果");
     return result.structuredContent as unknown as AgentMemoryResult;
+  }
+
+  async season(input: AgentSeasonInput): Promise<AgentSeasonState> {
+    const result = await this.requiredClient().callTool({name: "sai_season", arguments: {...input}});
+    if (result.isError || !result.structuredContent) {
+      const detail = result.content.find((item) => item.type === "text")?.text;
+      throw new Error(`sai_season 未返回结构化结果${detail ? `：${detail}` : ""}`);
+    }
+    return result.structuredContent as unknown as AgentSeasonState;
   }
 
   async activity(input: {cursor?: string; limit?: number} = {}): Promise<{protocol: "proofwild-agent-activity/1"; world_fork_id: string; events: import("../../kernel/src/index.js").ConformanceEvent[]; next_cursor: string | null}> {

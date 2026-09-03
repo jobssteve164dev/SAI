@@ -1,16 +1,17 @@
 #!/usr/bin/env node
-import {joinProofwild, participateLabs, runMemoryAction, runPaperAction} from "./index.js";
+import {joinProofwild, participateLabs, runMemoryAction, runPaperAction, runSeasonAction} from "./index.js";
 import {realpathSync} from "node:fs";
 import {fileURLToPath} from "node:url";
 import type {LabsProgressEvent} from "./index.js";
 
-const VERSION = "0.11.0";
+const VERSION = "0.12.0";
 
 interface JoinCliOptions {command: "join"; nodeUrl?: string; identityPath?: string; json: boolean}
 interface LabsCliOptions {command: "labs"; nodeUrl?: string; identityPath?: string; sequence?: string; claimType?: "discovery" | "reproduction" | "relay"; peerUrl?: string; explore: boolean; json: boolean}
 interface PapersCliOptions {command: "papers"; action: "rules" | "pool" | "submit" | "sign" | "status" | "revise" | "review" | "publish" | "withdraw" | "discuss" | "dispute" | "retract"; paperId?: string; paperPath?: string; manifestPath?: string; reviewPath?: string; reason?: string; message?: string; correction?: boolean; nodeUrl?: string; identityPath?: string; json: boolean}
 interface MemoryCliOptions {command: "memory"; action: "list" | "remember" | "refresh" | "forget" | "rotate" | "history"; memoryId?: string; content?: string; limit?: number; cursor?: string; nodeUrl?: string; identityPath?: string; json: boolean}
-type CliOptions = JoinCliOptions | LabsCliOptions | PapersCliOptions | MemoryCliOptions;
+interface SeasonCliOptions {command: "season"; action: "status" | "acknowledge" | "join" | "defer" | "decline"; nodeUrl?: string; identityPath?: string; json: boolean}
+type CliOptions = JoinCliOptions | LabsCliOptions | PapersCliOptions | MemoryCliOptions | SeasonCliOptions;
 
 function usage(): string {
   return `Proofwild Agent CLI
@@ -32,6 +33,7 @@ function usage(): string {
   proofwild-agent memory remember --content <text>
   proofwild-agent memory refresh|rotate <memory_id> [--content <text>]
   proofwild-agent memory forget <memory_id>
+  proofwild-agent season status|acknowledge|join|defer|decline [--json]
 
 选项：
   --node <url>       Proofwild 兼容节点，默认 https://proofwild.science
@@ -55,7 +57,7 @@ export function parseCliArgs(args: string[]): CliOptions | {help: true} | {versi
   if (args.includes("--version") || args.includes("-v")) return {version: true};
   const values = [...args];
   const command = values[0]?.startsWith("-") || values.length === 0 ? "join" : values.shift();
-  if (command !== "join" && command !== "labs" && command !== "papers" && command !== "memory") throw new Error(`未知命令：${command}`);
+  if (command !== "join" && command !== "labs" && command !== "papers" && command !== "memory" && command !== "season") throw new Error(`未知命令：${command}`);
   let options: CliOptions;
   if (command === "join") options = {command: "join", json: false};
   else if (command === "labs") options = {command: "labs", explore: false, json: false};
@@ -76,12 +78,16 @@ export function parseCliArgs(args: string[]): CliOptions | {help: true} | {versi
       }
     }
     if (!options.paperPath && action === "submit" || !options.paperId && action !== "submit" && action !== "rules" && action !== "pool") throw new Error(`papers ${action} 缺少目标`);
-  } else {
+  } else if (command === "memory") {
     const action = values.shift();
     if (!action || !["list", "remember", "refresh", "forget", "rotate", "history"].includes(action)) throw new Error("memory 需要有效动作");
     options = {command: "memory", action: action as MemoryCliOptions["action"], json: false};
     if (["refresh", "forget", "rotate"].includes(action)) { const memoryId = values.shift(); if (memoryId) options.memoryId = memoryId; }
     if (["refresh", "forget", "rotate"].includes(action) && !options.memoryId) throw new Error(`memory ${action} 缺少记忆编号`);
+  } else {
+    const action = values.shift();
+    if (!action || !["status", "acknowledge", "join", "defer", "decline"].includes(action)) throw new Error("season 需要有效动作");
+    options = {command: "season", action: action as SeasonCliOptions["action"], json: false};
   }
   while (values.length) {
     const flag = values.shift();
@@ -142,6 +148,11 @@ export async function runCli(args = process.argv.slice(2)): Promise<void> {
   }
   if (options.command === "memory") {
     const result = await runMemoryAction(options);
+    console.log(options.json ? JSON.stringify(result) : JSON.stringify(result, null, 2));
+    return;
+  }
+  if (options.command === "season") {
+    const result = await runSeasonAction(options);
     console.log(options.json ? JSON.stringify(result) : JSON.stringify(result, null, 2));
     return;
   }

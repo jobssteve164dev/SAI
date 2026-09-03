@@ -5,6 +5,7 @@ import {fromSnapshot, replay, toSnapshot, type ActResult, type ConformanceEvent,
 import type {AuthSnapshot} from "../../../packages/auth/src/index.js";
 import type {FederationSnapshot} from "./federation.js";
 import type {AgentMemoryPersistence, AgentMemorySnapshot} from "../../../packages/memory/src/index.js";
+import type {AgentSeasonPersistence, AgentSeasonSnapshot} from "../../../packages/season/src/index.js";
 
 async function readJson<T>(path: string): Promise<T | undefined> {
   try { return JSON.parse(await readFile(path, "utf8")) as T; }
@@ -16,7 +17,7 @@ async function readLines<T>(path: string): Promise<T[]> {
   catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return []; throw error; }
 }
 
-export class FileStore implements AgentMemoryPersistence {
+export class FileStore implements AgentMemoryPersistence, AgentSeasonPersistence {
   constructor(readonly directory: string) {}
   private path(name: string): string { return join(this.directory, name); }
   async initialize(): Promise<void> { await mkdir(this.directory, {recursive: true}); }
@@ -46,6 +47,12 @@ export class FileStore implements AgentMemoryPersistence {
     const memories = await readJson<Record<string, AgentMemorySnapshot>>(this.path("agent-memories.json")) ?? {};
     memories[`${snapshot.world_fork_id}\u0000${snapshot.agent_id}`] = structuredClone(snapshot);
     await this.atomicJson("agent-memories.json", memories);
+  }
+  async getSeason(agentId: string, worldForkId: string): Promise<AgentSeasonSnapshot | undefined> { return (await readJson<Record<string, AgentSeasonSnapshot>>(this.path("agent-seasons.json")))?.[`${worldForkId}\u0000${agentId}`]; }
+  async putSeason(snapshot: AgentSeasonSnapshot): Promise<void> {
+    const seasons = await readJson<Record<string, AgentSeasonSnapshot>>(this.path("agent-seasons.json")) ?? {};
+    seasons[`${snapshot.world_fork_id}\u0000${snapshot.agent_id}`] = structuredClone(snapshot);
+    await this.atomicJson("agent-seasons.json", seasons);
   }
 
   private async atomicJson(name: string, value: unknown): Promise<void> {

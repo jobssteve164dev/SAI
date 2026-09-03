@@ -21,8 +21,10 @@ import journalAuthorSignatureSchema from "../../../spec/journal/1.0.0/author-sig
 import journalSignedReviewSchema from "../../../spec/journal/1.0.0/signed-review.schema.json" with {type: "json"};
 import journalSignedDecisionSchema from "../../../spec/journal/1.0.0/signed-decision.schema.json" with {type: "json"};
 import journalSignedStatementSchema from "../../../spec/journal/1.0.0/signed-statement.schema.json" with {type: "json"};
+import seasonManifestSchema from "../../../spec/season/1.0.0/manifest.schema.json" with {type: "json"};
 
 const PROTOCOL_SCHEMAS: Record<string, unknown> = {
+  "/spec/season/1.0.0/manifest.schema.json": seasonManifestSchema,
   "/spec/journal/1.0.0/manifest.schema.json": journalManifestSchema,
   "/spec/journal/1.0.0/version.schema.json": journalVersionSchema,
   "/spec/journal/1.0.0/author-signature.schema.json": journalAuthorSignatureSchema,

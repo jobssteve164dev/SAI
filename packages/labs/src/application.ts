@@ -1,12 +1,13 @@
 import {REFERENCE_FORK_ID, type LabsResearchArtifact, type LabsResearchRecord, type LabsResearchTask, type LabsResult, type LabsSignedClaim} from "./index.js";
 import {LabsRepository} from "./store.js";
-import {ECONOMIC_NETWORK_ID, type ActInput, type ActResult, type Observation} from "../../kernel/src/index.js";
+import {ECONOMIC_NETWORK_ID, type ActInput, type ActResult, type AgentObservation} from "../../kernel/src/index.js";
 import type {SaiRegionApplication} from "../../mcp/src/index.js";
 
 export function createLabsAwareApplication(world: SaiRegionApplication, labs: LabsRepository): SaiRegionApplication {
   return {
-    async observe(agentId, input): Promise<Observation> { return world.observe(agentId, input); },
+    async observe(agentId, input): Promise<AgentObservation> { return world.observe(agentId, input); },
     async memory(agentId, input) { return world.memory(agentId, input); },
+    async season(agentId, input) { return world.season(agentId, input); },
     async activity(agentId, input) { return world.activity(agentId, input); },
     async act(agentId: string, input: ActInput): Promise<ActResult> {
       const args = input.arguments as {operation?: string; result?: LabsResult; result_id?: string; signed_claim?: LabsSignedClaim; claim_id?: string; economic_network_id?: string; research_task?: LabsResearchTask; task_id?: string; method_artifact?: LabsResearchArtifact; artifact_id?: string; research_record?: LabsResearchRecord; record_id?: string} | undefined;

@@ -3,7 +3,7 @@
   "$id": "https://sai.world/spec/0.1.0/observe-output.schema.json",
   "title": "SAI Observe Output",
   "type": "object",
-  "required": ["protocol", "observation_id", "world_fork_id", "region_id", "cursor", "self", "nearby", "legal_actions"],
+  "required": ["protocol", "observation_id", "world_fork_id", "region_id", "cursor", "self", "nearby", "season", "legal_actions"],
   "properties": {
     "protocol": {"const": "sai/0.1.0"},
     "observation_id": {"type": "string", "pattern": "^obs_[A-Za-z0-9_-]+$"},
@@ -97,6 +97,34 @@
         },
         "additionalProperties": false
       }
+    },
+    "season": {
+      "type": "object",
+      "required": ["protocol", "manifest_id", "season_id", "version", "status", "changed", "acknowledgement", "participation", "title", "summary", "manifest_path"],
+      "properties": {
+        "protocol": {"const": "proofwild-agent-season-notice/1"},
+        "manifest_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "season_id": {"type": "string", "pattern": "^season:[A-Za-z0-9._:-]{1,120}$"},
+        "version": {"type": "integer", "minimum": 1},
+        "status": {"const": "active"},
+        "changed": {"type": "boolean"},
+        "acknowledgement": {"enum": ["pending", "acknowledged"]},
+        "participation": {"enum": ["unanswered", "joined", "deferred", "declined"]},
+        "title": {
+          "type": "object",
+          "required": ["zh-CN", "en"],
+          "properties": {"zh-CN": {"type": "string", "minLength": 1}, "en": {"type": "string", "minLength": 1}},
+          "additionalProperties": false
+        },
+        "summary": {
+          "type": "object",
+          "required": ["zh-CN", "en"],
+          "properties": {"zh-CN": {"type": "string", "minLength": 1}, "en": {"type": "string", "minLength": 1}},
+          "additionalProperties": false
+        },
+        "manifest_path": {"type": "string", "pattern": "^/seasons/v1/manifests/sha256%3A[0-9a-f]{64}$"}
+      },
+      "additionalProperties": false
     },
     "memory": {
       "type": "object",

@@ -4,6 +4,7 @@ import {resolve} from "node:path";
 import {Ajv2020} from "ajv/dist/2020.js";
 import {describe, expect, it} from "vitest";
 import {buildObservation, createWorld, toSnapshot, transition} from "../../packages/kernel/src/index.js";
+import {CURRENT_SEASON_MANIFEST} from "../../packages/season/src/index.js";
 
 const specDirectory = resolve("spec/sai/0.1.0");
 const load = (name: string) => JSON.parse(readFileSync(resolve(specDirectory, `${name}.schema.json`), "utf8"));
@@ -17,6 +18,7 @@ const sharedSchemaPaths = [
   "spec/labs/6.0.0/research-record.schema.json",
   "spec/sai/0.5.0/world-supply-block.schema.json",
   "spec/sai/0.5.0/world-supply-state.schema.json",
+  "spec/season/1.0.0/manifest.schema.json",
 ];
 
 function conformanceAjv(): Ajv2020 {
@@ -36,6 +38,7 @@ describe("SAI 0.1.0 权威 schema", () => {
     const state = createWorld("schema", [{id: "agent:a", x: 1, y: 0, energy: 5, inventory: {}}]);
     state.resources["resource-plain"] = {id: "resource-plain", kind: "ore", x: 1, y: 0, initial_amount: 1, remaining: 1};
     const stored = buildObservation(state, "agent:a")!;
+    stored.observation.season = {protocol: "proofwild-agent-season-notice/1", manifest_id: CURRENT_SEASON_MANIFEST.manifest_id, season_id: CURRENT_SEASON_MANIFEST.season_id, version: CURRENT_SEASON_MANIFEST.version, status: "active", changed: true, acknowledgement: "pending", participation: "unanswered", title: CURRENT_SEASON_MANIFEST.title, summary: CURRENT_SEASON_MANIFEST.summary, manifest_path: CURRENT_SEASON_MANIFEST.manifest_path};
     expect(ajv.validate(load("observe-output"), stored.observation), ajv.errorsText()).toBe(true);
     const gather = Object.values(stored.commands).find((action) => action.type === "gather")!;
     const outcome = transition(state, "agent:a", "schema-1", gather);
@@ -45,5 +48,11 @@ describe("SAI 0.1.0 权威 schema", () => {
       expect(ajv.validate(load("event"), outcome.event), ajv.errorsText()).toBe(true);
       expect(ajv.validate(load("snapshot"), toSnapshot(outcome.state)), ajv.errorsText()).toBe(true);
     }
+  });
+
+  it("验证当前内容寻址赛季清单", () => {
+    const ajv = conformanceAjv();
+    const validate = ajv.getSchema("https://proofwild.science/spec/season/1.0.0/manifest.schema.json")!;
+    expect(validate(CURRENT_SEASON_MANIFEST), ajv.errorsText(validate.errors)).toBe(true);
   });
 });

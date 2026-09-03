@@ -12,6 +12,7 @@ const api = await import(entry.href);
 for (const name of ["ProofwildBridge", "SaiBridge", "createIdentity", "loadOrCreateIdentity", "joinProofwild", "participateLabs", "runPaperAction", "runMemoryAction", "createJournalVersion", "signJournalVersion", "signJournalReview", "signJournalStatement", "labsEnergy", "canonicalLabsSequence", "labsSettlementChallengeBits", "verifyLabsResult", "verifyLabsClaim", "verifyLabsWorldSubmission", "createLabsWorldBranch", "createLabsResearchTask", "executeLabsResearchTask", "executeLabsWorldResearch", "verifyLabsResearchTask", "verifyLabsResearchRecord", "REFERENCE_SEARCH_METHOD_ARTIFACT_ID", "worldResourceBranch", "ECONOMIC_NETWORK_ID", "WORLD_MAX_SUPPLY", "REFERENCE_RULESET_ID", "REFERENCE_FORK_ID"]) {
   if (!(name in api)) throw new Error(`发布入口缺少 ${name}`);
 }
+if (!("runSeasonAction" in api)) throw new Error("发布入口缺少 runSeasonAction");
 const binSource = await readFile(bin, "utf8");
 if (!binSource.startsWith("#!/usr/bin/env node")) throw new Error("CLI 缺少 Node shebang");
 const cliSource = await readFile(cli, "utf8");

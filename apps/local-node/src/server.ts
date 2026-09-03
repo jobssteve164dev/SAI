@@ -15,6 +15,7 @@ import {LABS_CONFORMANCE_VECTORS, handleWorldSupplyRequest} from "../../../packa
 import {handleJournalRequest} from "../../../packages/journal/src/http.js";
 import {JournalRepository} from "../../../packages/journal/src/index.js";
 import {FileJournalPersistence} from "./journal-store.js";
+import {seasonManifestResponse} from "../../../packages/season/src/index.js";
 
 function json(value: unknown, status = 200, headers: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(value), {status, headers: {"content-type": "application/json", ...headers}});
@@ -68,6 +69,8 @@ export async function startLocalNode(options: {dataDirectory: string; host?: str
         if (labsResponse) return labsResponse;
         const supplyResponse = await handleWorldSupplyRequest(request, region);
         if (supplyResponse) return supplyResponse;
+        const seasonMachineResponse = seasonManifestResponse(requestUrl.pathname, request.method);
+        if (seasonMachineResponse) return seasonMachineResponse;
         const origin = request.headers.get("origin");
         if (origin && origin !== url) return json({error: "invalid_origin"}, 403);
         if (requestUrl.pathname === "/" || requestUrl.pathname === "/health") return json({service: "Proofwild", version: "0.4.0", node_id: federation.keys.nodeId, region_id: options.regionId ?? "local", status: "ok"});

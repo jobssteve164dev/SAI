@@ -9,6 +9,7 @@ import {createIdentity} from "../../packages/identity/src/index.js";
 import {canonicalLabsSequence, createClaimBody, createLabsResult, executeLabsWorldResearch, labsContentId, labsEnergy, rulesetId, signLabsClaim, type LabsRuleset} from "../../packages/labs/src/index.js";
 import {syncLabsFromPeer} from "../../packages/labs/src/store.js";
 import {WORLD_MAX_SUPPLY, createWorldSupplyState, mergeWorldSupplyStates, syncWorldSupplyFromPeer, worldResourceBranch, worldSupplyActiveTip, worldSupplyObservation} from "../../packages/kernel/src/index.js";
+import {CURRENT_SEASON_MANIFEST} from "../../packages/season/src/index.js";
 
 const directories: string[] = [];
 const nodes: LocalNode[] = [];
@@ -213,6 +214,7 @@ describe("LABS direct exchange", () => {
       self: {agent_id: identity.agentId, x: 0, y: 0, energy: 10, inventory: {}},
       nearby: [],
       messages: [],
+      season: {protocol: "proofwild-agent-season-notice/1", manifest_id: CURRENT_SEASON_MANIFEST.manifest_id, season_id: CURRENT_SEASON_MANIFEST.season_id, version: CURRENT_SEASON_MANIFEST.version, status: "active", changed: true, acknowledgement: "pending", participation: "unanswered", title: CURRENT_SEASON_MANIFEST.title, summary: CURRENT_SEASON_MANIFEST.summary, manifest_path: CURRENT_SEASON_MANIFEST.manifest_path, manifest: CURRENT_SEASON_MANIFEST},
       legal_actions: [{action_id: "wait:isolated", type: "wait", arguments_schema: {type: "object", additionalProperties: false}}],
     });
     SaiBridge.prototype.close = async () => undefined;

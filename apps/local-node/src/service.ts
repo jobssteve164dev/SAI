@@ -1,7 +1,8 @@
 import {randomBytes, randomUUID} from "node:crypto";
-import {admitAgentAtRandomAddress, assertEcosystemSupplyImportAllowed, buildObservation, createWorld, expandWorldForPopulation, mergeWorldSupplyStates, reconcileWorldMines, reconcileWorldSupplyInventories, transition, validateState, type ActInput, type ActResult, type AgentState, type ConformanceEvent, type EcosystemWorldSupplyState, type Observation, type RegionState, type StoredObservation} from "../../../packages/kernel/src/index.js";
+import {admitAgentAtRandomAddress, assertEcosystemSupplyImportAllowed, buildObservation, createWorld, expandWorldForPopulation, mergeWorldSupplyStates, reconcileWorldMines, reconcileWorldSupplyInventories, transition, validateState, type ActInput, type ActResult, type AgentObservation, type AgentState, type ConformanceEvent, type EcosystemWorldSupplyState, type RegionState, type StoredObservation} from "../../../packages/kernel/src/index.js";
 import {FileStore} from "./store.js";
 import {AgentMemoryRepository, attachMemorySummary, type AgentMemoryInput, type AgentMemoryResult} from "../../../packages/memory/src/index.js";
+import {AgentSeasonRepository, type AgentSeasonInput, type AgentSeasonState} from "../../../packages/season/src/index.js";
 
 export class RegionService {
   private state: RegionState;
@@ -10,8 +11,9 @@ export class RegionService {
   private readonly lockedAgents = new Set<string>();
   private queue: Promise<void> = Promise.resolve();
   private readonly memories: AgentMemoryRepository;
+  private readonly seasons: AgentSeasonRepository;
 
-  private constructor(readonly store: FileStore, state: RegionState) { this.state = state; this.memories = new AgentMemoryRepository(store); }
+  private constructor(readonly store: FileStore, state: RegionState) { this.state = state; this.memories = new AgentMemoryRepository(store); this.seasons = new AgentSeasonRepository(store); }
 
   static async open(store: FileStore, regionId = "local"): Promise<RegionService> {
     const loaded = await store.loadState(createWorld(regionId, [], `fork:sai-local:${randomUUID()}`));
@@ -69,20 +71,26 @@ export class RegionService {
     });
   }
 
-  async observe(agentId: string, _input: {cursor?: string; max_bytes?: number} = {}): Promise<Observation> {
+  async observe(agentId: string, _input: {cursor?: string; max_bytes?: number} = {}): Promise<AgentObservation> {
     if (this.lockedAgents.has(agentId)) throw new Error("agent_in_transit");
     const stored = buildObservation(this.state, agentId);
     if (!stored) throw new Error("agent_not_found");
     const maxBytes = _input.max_bytes ?? 4096;
+    stored.observation.season = await this.seasons.notice(agentId, this.state.world_fork_id);
     attachMemorySummary(stored.observation, await this.memories.summary(agentId, this.state.world_fork_id), maxBytes);
     this.observations.set(stored.observation.observation_id, stored);
     await this.store.appendObservation(stored);
-    return stored.observation;
+    return stored.observation as AgentObservation;
   }
 
   async memory(agentId: string, input: AgentMemoryInput): Promise<AgentMemoryResult> {
     if (!this.state.agents[agentId]) throw new Error("agent_not_found");
     return this.serial(() => this.memories.perform(agentId, this.state.world_fork_id, this.state.logical_tick, input));
+  }
+
+  async season(agentId: string, input: AgentSeasonInput): Promise<AgentSeasonState> {
+    if (!this.state.agents[agentId]) throw new Error("agent_not_found");
+    return this.serial(() => this.seasons.perform(agentId, this.state.world_fork_id, input));
   }
 
   async activity(agentId: string, input: {cursor?: string; limit?: number} = {}): Promise<{protocol: "proofwild-agent-activity/1"; world_fork_id: string; events: ConformanceEvent[]; next_cursor: string | null}> {
