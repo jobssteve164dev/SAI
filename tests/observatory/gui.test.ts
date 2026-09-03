@@ -2,10 +2,14 @@ import {describe, expect, it} from "vitest";
 import {buildObservation, createWorld, stateHash, transition, type AgentState, type ConformanceEvent} from "../../packages/kernel/src/index.js";
 import {createObserverSnapshot, OBSERVATORY_SCRIPT, observatoryResponse, renderObservatoryPage} from "../../apps/cloudflare-worker/src/observatory.js";
 
-function expectSocialMetadata(page: string, canonical: string, locale: "zh_CN" | "en_US"): void {
+function expectSocialMetadata(page: string, canonical: string, locale: "zh_CN" | "en_US", title: string, description: string): void {
   expect(page).toContain(`<link rel="canonical" href="${canonical}">`);
   expect(page).toContain(`<meta property="og:url" content="${canonical}">`);
   expect(page).toContain(`<meta property="og:locale" content="${locale}">`);
+  expect(page).toContain(`<meta property="og:title" content="${title}">`);
+  expect(page).toContain(`<meta property="og:description" content="${description}">`);
+  expect(page).toContain(`<meta name="twitter:title" content="${title}">`);
+  expect(page).toContain(`<meta name="twitter:description" content="${description}">`);
   for (const field of ["og:title", "og:description", "og:image", "og:image:alt", "twitter:card", "twitter:image", "twitter:image:alt"]) expect(page).toContain(field);
 }
 
@@ -14,16 +18,20 @@ const agents: AgentState[] = [
   {id: "agent:ed25519-v1:alpha", x: 1, y: 1, energy: 4, inventory: {ore: 1}},
 ];
 
-describe("Proofwild 世界观察器", () => {
+describe("Proofwild 自主 Agent 开放世界首页", () => {
   it("根页面提供可访问的只读观察界面且最终内联脚本语法有效", async () => {
     const page = renderObservatoryPage();
-    expectSocialMetadata(page, "https://proofwild.science/", "zh_CN");
-    expect(page).toContain('<meta property="og:title" content="Proofwild 世界观察器">');
+    const title = "Proofwild · 自主 Agent 的开放世界";
+    const description = "进入 Proofwild，观察自主 Agent 在有限世界中的行动、研究、论文与共同历史。";
+    expectSocialMetadata(page, "https://proofwild.science/", "zh_CN", title, description);
+    expect(page).toContain('<meta property="og:title" content="Proofwild · 自主 Agent 的开放世界">');
+    expect(page).toContain(`<meta name="description" content="${description}">`);
     expect(page).toContain('<meta property="og:url" content="https://proofwild.science/">');
     expect(page).toContain('<meta name="twitter:card" content="summary_large_image">');
     const jsonLd = page.match(/<script type="application\/ld\+json">([^<]+)<\/script>/)?.[1];
     expect(JSON.parse(jsonLd!)).toEqual(expect.arrayContaining([expect.objectContaining({"@type": "WebSite", name: "Proofwild", url: "https://proofwild.science"})]));
-    expect(page).toContain("<title>Proofwild 世界观察器</title>");
+    expect(page).toContain("<title>Proofwild · 自主 Agent 的开放世界</title>");
+    expect(page).toContain('<span class="brand-context">自主 Agent 的开放世界</span>');
     expect(page).toContain('<link rel="icon" href="/favicon.svg?v=20260828-proofwild-1" type="image/svg+xml" sizes="any">');
     expect(page).toContain('class="brand-mark"');
     expect(page).toContain('id="world-map"');
@@ -63,10 +71,15 @@ describe("Proofwild 世界观察器", () => {
     expect(await observatoryResponse("HEAD").text()).toBe("");
   });
 
-  it("英文观察器翻译静态与运行时界面，并限制扩容地图的渲染网格", () => {
+  it("英文首页翻译静态与运行时界面，并限制扩容地图的渲染网格", () => {
     const page = renderObservatoryPage("en");
-    expectSocialMetadata(page, "https://proofwild.science/en", "en_US");
+    const title = "Proofwild · An Open World for Autonomous Agents";
+    const description = "Enter Proofwild to observe autonomous Agents acting, researching, publishing, and building a shared history in a finite world.";
+    expectSocialMetadata(page, "https://proofwild.science/en", "en_US", title, description);
     expect(page).toContain('<html lang="en">');
+    expect(page).toContain(`<title>${title}</title>`);
+    expect(page).toContain(`<meta name="description" content="${description}">`);
+    expect(page).toContain('<span class="brand-context">An Open World for Autonomous Agents</span>');
     expect(page).toContain("A finite world.<br>Every unit matters.");
     expect(page).toContain("Local fork overview");
     expect(page).toContain("LABS research and ecosystem supply");

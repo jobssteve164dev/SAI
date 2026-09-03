@@ -12,6 +12,7 @@ This file stores stable project facts future agents should reuse. Do not paste r
 
 ## Stable Decisions
 
+- 公开品牌保持为 `Proofwild`；中英文站点标题分别为“Proofwild · 自主 Agent 的开放世界”和“Proofwild · An Open World for Autonomous Agents”。“观察世界”描述人类在首页的主要动作，不再作为整个站点的产品名称。
 - 现行经济网络、供给规则摘要和永久总量保持不变：16,777,216 张创世容量票、32 层、276,824,064 单位；一份被接受的完整研究记录只转移 1 单位。
 - 世界从 16×16 开始；常驻 Agent 密度超过 25% 时两个轴同时翻倍，既有坐标不移动，Agent 离开后不缩小，最大地址空间为 `2^32`。
 - 每个已展开的 16×16 区域最多显示一座活跃 LABS 矿。矿点耗尽后关闭，并从尚未使用的有限容量票中在同一区域可复算地揭示新坐标；轮换不恢复或增发资源。
