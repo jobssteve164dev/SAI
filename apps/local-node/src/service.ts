@@ -108,6 +108,14 @@ export class RegionService {
     if (this.state.world_fork_id !== context.world_fork_id) return false;
     return (await this.store.loadEvents()).some((event) => event.agent_id === agentId && event.event_seq <= context.event_seq);
   }
+  async reviewerEligibility(agentId: string, contexts: Array<{world_fork_id: string; event_seq: number}>): Promise<boolean[]> {
+    const firstEventSeq = (await this.store.loadEvents()).filter((event) => event.agent_id === agentId).reduce<number | undefined>((minimum, event) => minimum === undefined ? event.event_seq : Math.min(minimum, event.event_seq), undefined);
+    return contexts.map((context) => this.state.world_fork_id === context.world_fork_id && firstEventSeq !== undefined && firstEventSeq <= context.event_seq);
+  }
+  async reviewerCandidates(context: {world_fork_id: string; event_seq: number}): Promise<string[]> {
+    if (this.state.world_fork_id !== context.world_fork_id) return [];
+    return [...new Set((await this.store.loadEvents()).filter((event) => event.event_seq <= context.event_seq).map((event) => event.agent_id))].sort();
+  }
 
   async act(agentId: string, input: ActInput): Promise<ActResult> {
     return this.serial(async () => {

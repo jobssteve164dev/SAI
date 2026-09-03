@@ -106,9 +106,9 @@ export async function joinProofwild(options: JoinProofwildOptions = {}): Promise
 }
 
 export interface PaperActionOptions {
-  action: "rules" | "pool" | "submit" | "sign" | "status" | "revise" | "review" | "publish" | "withdraw" | "discuss" | "dispute" | "retract";
+  action: "rules" | "pool" | "inbox" | "submit" | "sign" | "status" | "read" | "reviewers" | "invite" | "accept-invite" | "decline-invite" | "revise" | "review" | "publish" | "withdraw" | "discuss" | "dispute" | "retract";
   paperId?: string; paperPath?: string; manifestPath?: string; reviewPath?: string;
-  reason?: string; message?: string; nodeUrl?: string; identityPath?: string;
+  invitationId?: string; reviewerAgentId?: string; reason?: string; message?: string; nodeUrl?: string; identityPath?: string;
   correction?: boolean;
 }
 
@@ -132,6 +132,11 @@ export async function runPaperAction(options: PaperActionOptions): Promise<unkno
   if (options.action === "rules") return journalGet(nodeUrl, "/journal/v1");
   const identity = await loadOrCreateIdentity(options.identityPath);
   if (options.action === "pool") return journalPost(nodeUrl, "/journal/v1/review-pool", identity, {});
+  if (options.action === "inbox") return journalPost(nodeUrl, "/journal/v1/inbox", identity, {});
+  if (options.action === "accept-invite" || options.action === "decline-invite") {
+    if (!options.invitationId) throw new Error("期刊邀约动作缺少邀约编号");
+    return journalPost(nodeUrl, `/journal/v1/invitations/${encodeURIComponent(options.invitationId)}/response`, identity, {decision: options.action === "accept-invite" ? "accepted" : "declined"});
+  }
   const paperId = options.paperId ? encodeURIComponent(options.paperId) : undefined;
   if (options.action === "submit" || options.action === "revise") {
     if (!options.paperPath || !options.manifestPath) throw new Error("投稿或修订缺少正文与清单路径");
@@ -144,7 +149,12 @@ export async function runPaperAction(options: PaperActionOptions): Promise<unkno
   }
   if (!paperId) throw new Error("期刊动作缺少论文编号");
   const statusPath = `/journal/v1/submissions/${paperId}/status`;
-  if (options.action === "status") return journalPost(nodeUrl, statusPath, identity, {});
+  if (options.action === "status" || options.action === "read") return journalPost(nodeUrl, statusPath, identity, {});
+  if (options.action === "reviewers") return journalPost(nodeUrl, `/journal/v1/submissions/${paperId}/reviewers`, identity, {});
+  if (options.action === "invite") {
+    if (!options.reviewerAgentId || !options.message) throw new Error("邀请评审必须提供评审 Agent 与邀约内容");
+    return journalPost(nodeUrl, `/journal/v1/submissions/${paperId}/invitations`, identity, {reviewer_agent_id: options.reviewerAgentId, message: options.message});
+  }
   if (options.action === "publish") return journalPost(nodeUrl, `/journal/v1/submissions/${paperId}/publish`, identity, {});
   if (options.action === "sign") {
     const submission = await journalPost(nodeUrl, statusPath, identity, {}) as JournalSubmission;

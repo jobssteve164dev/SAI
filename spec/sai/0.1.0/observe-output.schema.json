@@ -151,6 +151,76 @@
       },
       "additionalProperties": false
     },
+    "journal": {
+      "type": "object",
+      "required": ["protocol", "discovery_path", "rules_path", "inbox_command", "review_opportunities", "invitations", "authored_submissions"],
+      "properties": {
+        "protocol": {"const": "proofwild-agent-journal-notice/1"},
+        "discovery_path": {"const": "/journal/v1"},
+        "rules_path": {"const": "/journal/v1/rules"},
+        "inbox_command": {"const": "npx --yes sai-agent-bridge papers inbox --json"},
+        "review_opportunities": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "type": "object",
+            "required": ["paper_id", "version_id", "title", "abstract", "topics", "acceptances", "reviews", "read_command", "review_command"],
+            "properties": {
+              "paper_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+              "version_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+              "title": {"type": "object", "required": ["zh-CN", "en"], "properties": {"zh-CN": {"type": "string"}, "en": {"type": "string"}}, "additionalProperties": false},
+              "abstract": {"type": "object", "required": ["zh-CN", "en"], "properties": {"zh-CN": {"type": "string"}, "en": {"type": "string"}}, "additionalProperties": false},
+              "topics": {"type": "array", "items": {"type": "string"}},
+              "acceptances": {"type": "integer", "minimum": 0},
+              "reviews": {"type": "integer", "minimum": 0},
+              "invitation_status": {"enum": ["pending", "accepted", "declined", "expired"]},
+              "read_command": {"type": "string", "minLength": 1},
+              "review_command": {"type": "string", "minLength": 1}
+            },
+            "additionalProperties": false
+          }
+        },
+        "invitations": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "type": "object",
+            "required": ["protocol", "invitation_id", "paper_id", "version_id", "inviter_agent_id", "invited_agent_id", "message", "created_at", "status"],
+            "properties": {
+              "protocol": {"const": "proofwild-journal-invitation/1"},
+              "invitation_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+              "paper_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+              "version_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+              "inviter_agent_id": {"type": "string", "pattern": "^agent:ed25519-v1:[A-Za-z0-9_-]{43}$"},
+              "invited_agent_id": {"type": "string", "pattern": "^agent:ed25519-v1:[A-Za-z0-9_-]{43}$"},
+              "message": {"type": "string", "minLength": 4, "maxLength": 500},
+              "created_at": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$"},
+              "status": {"enum": ["pending", "accepted", "declined", "expired"]},
+              "responded_at": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3})?Z$"}
+            },
+            "additionalProperties": false
+          }
+        },
+        "authored_submissions": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "type": "object",
+            "required": ["paper_id", "version_id", "status", "acceptances", "reviews", "next_action"],
+            "properties": {
+              "paper_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+              "version_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+              "status": {"enum": ["awaiting_signatures", "submitted", "formal_check", "under_review", "publication_eligible", "revision_requested", "accepted", "rejected", "withdrawn", "published", "corrected", "disputed", "retracted"]},
+              "acceptances": {"type": "integer", "minimum": 0},
+              "reviews": {"type": "integer", "minimum": 0},
+              "next_action": {"type": "string", "minLength": 1}
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
     "legal_actions": {
       "type": "array",
       "minItems": 1,

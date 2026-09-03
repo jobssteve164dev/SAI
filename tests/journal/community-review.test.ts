@@ -17,6 +17,8 @@ describe("Agent 社会公共审稿", () => {
     } as never);
     const created = createJournalVersion(manuscript([author, coauthor], "资格截止点"));
     let paper = await repository.submit(created, [signJournalVersion(created.version_id, author)]);
+    expect((await repository.reviewInboxFor(author.agentId)).authored_submissions[0]?.next_action).toContain("papers status");
+    expect((await repository.reviewInboxFor(coauthor.agentId)).authored_submissions[0]?.next_action).toContain("papers sign");
     eventSeq = 20;
     paper = await repository.addAuthorSignature(paper.paper_id, signJournalVersion(created.version_id, coauthor));
     expect(paper.review_contexts?.[created.version_id]?.event_seq).toBe(10);
@@ -46,6 +48,101 @@ describe("Agent 社会公共审稿", () => {
     expect(current.status).toBe("publication_eligible");
     await expect(repository.publish(submitted.paper_id, reviewers[0]!.agentId)).rejects.toThrow("通讯 Agent");
     expect((await repository.publish(submitted.paper_id, author.agentId, "2026-09-03T15:00:00.000Z")).status).toBe("published");
+  });
+
+  it("作者能发现合格评审并发出不计票的版本邀约，受邀者可以回应和读取收件箱", async () => {
+    const author = await createIdentity();
+    const reviewer = await createIdentity();
+    const ineligible = await createIdentity();
+    const repository = new JournalRepository(new MemoryJournalPersistence(), {
+      currentContext: async () => ({world_fork_id: "fork:test:invitations", event_seq: 40}),
+      reviewerEligible: async (agentId: string) => agentId === reviewer.agentId,
+      reviewerCandidates: async () => [reviewer.agentId],
+    });
+    const created = createJournalVersion(manuscript([author], "评审邀约"));
+    let paper = await repository.submit(created, [signJournalVersion(created.version_id, author)]);
+
+    expect(await repository.reviewerCandidatesFor(paper.paper_id, author.agentId)).toEqual([{agent_id: reviewer.agentId, invited: false, reviewed: false}]);
+    await expect(repository.inviteReviewer(paper.paper_id, author.agentId, ineligible.agentId, "请复核实验")).rejects.toThrow("不具备当前版本的审稿资格");
+    const invitation = await repository.inviteReviewer(paper.paper_id, author.agentId, reviewer.agentId, "请独立复核实验与证据");
+    expect(invitation).toMatchObject({paper_id: paper.paper_id, version_id: created.version_id, inviter_agent_id: author.agentId, invited_agent_id: reviewer.agentId, status: "pending"});
+    expect((await repository.reviewInboxFor(reviewer.agentId)).invitations).toEqual([expect.objectContaining({invitation_id: invitation.invitation_id, status: "pending"})]);
+    expect((await repository.reviewInboxFor(reviewer.agentId)).review_opportunities).toEqual([expect.objectContaining({paper_id: paper.paper_id, read_command: `npx --yes sai-agent-bridge papers read ${paper.paper_id} --json`})]);
+
+    await repository.respondToInvitation(invitation.invitation_id, reviewer.agentId, "accepted");
+    expect((await repository.reviewInboxFor(reviewer.agentId)).invitations[0]).toMatchObject({status: "accepted"});
+    paper = await repository.addReview(paper.paper_id, await reviewFor(paper.paper_id, created.version_id, reviewer));
+    expect(paper.status).toBe("under_review");
+    expect(paper.accept_review_ids).toHaveLength(1);
+  });
+
+  it("已经完成当前版本评审的 Agent 不再接受无效邀约", async () => {
+    const author = await createIdentity();
+    const reviewer = await createIdentity();
+    const repository = new JournalRepository(new MemoryJournalPersistence(), {
+      currentContext: async () => ({world_fork_id: "fork:test:reviewed-invitation", event_seq: 40}),
+      reviewerEligible: async (agentId: string) => agentId === reviewer.agentId,
+      reviewerCandidates: async () => [reviewer.agentId],
+    });
+    const created = createJournalVersion(manuscript([author], "已审稿邀约"));
+    const paper = await repository.submit(created, [signJournalVersion(created.version_id, author)]);
+    await repository.addReview(paper.paper_id, await reviewFor(paper.paper_id, created.version_id, reviewer));
+
+    expect(await repository.reviewerCandidatesFor(paper.paper_id, author.agentId)).toEqual([{agent_id: reviewer.agentId, invited: false, reviewed: true}]);
+    await expect(repository.inviteReviewer(paper.paper_id, author.agentId, reviewer.agentId, "请再次评审当前版本")).rejects.toThrow("已经完成当前版本评审");
+  });
+
+  it("待处理邀约不会被较新的已回应历史挤出 Agent 收件箱", async () => {
+    const author = await createIdentity();
+    const reviewer = await createIdentity();
+    const repository = new JournalRepository(new MemoryJournalPersistence(), {
+      currentContext: async () => ({world_fork_id: "fork:test:invitation-delivery", event_seq: 40}),
+      reviewerEligible: async (agentId: string) => agentId === reviewer.agentId,
+    });
+    let oldestPendingId = "";
+    for (let index = 0; index < 21; index += 1) {
+      const created = createJournalVersion(manuscript([author], `邀约投递 ${index}`));
+      const paper = await repository.submit(created, [signJournalVersion(created.version_id, author)]);
+      const invitation = await repository.inviteReviewer(paper.paper_id, author.agentId, reviewer.agentId, "请独立复核当前版本", `2026-09-03T12:00:${String(index).padStart(2, "0")}.000Z`);
+      if (index === 0) oldestPendingId = invitation.invitation_id;
+      else await repository.respondToInvitation(invitation.invitation_id, reviewer.agentId, "declined", `2026-09-03T13:00:${String(index).padStart(2, "0")}.000Z`);
+    }
+
+    expect((await repository.reviewInboxFor(reviewer.agentId)).invitations).toContainEqual(expect.objectContaining({invitation_id: oldestPendingId, status: "pending"}));
+  });
+
+  it("一次收件箱读取批量判断全部稿件资格，不逐稿重复扫描世界历史", async () => {
+    const author = await createIdentity();
+    const reviewer = await createIdentity();
+    let bulkCalls = 0;
+    const repository = new JournalRepository(new MemoryJournalPersistence(), {
+      currentContext: async () => ({world_fork_id: "fork:test:bulk-eligibility", event_seq: 40}),
+      reviewerEligible: async () => { throw new Error("不应逐稿检查资格"); },
+      reviewerEligibility: async (agentId: string, contexts: Array<{world_fork_id: string; event_seq: number}>) => {
+        bulkCalls += 1;
+        expect(agentId).toBe(reviewer.agentId);
+        return contexts.map(() => true);
+      },
+    });
+    for (let index = 0; index < 2; index += 1) {
+      const created = createJournalVersion(manuscript([author], `批量资格 ${index}`));
+      await repository.submit(created, [signJournalVersion(created.version_id, author)]);
+    }
+
+    expect((await repository.reviewInboxFor(reviewer.agentId)).review_opportunities).toHaveLength(2);
+    expect(bulkCalls).toBe(1);
+  });
+
+  it("没有在审稿件时不会读取世界行动历史", async () => {
+    let bulkCalls = 0;
+    const repository = new JournalRepository(new MemoryJournalPersistence(), {
+      currentContext: async () => ({world_fork_id: "fork:test:empty-inbox", event_seq: 0}),
+      reviewerEligible: async () => false,
+      reviewerEligibility: async () => { bulkCalls += 1; return []; },
+    });
+
+    expect((await repository.reviewInboxFor((await createIdentity()).agentId)).review_opportunities).toEqual([]);
+    expect(bulkCalls).toBe(0);
   });
 
   it("审稿讨论公开给合格 Agent，刊后争议立即标记且五份独立撤稿意见才撤稿", async () => {

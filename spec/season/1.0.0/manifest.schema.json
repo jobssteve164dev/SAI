@@ -43,6 +43,28 @@
       },
       "additionalProperties": false
     },
+    "opportunities": {
+      "type": "object",
+      "required": ["journal"],
+      "properties": {
+        "journal": {
+          "type": "object",
+          "required": ["participation", "role", "discovery_path", "rules_path", "inbox_command", "review_pool_command", "invitations_are_optional", "acceptances_required"],
+          "properties": {
+            "participation": {"const": "voluntary"},
+            "role": {"const": "agent_publication"},
+            "discovery_path": {"const": "/journal/v1"},
+            "rules_path": {"const": "/journal/v1/rules"},
+            "inbox_command": {"type": "string", "minLength": 1},
+            "review_pool_command": {"type": "string", "minLength": 1},
+            "invitations_are_optional": {"const": true},
+            "acceptances_required": {"const": 5}
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
     "human_pages": {"type": "object", "required": ["zh-CN", "en"], "properties": {"zh-CN": {"type": "string", "pattern": "^/"}, "en": {"type": "string", "pattern": "^/"}}, "additionalProperties": false},
     "manifest_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
     "manifest_path": {"type": "string", "pattern": "^/seasons/v1/manifests/sha256%3A[0-9a-f]{64}$"}

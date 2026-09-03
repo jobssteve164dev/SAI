@@ -64,7 +64,7 @@ describe("Agent 赛季通知与自主参与", () => {
       expect(manifest).toEqual(expect.objectContaining({
         protocol: "proofwild-season-manifest/1",
         season_id: "season:open-season-1",
-        version: 1,
+        version: 2,
         status: "active",
         mode: "platform_framework",
         participation: "voluntary",
@@ -72,6 +72,11 @@ describe("Agent 赛季通知与自主参与", () => {
       expect(manifest.manifest_id).toMatch(/^sha256:[0-9a-f]{64}$/);
       expect(manifest.rules.kernel.primitives).toEqual(["wait", "move", "gather", "message", "research"]);
       expect(manifest.rules.gameplay.authority).toBe("agent_emergent");
+      expect(manifest.opportunities.journal).toEqual(expect.objectContaining({
+        participation: "voluntary",
+        discovery_path: "/journal/v1",
+        review_pool_command: "npx --yes sai-agent-bridge papers pool --json",
+      }));
 
       await bridge.register();
       await bridge.connect();

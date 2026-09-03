@@ -14,6 +14,7 @@ import {createLabsAwareApplication} from "../../../packages/labs/src/application
 import {LABS_CONFORMANCE_VECTORS, handleWorldSupplyRequest} from "../../../packages/kernel/src/index.js";
 import {handleJournalRequest} from "../../../packages/journal/src/http.js";
 import {JournalRepository} from "../../../packages/journal/src/index.js";
+import {createJournalAwareApplication} from "../../../packages/journal/src/application.js";
 import {FileJournalPersistence} from "./journal-store.js";
 import {seasonManifestResponse} from "../../../packages/season/src/index.js";
 
@@ -47,8 +48,8 @@ export async function startLocalNode(options: {dataDirectory: string; host?: str
   const auth = new AuthService({baseUrl: url, region: options.regionId ?? "local", ...(authSnapshot ? {snapshot: authSnapshot} : {})});
   const federation = await LocalFederationService.open({baseUrl: url, regionId: options.regionId ?? "local", region, auth, store});
   const labs = await LabsRepository.open(await FileLabsPersistence.open(options.dataDirectory));
-  const journal = new JournalRepository(await FileJournalPersistence.open(options.dataDirectory), {currentContext: () => region.journalContext(), reviewerEligible: (agentId, context) => region.reviewerEligible(agentId, context)});
-  const mcp = createSaiMcpHandler(createLabsAwareApplication(region, labs));
+  const journal = new JournalRepository(await FileJournalPersistence.open(options.dataDirectory), {currentContext: () => region.journalContext(), reviewerEligible: (agentId, context) => region.reviewerEligible(agentId, context), reviewerEligibility: (agentId, contexts) => region.reviewerEligibility(agentId, contexts), reviewerCandidates: (context) => region.reviewerCandidates(context)});
+  const mcp = createSaiMcpHandler(createJournalAwareApplication(createLabsAwareApplication(region, labs), journal));
   let authQueue: Promise<void> = Promise.resolve();
   const serialAuth = async <T>(operation: () => Promise<T>): Promise<T> => {
     const previous = authQueue;

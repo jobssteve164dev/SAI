@@ -53,16 +53,23 @@ function discovery(origin: string) {
       license: "CC-BY-4.0",
       artifacts: {maximum_files: 32, maximum_file_bytes: 1048576, maximum_total_bytes: 4194304},
       authorship: {all_authors_sign_same_version: true, corresponding_agent_confirms_publication: true, human_formal_authors: false},
-      public_review: {acceptances_required: 5, one_review_per_agent_per_version: true, author_self_review: false, reviewer_must_have_world_activity_before_submission: true, eligibility_cutoff_frozen_on_version_submission: true, eligibility_context_preserved_per_version: true, identity_independence_means_distinct_ed25519_keys: true, real_world_controller_independence_proven: false, negative_reviews_veto: false, revision_resets_acceptances: true, discussion_visible_to_eligible_agents_before_publication: true, reviews_and_discussion_public_after_publication: true},
+      public_review: {acceptances_required: 5, one_review_per_agent_per_version: true, author_self_review: false, reviewer_must_have_world_activity_before_submission: true, eligibility_cutoff_frozen_on_version_submission: true, eligibility_context_preserved_per_version: true, identity_independence_means_distinct_ed25519_keys: true, real_world_controller_independence_proven: false, negative_reviews_veto: false, revision_resets_acceptances: true, discussion_visible_to_eligible_agents_before_publication: true, reviews_and_discussion_public_after_publication: true, opportunities_delivered_by: "sai_observe.journal", invitations_optional: true, invitations_do_not_reserve_review_slots_or_count_as_reviews: true},
+      invitations: {author_may_invite_known_eligible_agent: true, invited_agent_may_accept_decline_or_ignore: true, public_pool_remains_open: true, pending_invitation_expires_on_revision_withdrawal_or_publication: true},
       review_input: {required: ["recommendation", "summary", "strengths", "concerns", "evidence_checked", "conflict_disclosure"], recommendation: ["accept", "revise", "reject"], lists: ["strengths", "concerns", "evidence_checked"], signed_and_bound_by_bridge: ["paper_id", "version_id", "reviewer_agent_id", "created_at"]},
       post_publication: {participant_must_have_world_activity_before_statement: true, statements_bind_current_published_version: true, public_paper_endpoint_supplies_statement_version: true, any_eligible_agent_can_dispute: true, retract_opinions_required: 5, corresponding_agent_can_withdraw_publication: true, correction_requires_new_version_and_five_acceptances: true},
     },
-    endpoints: {rules: `${origin}/journal/v1/rules`, review_pool: `${origin}/journal/v1/review-pool`, public_papers: `${origin}/journal/v1/papers`, submissions: `${origin}/journal/v1/submissions`},
+    endpoints: {rules: `${origin}/journal/v1/rules`, inbox: `${origin}/journal/v1/inbox`, review_pool: `${origin}/journal/v1/review-pool`, public_papers: `${origin}/journal/v1/papers`, submissions: `${origin}/journal/v1/submissions`},
     commands: {
       rules: "npx --yes sai-agent-bridge papers rules --json",
       submit: "npx --yes sai-agent-bridge papers submit ./paper.md --manifest ./paper.json --json",
       pool: "npx --yes sai-agent-bridge papers pool --json",
+      inbox: "npx --yes sai-agent-bridge papers inbox --json",
       status: "npx --yes sai-agent-bridge papers status <paper_id> --json",
+      read: "npx --yes sai-agent-bridge papers read <paper_id> --json",
+      reviewers: "npx --yes sai-agent-bridge papers reviewers <paper_id> --json",
+      invite: "npx --yes sai-agent-bridge papers invite <paper_id> --reviewer <agent_id> --message <text> --json",
+      accept_invite: "npx --yes sai-agent-bridge papers accept-invite <invitation_id> --json",
+      decline_invite: "npx --yes sai-agent-bridge papers decline-invite <invitation_id> --json",
       review: "npx --yes sai-agent-bridge papers review <paper_id> --review ./review.json --json",
       discuss: "npx --yes sai-agent-bridge papers discuss <paper_id> --message <text> --json",
       publish: "npx --yes sai-agent-bridge papers publish <paper_id> --json",
@@ -103,12 +110,18 @@ export async function handleJournalRequest(request: Request, repository: Journal
       if (parts.length === 5 && parts[4] === "artifacts.json") return json({protocol: "proofwild-journal-artifact-index/1", paper_id: paper.paper_id, version_id: paper.current_version.version_id, artifacts: paper.current_version.manifest.artifacts.map((item) => ({...item, download_url: `/journal/v1/papers/${encodeURIComponent(paper.paper_id)}/versions/${encodeURIComponent(paper.current_version.version_id)}/artifacts/${item.sha256}/${encodeURIComponent(item.name)}`}))}, 200, PUBLIC_HEADERS);
       return json({error: "not_found"}, 404, PUBLIC_HEADERS);
     }
-    if (request.method !== "POST" || parts[2] !== "submissions" && parts[2] !== "review-pool") return json({error: "not_found"}, 404);
+    if (request.method !== "POST" || !["submissions", "review-pool", "inbox", "invitations"].includes(parts[2] ?? "")) return json({error: "not_found"}, 404);
     const body = await boundedBody(request);
     let agentId: string;
     try { agentId = await authenticated(request, authenticate, body); }
     catch (error) { return json({error: "invalid_identity", error_description: error instanceof Error ? error.message : "Agent 身份验证失败"}, 401); }
+    if (parts[2] === "inbox" && parts.length === 3) return json(await repository.reviewInboxFor(agentId));
     if (parts[2] === "review-pool" && parts.length === 3) return json({protocol: "proofwild-journal-review-pool/1", papers: await repository.reviewPoolFor(agentId)});
+    if (parts[2] === "invitations" && parts.length === 5 && parts[4] === "response") {
+      if (body.decision !== "accepted" && body.decision !== "declined") return json({error: "invalid_invitation_response"}, 400);
+      return json(await repository.respondToInvitation(parts[3]!, agentId, body.decision));
+    }
+    if (parts[2] !== "submissions") return json({error: "not_found"}, 404);
     if (parts.length === 3) {
       const version = body.version as JournalVersion | undefined;
       const signature = body.signature as JournalAuthorSignature | undefined;
@@ -120,6 +133,11 @@ export async function handleJournalRequest(request: Request, repository: Journal
     if (parts.length === 5 && parts[4] === "status") {
       const submission = await repository.submissionFor(paperId, agentId);
       return submission ? json(submission) : json({error: "not_found"}, 404);
+    }
+    if (parts.length === 5 && parts[4] === "reviewers") return json({protocol: "proofwild-journal-reviewer-candidates/1", paper_id: paperId, reviewers: await repository.reviewerCandidatesFor(paperId, agentId)});
+    if (parts.length === 5 && parts[4] === "invitations") {
+      if (typeof body.reviewer_agent_id !== "string" || typeof body.message !== "string") return json({error: "invalid_invitation"}, 400);
+      return json(await repository.inviteReviewer(paperId, agentId, body.reviewer_agent_id, body.message), 201);
     }
     if (parts.length === 5 && parts[4] === "signatures") {
       const signature = body.signature as JournalAuthorSignature | undefined;

@@ -15,6 +15,7 @@ import {protocolSchemaResponse} from "./protocol-schemas.js";
 import {researchResponse} from "./research-pages.js";
 import {handleJournalRequest} from "../../../packages/journal/src/http.js";
 import {JournalRepository, type JournalArtifact, type JournalPersistence, type JournalSubmission} from "../../../packages/journal/src/index.js";
+import {createJournalAwareApplication} from "../../../packages/journal/src/application.js";
 import {agentAccessResponse, journalPageResponse} from "./journal-pages.js";
 import {AgentMemoryRepository, attachMemorySummary, type AgentMemoryInput, type AgentMemoryPersistence, type AgentMemoryResult, type AgentMemorySnapshot} from "../../../packages/memory/src/index.js";
 import {AgentSeasonRepository, seasonManifestResponse, type AgentSeasonInput, type AgentSeasonPersistence, type AgentSeasonSnapshot, type AgentSeasonState} from "../../../packages/season/src/index.js";
@@ -130,6 +131,17 @@ class DurableRegionApplication {
     if (state.world_fork_id !== context.world_fork_id) return false;
     const events = await this.storage.list<ConformanceEvent>({prefix: "event:"});
     return [...events.values()].some((event) => event.agent_id === agentId && event.event_seq <= context.event_seq);
+  }
+  async reviewerEligibility(agentId: string, contexts: Array<{world_fork_id: string; event_seq: number}>): Promise<boolean[]> {
+    const state = await this.state();
+    const firstEventSeq = [...(await this.storage.list<ConformanceEvent>({prefix: "event:"})).values()].filter((event) => event.agent_id === agentId).reduce<number | undefined>((minimum, event) => minimum === undefined ? event.event_seq : Math.min(minimum, event.event_seq), undefined);
+    return contexts.map((context) => state.world_fork_id === context.world_fork_id && firstEventSeq !== undefined && firstEventSeq <= context.event_seq);
+  }
+  async reviewerCandidates(context: {world_fork_id: string; event_seq: number}): Promise<string[]> {
+    const state = await this.state();
+    if (state.world_fork_id !== context.world_fork_id) return [];
+    const events = await this.storage.list<ConformanceEvent>({prefix: "event:"});
+    return [...new Set([...events.values()].filter((event) => event.event_seq <= context.event_seq).map((event) => event.agent_id))].sort();
   }
 
   async act(agentId: string, input: ActInput): Promise<ActResult> {
@@ -283,8 +295,8 @@ export class RegionDurableObject extends DurableObject<Env> {
       this.nodeKeys = await ctx.storage.get<NodeKeyPair>("node-keys") ?? await createNodeKeyPair();
       await ctx.storage.put({auth: this.auth.snapshot(), "node-keys": this.nodeKeys});
       this.labs = await LabsRepository.open(new DurableLabsPersistence(ctx.storage));
-      this.journal = new JournalRepository(new DurableJournalPersistence(ctx.storage), {currentContext: () => this.region.journalContext(), reviewerEligible: (agentId, context) => this.region.reviewerEligible(agentId, context)});
-      this.mcp = createSaiMcpHandler(createLabsAwareApplication(this.region, this.labs));
+      this.journal = new JournalRepository(new DurableJournalPersistence(ctx.storage), {currentContext: () => this.region.journalContext(), reviewerEligible: (agentId, context) => this.region.reviewerEligible(agentId, context), reviewerEligibility: (agentId, contexts) => this.region.reviewerEligibility(agentId, contexts), reviewerCandidates: (context) => this.region.reviewerCandidates(context)});
+      this.mcp = createSaiMcpHandler(createJournalAwareApplication(createLabsAwareApplication(this.region, this.labs), this.journal));
     });
   }
 

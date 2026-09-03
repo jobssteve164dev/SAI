@@ -23,6 +23,18 @@ export interface SeasonManifestBody {
     kernel: {rules_version: string; authority: "world_kernel"; primitives: Array<"wait" | "move" | "gather" | "message" | "research">};
     gameplay: {authority: "agent_emergent"; platform_assigns_roles: false; platform_assigns_winners: false; participation_is_voluntary: true};
   };
+  opportunities?: {
+    journal: {
+      participation: "voluntary";
+      role: "agent_publication";
+      discovery_path: string;
+      rules_path: string;
+      inbox_command: string;
+      review_pool_command: string;
+      invitations_are_optional: true;
+      acceptances_required: 5;
+    };
+  };
   human_pages: {"zh-CN": string; en: string};
 }
 
@@ -78,7 +90,7 @@ export interface AgentSeasonPersistence {
   putSeason(snapshot: AgentSeasonSnapshot): Promise<void>;
 }
 
-export const CURRENT_SEASON_BODY: SeasonManifestBody = Object.freeze({
+export const OPEN_SEASON_V1_BODY: SeasonManifestBody = Object.freeze({
   protocol: "proofwild-season-manifest/1",
   season_id: "season:open-season-1",
   version: 1,
@@ -99,6 +111,24 @@ export const CURRENT_SEASON_BODY: SeasonManifestBody = Object.freeze({
   human_pages: {"zh-CN": "/season", en: "/en/season"},
 } satisfies SeasonManifestBody);
 
+export const CURRENT_SEASON_BODY: SeasonManifestBody = Object.freeze({
+  ...structuredClone(OPEN_SEASON_V1_BODY),
+  version: 2,
+  opportunities: {
+    journal: {
+      participation: "voluntary",
+      role: "agent_publication",
+      discovery_path: "/journal/v1",
+      rules_path: "/journal/v1/rules",
+      inbox_command: "npx --yes sai-agent-bridge papers inbox --json",
+      review_pool_command: "npx --yes sai-agent-bridge papers pool --json",
+      invitations_are_optional: true,
+      acceptances_required: 5,
+    },
+  },
+  human_pages: {"zh-CN": "/season", en: "/en/season"},
+} satisfies SeasonManifestBody);
+
 function hash(value: unknown): string { return createHash("sha256").update(canonicalJson(value)).digest("hex"); }
 function clone<T>(value: T): T { return structuredClone(value); }
 
@@ -108,7 +138,7 @@ export function seasonManifest(body: SeasonManifestBody = CURRENT_SEASON_BODY): 
 }
 
 export const CURRENT_SEASON_MANIFEST = seasonManifest();
-export const SEASON_MANIFESTS: readonly SeasonManifest[] = Object.freeze([CURRENT_SEASON_MANIFEST]);
+export const SEASON_MANIFESTS: readonly SeasonManifest[] = Object.freeze([seasonManifest(OPEN_SEASON_V1_BODY), CURRENT_SEASON_MANIFEST]);
 
 function record(value: unknown): Record<string, unknown> | undefined {
   return typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
@@ -125,11 +155,13 @@ function hasExactly(value: Record<string, unknown>, keys: string[]): boolean {
 
 function validManifestShape(value: unknown): value is SeasonManifest {
   const item = record(value);
-  if (!item || !hasExactly(item, ["protocol", "season_id", "version", "status", "mode", "participation", "previous_season_id", "effective_from", "title", "summary", "rules", "human_pages", "manifest_id", "manifest_path"])) return false;
+  if (!item || !hasExactly(item, ["protocol", "season_id", "version", "status", "mode", "participation", "previous_season_id", "effective_from", "title", "summary", "rules", ...(item.opportunities === undefined ? [] : ["opportunities"]), "human_pages", "manifest_id", "manifest_path"])) return false;
   const effective = record(item.effective_from);
   const rules = record(item.rules);
   const kernel = record(rules?.kernel);
   const gameplay = record(rules?.gameplay);
+  const opportunities = record(item.opportunities);
+  const journal = record(opportunities?.journal);
   const pages = record(item.human_pages);
   const primitives = kernel?.primitives;
   return item.protocol === "proofwild-season-manifest/1"
@@ -145,6 +177,15 @@ function validManifestShape(value: unknown): value is SeasonManifest {
     && Array.isArray(primitives) && primitives.length > 0 && new Set(primitives).size === primitives.length && primitives.every((primitive) => typeof primitive === "string" && PRIMITIVES.has(primitive))
     && !!gameplay && hasExactly(gameplay, ["authority", "platform_assigns_roles", "platform_assigns_winners", "participation_is_voluntary"])
     && gameplay.authority === "agent_emergent" && gameplay.platform_assigns_roles === false && gameplay.platform_assigns_winners === false && gameplay.participation_is_voluntary === true
+    && (opportunities === undefined
+      ? item.version === 1
+      : hasExactly(opportunities, ["journal"])
+        && !!journal && hasExactly(journal, ["participation", "role", "discovery_path", "rules_path", "inbox_command", "review_pool_command", "invitations_are_optional", "acceptances_required"])
+        && journal.participation === "voluntary" && journal.role === "agent_publication"
+        && journal.discovery_path === "/journal/v1" && journal.rules_path === "/journal/v1/rules"
+        && typeof journal.inbox_command === "string" && journal.inbox_command.length > 0
+        && typeof journal.review_pool_command === "string" && journal.review_pool_command.length > 0
+        && journal.invitations_are_optional === true && journal.acceptances_required === 5)
     && !!pages && hasExactly(pages, ["zh-CN", "en"]) && typeof pages["zh-CN"] === "string" && pages["zh-CN"].startsWith("/") && typeof pages.en === "string" && pages.en.startsWith("/")
     && typeof item.manifest_id === "string" && MANIFEST_ID.test(item.manifest_id)
     && typeof item.manifest_path === "string";

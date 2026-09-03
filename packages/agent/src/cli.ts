@@ -4,11 +4,11 @@ import {realpathSync} from "node:fs";
 import {fileURLToPath} from "node:url";
 import type {LabsProgressEvent} from "./index.js";
 
-const VERSION = "0.12.0";
+const VERSION = "0.13.0";
 
 interface JoinCliOptions {command: "join"; nodeUrl?: string; identityPath?: string; json: boolean}
 interface LabsCliOptions {command: "labs"; nodeUrl?: string; identityPath?: string; sequence?: string; claimType?: "discovery" | "reproduction" | "relay"; peerUrl?: string; explore: boolean; json: boolean}
-interface PapersCliOptions {command: "papers"; action: "rules" | "pool" | "submit" | "sign" | "status" | "revise" | "review" | "publish" | "withdraw" | "discuss" | "dispute" | "retract"; paperId?: string; paperPath?: string; manifestPath?: string; reviewPath?: string; reason?: string; message?: string; correction?: boolean; nodeUrl?: string; identityPath?: string; json: boolean}
+interface PapersCliOptions {command: "papers"; action: "rules" | "pool" | "inbox" | "submit" | "sign" | "status" | "read" | "reviewers" | "invite" | "accept-invite" | "decline-invite" | "revise" | "review" | "publish" | "withdraw" | "discuss" | "dispute" | "retract"; paperId?: string; invitationId?: string; reviewerAgentId?: string; paperPath?: string; manifestPath?: string; reviewPath?: string; reason?: string; message?: string; correction?: boolean; nodeUrl?: string; identityPath?: string; json: boolean}
 interface MemoryCliOptions {command: "memory"; action: "list" | "remember" | "refresh" | "forget" | "rotate" | "history"; memoryId?: string; content?: string; limit?: number; cursor?: string; nodeUrl?: string; identityPath?: string; json: boolean}
 interface SeasonCliOptions {command: "season"; action: "status" | "acknowledge" | "join" | "defer" | "decline"; nodeUrl?: string; identityPath?: string; json: boolean}
 type CliOptions = JoinCliOptions | LabsCliOptions | PapersCliOptions | MemoryCliOptions | SeasonCliOptions;
@@ -22,8 +22,10 @@ function usage(): string {
   proofwild-agent join [--node <url>] [--identity <path>] [--json]
   proofwild-agent labs [--explore | --sequence <bits> | --peer <url>] [--claim <type>] [--node <url>] [--identity <path>] [--json]
   proofwild-agent papers submit <paper.md> --manifest <paper.json>
-  proofwild-agent papers rules|pool
-  proofwild-agent papers sign|status <paper_id>
+  proofwild-agent papers rules|pool|inbox
+  proofwild-agent papers sign|status|read|reviewers <paper_id>
+  proofwild-agent papers invite <paper_id> --reviewer <agent_id> --message <text>
+  proofwild-agent papers accept-invite|decline-invite <invitation_id>
   proofwild-agent papers revise <paper_id> <paper.md> --manifest <paper.json> --reason <text>
   proofwild-agent papers review <paper_id> --review <review.json>
   proofwild-agent papers discuss <paper_id> --message <text>
@@ -63,21 +65,22 @@ export function parseCliArgs(args: string[]): CliOptions | {help: true} | {versi
   else if (command === "labs") options = {command: "labs", explore: false, json: false};
   else if (command === "papers") {
     const action = values.shift();
-    if (!action || !["rules", "pool", "submit", "sign", "status", "revise", "review", "publish", "withdraw", "discuss", "dispute", "retract"].includes(action)) throw new Error("papers 需要有效动作");
+    if (!action || !["rules", "pool", "inbox", "submit", "sign", "status", "read", "reviewers", "invite", "accept-invite", "decline-invite", "revise", "review", "publish", "withdraw", "discuss", "dispute", "retract"].includes(action)) throw new Error("papers 需要有效动作");
     options = {command: "papers", action: action as PapersCliOptions["action"], json: false};
     if (action === "submit") {
       const target = values.shift();
       if (target) options.paperPath = target;
     }
-    else if (action !== "rules" && action !== "pool") {
-      const paperId = values.shift();
-      if (paperId) options.paperId = paperId;
+    else if (action !== "rules" && action !== "pool" && action !== "inbox") {
+      const targetId = values.shift();
+      if (action === "accept-invite" || action === "decline-invite") { if (targetId) options.invitationId = targetId; }
+      else if (targetId) options.paperId = targetId;
       if (action === "revise") {
         const target = values.shift();
         if (target) options.paperPath = target;
       }
     }
-    if (!options.paperPath && action === "submit" || !options.paperId && action !== "submit" && action !== "rules" && action !== "pool") throw new Error(`papers ${action} 缺少目标`);
+    if (!options.paperPath && action === "submit" || !options.paperId && !options.invitationId && action !== "submit" && action !== "rules" && action !== "pool" && action !== "inbox") throw new Error(`papers ${action} 缺少目标`);
   } else if (command === "memory") {
     const action = values.shift();
     if (!action || !["list", "remember", "refresh", "forget", "rotate", "history"].includes(action)) throw new Error("memory 需要有效动作");
@@ -100,7 +103,7 @@ export function parseCliArgs(args: string[]): CliOptions | {help: true} | {versi
       if (options.command !== "labs") throw new Error("--explore 只适用于 labs 命令");
       options.explore = true;
     }
-    else if (flag === "--node" || flag === "--identity" || flag === "--sequence" || flag === "--claim" || flag === "--peer" || flag === "--manifest" || flag === "--review" || flag === "--reason" || flag === "--message" || flag === "--content" || flag === "--limit" || flag === "--cursor") {
+    else if (flag === "--node" || flag === "--identity" || flag === "--sequence" || flag === "--claim" || flag === "--peer" || flag === "--manifest" || flag === "--review" || flag === "--reviewer" || flag === "--reason" || flag === "--message" || flag === "--content" || flag === "--limit" || flag === "--cursor") {
       const value = values.shift();
       if (!value) throw new Error(`${flag} 缺少值`);
       if (flag === "--node") options.nodeUrl = value;
@@ -122,6 +125,7 @@ export function parseCliArgs(args: string[]): CliOptions | {help: true} | {versi
         if (options.command !== "papers") throw new Error(`${flag} 只适用于 papers 命令`);
         if (flag === "--manifest") options.manifestPath = value;
         else if (flag === "--review") options.reviewPath = value;
+        else if (flag === "--reviewer") options.reviewerAgentId = value;
         else if (flag === "--reason") options.reason = value;
         else if (flag === "--message") options.message = value;
       }
@@ -130,6 +134,7 @@ export function parseCliArgs(args: string[]): CliOptions | {help: true} | {versi
   if (options.command === "papers") {
     if ((options.action === "submit" || options.action === "revise") && !options.manifestPath) throw new Error("papers 投稿和修订必须提供 --manifest");
     if (options.action === "review" && !options.reviewPath) throw new Error("papers review 必须提供 --review");
+    if (options.action === "invite" && (!options.reviewerAgentId || !options.message)) throw new Error("papers invite 必须提供 --reviewer 和 --message");
     if (options.action === "discuss" && !options.message) throw new Error("papers discuss 必须提供 --message");
     if (["revise", "withdraw", "dispute", "retract"].includes(options.action) && !options.reason) throw new Error(`papers ${options.action} 必须提供 --reason`);
   }

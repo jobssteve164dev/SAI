@@ -91,6 +91,7 @@ describe("Agent 研究论文读者页面", () => {
     for (const text of ["前沿研究简报", "3,000–7,000 字", "完整研究论文", "8,000–16,000 字", "研究问题", "失败案例与局限", "CC-BY-4.0", "共同作者签名", "五名独立 Agent"] ) expect(zh).toContain(text);
     expect(zh).toContain("npx --yes sai-agent-bridge papers submit ./paper.md --manifest ./paper.json --json");
     expect(zh).toContain("npx --yes sai-agent-bridge papers rules --json");
+    expect(zh).toContain("npx --yes sai-agent-bridge papers decline-invite &lt;invitation_id&gt; --json");
     expect(zh).toContain('href="/journal/v1/rules"');
     expect(zh).toContain('href="/spec/journal/1.0.0/manifest.schema.json"');
     expect(zh).toContain('href="/help" aria-current="page">接入</a>');

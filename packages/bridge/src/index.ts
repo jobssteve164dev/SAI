@@ -61,6 +61,8 @@ export class SaiBridge {
       }
       if (manifest.manifest_id !== observation.season.manifest_id || manifest.season_id !== observation.season.season_id || manifest.version !== observation.season.version || manifest.manifest_path !== observation.season.manifest_path) throw new Error("赛季观察与机器清单不一致");
       observation.season.manifest = structuredClone(manifest);
+      const maxBytes = input.max_bytes ?? 65_536;
+      if (new TextEncoder().encode(JSON.stringify(observation)).byteLength > maxBytes) delete observation.season.manifest;
     }
     this.lastObservation = observation;
     return observation;

@@ -20,7 +20,7 @@ describe("可发布 Proofwild Agent 包", () => {
     const executable = process.platform === "win32" ? "npx.cmd" : "npx";
     const result = spawnSync(executable, ["--yes", "sai-agent-bridge", "--version"], {encoding: "utf8"});
     expect(result.status, result.stderr).toBe(0);
-    expect(result.stdout.trim()).toBe("0.12.0");
+    expect(result.stdout.trim()).toBe("0.13.0");
   });
 
   it("持久保存并复用同一个 Ed25519 身份", async () => {
@@ -62,6 +62,12 @@ describe("可发布 Proofwild Agent 包", () => {
   it("CLI 为公共审稿和 Agent 自主记忆提供可发现的直接动作", () => {
     expect(parseCliArgs(["papers", "rules", "--json"])).toEqual({command: "papers", action: "rules", json: true});
     expect(parseCliArgs(["papers", "pool", "--json"])).toEqual({command: "papers", action: "pool", json: true});
+    expect(parseCliArgs(["papers", "inbox", "--json"])).toEqual({command: "papers", action: "inbox", json: true});
+    expect(parseCliArgs(["papers", "read", "sha256:paper", "--json"])).toEqual({command: "papers", action: "read", paperId: "sha256:paper", json: true});
+    expect(parseCliArgs(["papers", "reviewers", "sha256:paper", "--json"])).toEqual({command: "papers", action: "reviewers", paperId: "sha256:paper", json: true});
+    expect(parseCliArgs(["papers", "invite", "sha256:paper", "--reviewer", "agent:ed25519-v1:reviewer", "--message", "请独立复核实验"])).toEqual({command: "papers", action: "invite", paperId: "sha256:paper", reviewerAgentId: "agent:ed25519-v1:reviewer", message: "请独立复核实验", json: false});
+    expect(parseCliArgs(["papers", "accept-invite", "sha256:invitation", "--json"])).toEqual({command: "papers", action: "accept-invite", invitationId: "sha256:invitation", json: true});
+    expect(parseCliArgs(["papers", "decline-invite", "sha256:invitation", "--json"])).toEqual({command: "papers", action: "decline-invite", invitationId: "sha256:invitation", json: true});
     expect(parseCliArgs(["papers", "discuss", "sha256:paper", "--message", "复现步骤需要补充随机种子"])).toEqual({command: "papers", action: "discuss", paperId: "sha256:paper", message: "复现步骤需要补充随机种子", json: false});
     expect(parseCliArgs(["memory", "remember", "--content", "记住本次研究", "--json"])).toEqual({command: "memory", action: "remember", content: "记住本次研究", json: true});
     expect(parseCliArgs(["memory", "refresh", "memo:sha256:id", "--content", "更新后的记忆"])).toEqual({command: "memory", action: "refresh", memoryId: "memo:sha256:id", content: "更新后的记忆", json: false});

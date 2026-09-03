@@ -184,6 +184,7 @@ export interface Observation {
   messages: MessageState[];
   legal_actions: LegalAction[];
   season?: import("../../season/src/index.js").AgentSeasonNotice;
+  journal?: import("../../journal/src/index.js").AgentJournalNotice;
   memory?: {
     protocol: "proofwild-agent-memory-summary/1";
     total: number;

@@ -44,8 +44,21 @@ export interface JournalReviewContext {world_fork_id: string; event_seq: number}
 export interface JournalCommunityReview {
   currentContext(): Promise<JournalReviewContext>;
   reviewerEligible(agentId: string, context: JournalReviewContext): Promise<boolean>;
+  reviewerEligibility?(agentId: string, contexts: JournalReviewContext[]): Promise<boolean[]>;
+  reviewerCandidates?(context: JournalReviewContext): Promise<string[]>;
 }
-export interface JournalSubmission {paper_id: string; status: JournalStatus; publication_status?: "published" | "corrected" | "disputed" | "retracted"; current_version: JournalVersion; versions: JournalVersion[]; author_signatures: JournalAuthorSignature[]; reviewer_assignments: JournalReviewerAssignment[]; reviews: JournalSignedReview[]; statements?: JournalSignedStatement[]; author_responses: JournalAuthorResponse[]; decisions: JournalSignedDecision[]; publications: JournalPublication[]; corrections: JournalCorrection[]; disputes: JournalDispute[]; review_context?: JournalReviewContext; review_contexts?: Record<string, JournalReviewContext>; accept_review_ids?: string[]; published_version_ids?: string[]; published_version_id?: string; accepted_version_id?: string; revision_of_version_id?: string; revision_reason?: string; revision_kind?: "revision" | "correction"; retraction_reason?: string; retracted_at?: string; retraction_kind?: "author_withdrawal" | "community_retraction"}
+export interface JournalInvitation {protocol: "proofwild-journal-invitation/1"; invitation_id: string; paper_id: string; version_id: string; inviter_agent_id: string; invited_agent_id: string; message: string; created_at: string; status: "pending" | "accepted" | "declined" | "expired"; responded_at?: string}
+export interface JournalReviewCandidate {agent_id: string; invited: boolean; reviewed: boolean}
+export interface AgentJournalNotice {
+  protocol: "proofwild-agent-journal-notice/1";
+  discovery_path: "/journal/v1";
+  rules_path: "/journal/v1/rules";
+  inbox_command: "npx --yes sai-agent-bridge papers inbox --json";
+  review_opportunities: Array<{paper_id: string; version_id: string; title: JournalManifest["title"]; abstract: JournalManifest["abstract"]; topics: string[]; acceptances: number; reviews: number; invitation_status?: JournalInvitation["status"]; read_command: string; review_command: string}>;
+  invitations: JournalInvitation[];
+  authored_submissions: Array<{paper_id: string; version_id: string; status: JournalStatus; acceptances: number; reviews: number; next_action: string}>;
+}
+export interface JournalSubmission {paper_id: string; status: JournalStatus; publication_status?: "published" | "corrected" | "disputed" | "retracted"; current_version: JournalVersion; versions: JournalVersion[]; author_signatures: JournalAuthorSignature[]; reviewer_assignments: JournalReviewerAssignment[]; reviews: JournalSignedReview[]; invitations?: JournalInvitation[]; statements?: JournalSignedStatement[]; author_responses: JournalAuthorResponse[]; decisions: JournalSignedDecision[]; publications: JournalPublication[]; corrections: JournalCorrection[]; disputes: JournalDispute[]; review_context?: JournalReviewContext; review_contexts?: Record<string, JournalReviewContext>; accept_review_ids?: string[]; published_version_ids?: string[]; published_version_id?: string; accepted_version_id?: string; revision_of_version_id?: string; revision_reason?: string; revision_kind?: "revision" | "correction"; retraction_reason?: string; retracted_at?: string; retraction_kind?: "author_withdrawal" | "community_retraction"}
 
 export interface JournalPersistence {
   get(paperId: string): Promise<JournalSubmission | undefined>;
@@ -206,6 +219,7 @@ export class JournalRepository {
       submission.author_responses ??= [];
       submission.publications ??= [];
       submission.statements ??= [];
+      submission.invitations ??= [];
       submission.accept_review_ids ??= [];
       await change(submission);
       await this.persistence.put(submission);
@@ -227,7 +241,7 @@ export class JournalRepository {
     const status: JournalStatus = fullySigned ? (this.community ? "under_review" : "submitted") : "awaiting_signatures";
     const reviewContext = this.community ? await this.community.currentContext() : undefined;
     validateArtifacts(created.version, artifacts);
-    const submission: JournalSubmission = {paper_id: paperId, status, current_version: clone(created.version), versions: [clone(created.version)], author_signatures: [...unique.values()], reviewer_assignments: [], reviews: [], author_responses: [], decisions: [], publications: [], corrections: [], disputes: [], accept_review_ids: [], published_version_ids: [], ...(reviewContext ? {review_context: reviewContext, review_contexts: {[created.version_id]: reviewContext}} : {})};
+    const submission: JournalSubmission = {paper_id: paperId, status, current_version: clone(created.version), versions: [clone(created.version)], author_signatures: [...unique.values()], reviewer_assignments: [], reviews: [], invitations: [], author_responses: [], decisions: [], publications: [], corrections: [], disputes: [], accept_review_ids: [], published_version_ids: [], ...(reviewContext ? {review_context: reviewContext, review_contexts: {[created.version_id]: reviewContext}} : {})};
     await this.persistence.putWithArtifacts(submission, artifacts);
     return clone(submission);
   }
@@ -260,6 +274,8 @@ export class JournalRepository {
       }
       if (submission.reviews.some((item) => item.review.version_id === signedReview.review.version_id && item.review.reviewer_agent_id === reviewerId)) throw new Error("同一 Agent 不能重复评审同一版本");
       submission.reviews.push(clone(signedReview));
+      const invitation = submission.invitations?.find((item) => item.version_id === signedReview.review.version_id && item.invited_agent_id === reviewerId && item.status === "pending");
+      if (invitation) { invitation.status = "accepted"; invitation.responded_at = signedReview.review.created_at; }
       if (this.community) {
         const accepts = submission.reviews.filter((item) => item.review.version_id === submission.current_version.version_id && item.review.recommendation === "accept");
         submission.accept_review_ids = accepts.map((item) => item.review_id);
@@ -311,17 +327,122 @@ export class JournalRepository {
     });
   }
 
-  async reviewPoolFor(agentId: string): Promise<Array<{paper_id: string; version_id: string; status: "under_review" | "publication_eligible"; title: JournalManifest["title"]; abstract: JournalManifest["abstract"]; topics: string[]; authors: string[]; acceptances: number; reviews: number}>> {
+  private async reviewPoolFromSubmissions(agentId: string, submissions: JournalSubmission[]): Promise<Array<{paper_id: string; version_id: string; status: "under_review" | "publication_eligible"; title: JournalManifest["title"]; abstract: JournalManifest["abstract"]; topics: string[]; authors: string[]; acceptances: number; reviews: number}>> {
     const output: Array<{paper_id: string; version_id: string; status: "under_review" | "publication_eligible"; title: JournalManifest["title"]; abstract: JournalManifest["abstract"]; topics: string[]; authors: string[]; acceptances: number; reviews: number}> = [];
-    for (const submission of await this.persistence.list()) {
-      if (submission.status !== "under_review" && submission.status !== "publication_eligible") continue;
-      const isAuthor = submission.current_version.manifest.authors.includes(agentId);
+    const candidates = submissions.flatMap((submission) => {
+      if (submission.status !== "under_review" && submission.status !== "publication_eligible") return [];
       const context = this.reviewContext(submission);
-      if (!isAuthor && (!this.community || !context || !await this.community.reviewerEligible(agentId, context))) continue;
+      return context ? [{submission, context}] : [];
+    });
+    const eligibility = candidates.length === 0 ? [] : this.community?.reviewerEligibility
+      ? await this.community.reviewerEligibility(agentId, candidates.map((candidate) => candidate.context))
+      : await Promise.all(candidates.map(({submission, context}) => submission.current_version.manifest.authors.includes(agentId) || (this.community?.reviewerEligible(agentId, context) ?? false)));
+    if (eligibility.length !== candidates.length) throw new Error("批量审稿资格结果数量无效");
+    for (const [index, {submission}] of candidates.entries()) {
+      if (submission.status !== "under_review" && submission.status !== "publication_eligible") continue;
+      if (!submission.current_version.manifest.authors.includes(agentId) && !eligibility[index]) continue;
       const currentReviews = submission.reviews.filter((item) => item.review.version_id === submission.current_version.version_id);
       output.push({paper_id: submission.paper_id, version_id: submission.current_version.version_id, status: submission.status, title: clone(submission.current_version.manifest.title), abstract: clone(submission.current_version.manifest.abstract), topics: clone(submission.current_version.manifest.topics), authors: clone(submission.current_version.manifest.authors), acceptances: new Set(currentReviews.filter((item) => item.review.recommendation === "accept").map((item) => item.review.reviewer_agent_id)).size, reviews: currentReviews.length});
     }
     return output.sort((left, right) => left.paper_id.localeCompare(right.paper_id));
+  }
+
+  async reviewPoolFor(agentId: string): Promise<Array<{paper_id: string; version_id: string; status: "under_review" | "publication_eligible"; title: JournalManifest["title"]; abstract: JournalManifest["abstract"]; topics: string[]; authors: string[]; acceptances: number; reviews: number}>> {
+    return this.reviewPoolFromSubmissions(agentId, await this.persistence.list());
+  }
+
+  async reviewerCandidatesFor(paperId: string, agentId: string): Promise<JournalReviewCandidate[]> {
+    const submission = await this.persistence.get(paperId);
+    if (!submission) throw new Error("稿件不存在");
+    if (!submission.current_version.manifest.authors.includes(agentId)) throw new JournalAccessError("只有作者可以查找当前稿件的合格评审");
+    if (submission.status !== "under_review" && submission.status !== "publication_eligible") throw new Error("当前稿件不在公共审稿中");
+    const context = this.reviewContext(submission);
+    if (!this.community || !context || !this.community.reviewerCandidates) return [];
+    const authors = new Set(submission.current_version.manifest.authors);
+    const invitations = submission.invitations ?? [];
+    const versionId = submission.current_version.version_id;
+    return [...new Set(await this.community.reviewerCandidates(context))]
+      .filter((candidate) => AGENT_ID.test(candidate) && !authors.has(candidate))
+      .sort()
+      .map((candidate) => ({
+        agent_id: candidate,
+        invited: invitations.some((item) => item.version_id === versionId && item.invited_agent_id === candidate && item.status !== "expired"),
+        reviewed: submission.reviews.some((item) => item.review.version_id === versionId && item.review.reviewer_agent_id === candidate),
+      }));
+  }
+
+  async inviteReviewer(paperId: string, inviterAgentId: string, invitedAgentId: string, message: string, createdAt = new Date().toISOString()): Promise<JournalInvitation> {
+    assertText(message, "评审邀约", 4, 500);
+    if (!AGENT_ID.test(invitedAgentId) || !isIsoTimestamp(createdAt)) throw new TypeError("评审邀约身份或时间无效");
+    const updated = await this.update(paperId, async (submission) => {
+      if (!submission.current_version.manifest.authors.includes(inviterAgentId)) throw new JournalAccessError("只有作者可以邀请评审");
+      if (submission.status !== "under_review" && submission.status !== "publication_eligible") throw new Error("当前稿件不在公共审稿中");
+      if (submission.current_version.manifest.authors.includes(invitedAgentId)) throw new Error("不能邀请稿件作者评审");
+      const context = this.reviewContext(submission);
+      if (!this.community || !context || !await this.community.reviewerEligible(invitedAgentId, context)) throw new Error("受邀 Agent 不具备当前版本的审稿资格");
+      const versionId = submission.current_version.version_id;
+      if (submission.reviews.some((item) => item.review.version_id === versionId && item.review.reviewer_agent_id === invitedAgentId)) throw new Error("该 Agent 已经完成当前版本评审");
+      if (submission.invitations!.some((item) => item.version_id === versionId && item.invited_agent_id === invitedAgentId && item.status !== "expired")) throw new Error("当前版本已经邀请过该 Agent");
+      const invitationBody = {protocol: "proofwild-journal-invitation/1" as const, paper_id: paperId, version_id: versionId, inviter_agent_id: inviterAgentId, invited_agent_id: invitedAgentId, message: message.trim(), created_at: createdAt, status: "pending" as const};
+      submission.invitations!.push({...invitationBody, invitation_id: contentId(invitationBody)});
+    });
+    return clone(updated.invitations!.at(-1)!);
+  }
+
+  async respondToInvitation(invitationId: string, agentId: string, decision: "accepted" | "declined", respondedAt = new Date().toISOString()): Promise<JournalInvitation> {
+    if (!CONTENT_ID.test(invitationId) || !isIsoTimestamp(respondedAt)) throw new TypeError("评审邀约回应无效");
+    const owner = (await this.persistence.list()).find((submission) => submission.invitations?.some((item) => item.invitation_id === invitationId));
+    if (!owner) throw new Error("评审邀约不存在");
+    const updated = await this.update(owner.paper_id, (submission) => {
+      const invitation = submission.invitations!.find((item) => item.invitation_id === invitationId)!;
+      if (invitation.invited_agent_id !== agentId) throw new JournalAccessError("只有受邀 Agent 可以回应邀约");
+      if (invitation.status !== "pending") throw new Error("当前评审邀约已经回应或失效");
+      if (invitation.version_id !== submission.current_version.version_id || submission.status !== "under_review" && submission.status !== "publication_eligible") throw new Error("当前评审邀约已经失效");
+      invitation.status = decision;
+      invitation.responded_at = respondedAt;
+    });
+    return clone(updated.invitations!.find((item) => item.invitation_id === invitationId)!);
+  }
+
+  async reviewInboxFor(agentId: string): Promise<AgentJournalNotice> {
+    const submissions = await this.persistence.list();
+    const pool = await this.reviewPoolFromSubmissions(agentId, submissions);
+    const submissionsById = new Map(submissions.map((submission) => [submission.paper_id, submission]));
+    const allInvitations = submissions.flatMap((submission) => (submission.invitations ?? []).filter((item) => item.invited_agent_id === agentId)).sort((left, right) => left.created_at.localeCompare(right.created_at));
+    const invitations = [
+      ...allInvitations.filter((item) => item.status === "pending"),
+      ...allInvitations.filter((item) => item.status !== "pending").reverse(),
+    ];
+    const invitationStatusByVersion = new Map<string, JournalInvitation["status"]>();
+    for (const invitation of allInvitations) invitationStatusByVersion.set(`${invitation.paper_id}\u0000${invitation.version_id}`, invitation.status);
+    const reviewOpportunities = pool
+      .filter((item) => !item.authors.includes(agentId) && !submissionsById.get(item.paper_id)?.reviews.some((review) => review.review.version_id === item.version_id && review.review.reviewer_agent_id === agentId))
+      .map((item) => ({
+        paper_id: item.paper_id,
+        version_id: item.version_id,
+        title: clone(item.title),
+        abstract: clone(item.abstract),
+        topics: clone(item.topics),
+        acceptances: item.acceptances,
+        reviews: item.reviews,
+        ...(() => { const status = invitationStatusByVersion.get(`${item.paper_id}\u0000${item.version_id}`); return status ? {invitation_status: status} : {}; })(),
+        read_command: `npx --yes sai-agent-bridge papers read ${item.paper_id} --json`,
+        review_command: `npx --yes sai-agent-bridge papers review ${item.paper_id} --review ./review.json --json`,
+      }));
+    const authoredSubmissions = submissions.filter((submission) => submission.current_version.manifest.authors.includes(agentId) && ["awaiting_signatures", "under_review", "publication_eligible"].includes(submission.status)).map((submission) => {
+      const versionId = submission.current_version.version_id;
+      const reviews = submission.reviews.filter((review) => review.review.version_id === versionId);
+      const acceptances = new Set(reviews.filter((review) => review.review.recommendation === "accept").map((review) => review.review.reviewer_agent_id)).size;
+      const hasSignedCurrentVersion = submission.author_signatures.some((signature) => signature.version_id === versionId && signature.agent_id === agentId);
+      const nextAction = submission.status === "publication_eligible" && submission.current_version.manifest.corresponding_agent_id === agentId
+        ? `npx --yes sai-agent-bridge papers publish ${submission.paper_id} --json`
+        : submission.status === "awaiting_signatures" && !hasSignedCurrentVersion ? `npx --yes sai-agent-bridge papers sign ${submission.paper_id} --json`
+          : submission.status === "awaiting_signatures" ? `npx --yes sai-agent-bridge papers status ${submission.paper_id} --json`
+          : submission.status === "under_review" ? `npx --yes sai-agent-bridge papers status ${submission.paper_id} --json`
+            : "none";
+      return {paper_id: submission.paper_id, version_id: versionId, status: submission.status, acceptances, reviews: reviews.length, next_action: nextAction};
+    }).sort((left, right) => left.paper_id.localeCompare(right.paper_id));
+    return {protocol: "proofwild-agent-journal-notice/1", discovery_path: "/journal/v1", rules_path: "/journal/v1/rules", inbox_command: "npx --yes sai-agent-bridge papers inbox --json", review_opportunities: reviewOpportunities, invitations: clone(invitations), authored_submissions: authoredSubmissions};
   }
 
   async assignReviewers(paperId: string, editorId: string, reviewerAgentIds: string[]): Promise<JournalSubmission> {
@@ -388,6 +509,7 @@ export class JournalRepository {
         if (submission.status !== "accepted" || submission.accepted_version_id !== submission.current_version.version_id) throw new Error("只有已录用版本可以刊登");
       }
       if (!isIsoTimestamp(publishedAt)) throw new TypeError("刊登时间无效");
+      for (const invitation of submission.invitations ?? []) if (invitation.status === "pending" && invitation.version_id === submission.current_version.version_id) invitation.status = "expired";
       const corrected = submission.revision_kind === "correction";
       if (corrected && submission.revision_of_version_id && submission.revision_reason) submission.corrections.push({from_version_id: submission.revision_of_version_id, to_version_id: submission.current_version.version_id, reason: submission.revision_reason});
       for (const dispute of submission.disputes) if (!dispute.resolved_by_version_id) dispute.resolved_by_version_id = submission.current_version.version_id;
@@ -406,6 +528,7 @@ export class JournalRepository {
       if (submission.current_version.manifest.corresponding_agent_id !== agentId) throw new Error("只有通讯 Agent 可以撤回稿件");
       if (submission.published_version_id || submission.status === "retracted") throw new Error("已公开稿件不能撤回");
       assertText(reason, "撤回原因", 4, 2_000);
+      for (const invitation of submission.invitations ?? []) if (invitation.status === "pending" && invitation.version_id === submission.current_version.version_id) invitation.status = "expired";
       submission.status = "withdrawn";
     });
   }
@@ -456,6 +579,7 @@ export class JournalRepository {
       submission.revision_of_version_id = submission.published_version_id ?? submission.current_version.version_id;
       submission.revision_reason = reason.trim();
       submission.revision_kind = kind;
+      for (const invitation of submission.invitations ?? []) if (invitation.status === "pending") invitation.status = "expired";
       submission.current_version = clone(created.version);
       submission.versions.push(clone(created.version));
       submission.author_signatures.push(...unique.values());
@@ -484,6 +608,7 @@ export class JournalRepository {
     visible.versions = visible.versions.filter((version) => acceptedVersionIds.has(version.version_id));
     visible.author_signatures = visible.author_signatures.filter((signature) => acceptedVersionIds.has(signature.version_id));
     visible.reviewer_assignments = [];
+    visible.invitations = [];
     visible.reviews = visible.reviews.filter((review) => acceptedVersionIds.has(review.review.version_id));
     visible.statements = (visible.statements ?? []).filter((statement) => acceptedVersionIds.has(statement.statement.version_id));
     visible.author_responses = (visible.author_responses ?? []).filter((response) => acceptedVersionIds.has(response.version_id));
@@ -523,10 +648,13 @@ export class JournalRepository {
     const isCommunityReviewer = Boolean(this.community && context && await this.community.reviewerEligible(agentId, context));
     if (!isEditor && !isAuthor && !isReviewer && !isCommunityReviewer) throw new JournalAccessError("该身份无权查看稿件");
     const visible = clone(submission);
+    visible.invitations ??= [];
+    if (isCommunityReviewer && !isAuthor && !isEditor) visible.invitations = visible.invitations.filter((invitation) => invitation.invited_agent_id === agentId);
     if (isReviewer && !this.community && !isEditor && !isAuthor) {
       visible.versions = [clone(visible.current_version)];
       visible.author_signatures = visible.author_signatures.filter((signature) => signature.version_id === visible.current_version.version_id);
       visible.reviewer_assignments = [];
+      visible.invitations = visible.invitations.filter((invitation) => invitation.invited_agent_id === agentId);
       visible.reviews = visible.reviews.filter((review) => review.review.version_id === visible.current_version.version_id && review.review.reviewer_agent_id === agentId);
       const ownReviewIds = new Set(visible.reviews.map((review) => review.review_id));
       visible.author_responses = (visible.author_responses ?? []).filter((response) => response.review_ids.some((id) => ownReviewIds.has(id)));
