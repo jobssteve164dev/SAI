@@ -340,7 +340,7 @@ export class RegionDurableObject extends DurableObject<Env> {
       const researchMatch = url.pathname.match(/^\/(en\/)?research\/(sha256(?::|%3A)[0-9a-f]{64})$/i);
       if (researchMatch && (request.method === "GET" || request.method === "HEAD")) return researchResponse(request, this.labs, researchMatch[1] ? "en" : "zh-CN", decodeURIComponent(researchMatch[2]!));
       if ((url.pathname === "/favicon.svg" || url.pathname === "/favicon.ico") && (request.method === "GET" || request.method === "HEAD")) return faviconResponse(request.method, url.pathname.endsWith(".ico") ? "ico" : "svg");
-      if (url.pathname === "/social-card.png" && (request.method === "GET" || request.method === "HEAD")) return socialCardResponse(request.method);
+      if (url.pathname === "/social-card.png" && (request.method === "GET" || request.method === "HEAD")) return socialCardResponse(request.method, url.searchParams.get("locale"));
       if (url.pathname === "/robots.txt" && request.method === "GET") return robotsResponse();
       if (url.pathname === "/sitemap.xml" && request.method === "GET") return sitemapResponse();
       if (url.pathname === "/llms.txt" && request.method === "GET") return llmsResponse();

@@ -53,8 +53,9 @@ describe("Proofwild 公开帮助、GEO 与法律页面", () => {
     expect(page).toContain('<meta property="og:title" content="让你的 Agent 接入 Proofwild">');
     expect(page).toContain('<meta property="og:url" content="https://proofwild.science/help">');
     expect(page).toContain('<meta name="twitter:card" content="summary_large_image">');
-    expect(page).toContain('<meta property="og:image" content="https://proofwild.science/social-card.png?v=20260831">');
-    expect(page).toContain('<meta name="twitter:image" content="https://proofwild.science/social-card.png?v=20260831">');
+    expect(page).toContain('<meta property="og:image" content="https://proofwild.science/social-card.png?locale=zh-CN&amp;v=20260903">');
+    expect(page).toContain('<meta property="og:image:secure_url" content="https://proofwild.science/social-card.png?locale=zh-CN&amp;v=20260903">');
+    expect(page).toContain('<meta name="twitter:image" content="https://proofwild.science/social-card.png?locale=zh-CN&amp;v=20260903">');
     expect((await helpResponse("HEAD").text())).toBe("");
   });
 
@@ -108,30 +109,35 @@ describe("Proofwild 公开帮助、GEO 与法律页面", () => {
     const ico = faviconResponse("GET", "ico");
     expect(ico.headers.get("content-type")).toBe("image/x-icon");
     expect([...new Uint8Array(await ico.arrayBuffer()).slice(0, 4)]).toEqual([0, 0, 1, 0]);
-    const social = socialCardResponse();
-    expect(social.status).toBe(200);
-    expect(social.headers.get("content-type")).toBe("image/png");
-    expect(social.headers.get("cache-control")).toContain("immutable");
-    const socialBytes = new Uint8Array(await social.arrayBuffer());
-    expect([...socialBytes.slice(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
-    expect(new DataView(socialBytes.buffer).getUint32(16)).toBe(1200);
-    expect(new DataView(socialBytes.buffer).getUint32(20)).toBe(630);
-    expect(socialBytes[24]).toBe(2);
-    expect(socialBytes[25]).toBe(3);
-    const chunks: Buffer[] = [];
-    let offset = 8;
-    let foundEnd = false;
-    while (offset < socialBytes.length) {
-      const length = new DataView(socialBytes.buffer).getUint32(offset);
-      const type = Buffer.from(socialBytes.slice(offset + 4, offset + 8)).toString("ascii");
-      expect(offset + 12 + length).toBeLessThanOrEqual(socialBytes.length);
-      if (type === "IDAT") chunks.push(Buffer.from(socialBytes.slice(offset + 8, offset + 8 + length)));
-      if (type === "IEND") foundEnd = true;
-      offset += 12 + length;
+    const zhSocial = socialCardResponse("GET", "zh-CN");
+    const enSocial = socialCardResponse("GET", "en");
+    expect(zhSocial.status).toBe(200);
+    expect(zhSocial.headers.get("content-type")).toBe("image/png");
+    expect(zhSocial.headers.get("cache-control")).toContain("immutable");
+    const zhSocialBytes = new Uint8Array(await zhSocial.arrayBuffer());
+    const enSocialBytes = new Uint8Array(await enSocial.arrayBuffer());
+    expect(enSocialBytes).not.toEqual(zhSocialBytes);
+    for (const socialBytes of [zhSocialBytes, enSocialBytes]) {
+      expect([...socialBytes.slice(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
+      expect(new DataView(socialBytes.buffer).getUint32(16)).toBe(1200);
+      expect(new DataView(socialBytes.buffer).getUint32(20)).toBe(630);
+      expect(socialBytes[24]).toBe(8);
+      expect(socialBytes[25]).toBe(2);
+      const chunks: Buffer[] = [];
+      let offset = 8;
+      let foundEnd = false;
+      while (offset < socialBytes.length) {
+        const length = new DataView(socialBytes.buffer).getUint32(offset);
+        const type = Buffer.from(socialBytes.slice(offset + 4, offset + 8)).toString("ascii");
+        expect(offset + 12 + length).toBeLessThanOrEqual(socialBytes.length);
+        if (type === "IDAT") chunks.push(Buffer.from(socialBytes.slice(offset + 8, offset + 8 + length)));
+        if (type === "IEND") foundEnd = true;
+        offset += 12 + length;
+      }
+      expect(foundEnd).toBe(true);
+      expect(inflateSync(Buffer.concat(chunks))).toHaveLength((1200 * 3 + 1) * 630);
     }
-    expect(foundEnd).toBe(true);
-    expect(inflateSync(Buffer.concat(chunks))).toHaveLength((Math.ceil(1200 * 2 / 8) + 1) * 630);
-    expect(await socialCardResponse("HEAD").text()).toBe("");
+    expect(await socialCardResponse("HEAD", "en").text()).toBe("");
     const csp = helpResponse().headers.get("content-security-policy");
     expect(csp).toContain("img-src 'self'");
     expect(csp).toContain("script-src 'unsafe-inline' https://static.cloudflareinsights.com");
