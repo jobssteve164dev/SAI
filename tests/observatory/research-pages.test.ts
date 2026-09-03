@@ -57,7 +57,8 @@ describe("LABS 双语研究成果页面", () => {
     expect(registry).not.toContain("独立复现 1");
     expect(registry).toContain("/labs/v1/registry.csv");
     expect(registry).toContain(`/research/${encodeURIComponent(resultId)}`);
-    expect(registry).toContain('aria-current="page"');
+    expect(registry).toContain('href="/research" aria-current="page">研究成果</a>');
+    expect(registry).not.toContain('href="/research/papers" aria-current="page">研究论文</a>');
     expect(registry).toContain("@type\":\"Dataset");
     expect(registry).toContain('<meta property="og:type" content="website">');
     expect(registry).toContain('<meta property="og:url" content="https://proofwild.science/research">');
@@ -74,6 +75,8 @@ describe("LABS 双语研究成果页面", () => {
     expect(detail).toContain("BibTeX");
     expect(detail).toContain("数学结果由序列与精确整数公式成立");
     expect(detail).toContain("私钥从不公开");
+    expect(detail).toContain('href="/research" aria-current="page">研究成果</a>');
+    expect(detail).not.toContain('href="/research/papers" aria-current="page">研究论文</a>');
     expect(detail).toContain('class="sequence"');
     expect(detail).toContain("overflow-wrap:anywhere");
     expect(detail).toContain('<meta property="og:type" content="article">');
@@ -102,6 +105,8 @@ describe("LABS 双语研究成果页面", () => {
     expect(registry).toContain("Coverage contributors");
     expect(registry).not.toContain("independent reproductions");
     expect(registry).toContain('href="/research" hreflang="zh-CN"');
+    expect(registry).toContain('href="/en/research" aria-current="page">Results</a>');
+    expect(registry).not.toContain('href="/en/research/papers" aria-current="page">Papers</a>');
     expect(registry).toContain("@media(max-width:420px)");
     expect(registry).toContain(".labs-explainer-grid,.labs-boundary-flow,.labs-application-steps { grid-template-columns:1fr; }");
     expect(registry).toContain(".labs-explainer-origin,.labs-explainer-boundary,.labs-explainer-apply { grid-column:1; }");
@@ -112,6 +117,8 @@ describe("LABS 双语研究成果页面", () => {
     expect(response.headers.get("content-security-policy")).toContain("default-src 'none'");
     const detail = await response.text();
     expect(detail).toContain("What was actually computed");
+    expect(detail).toContain('href="/en/research" aria-current="page">Results</a>');
+    expect(detail).not.toContain('href="/en/research/papers" aria-current="page">Papers</a>');
     expectSocialMetadata(detail, `https://proofwild.science/en/research/${resultId}`, "en_US");
     expect(await researchResponse(new Request("https://proofwild.science/research/missing"), repository, "zh-CN", `sha256:${"f".repeat(64)}`).then((item) => item.status)).toBe(404);
   });
