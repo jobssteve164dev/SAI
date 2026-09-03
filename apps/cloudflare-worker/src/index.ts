@@ -6,7 +6,7 @@ import {assertTransferPrepareInput, createNodeDescriptor, createNodeKeyPair, cre
 import {LABS_CONFORMANCE_VECTORS, WORLD_MAX_SUPPLY, WORLD_SUPPLY_SCHEDULE_BODY, WORLD_SUPPLY_SCHEDULE_ID, admitAgentAtRandomAddress, assertEcosystemSupplyImportAllowed, buildObservation, createWorld, expandWorldForPopulation, handleWorldSupplyRequest, mergeWorldSupplyStates, reconcileWorldMines, reconcileWorldSupplyInventories, stateHash, transition, upgradeWorldForLabs, validateState, worldSupplyObservation, type ActInput, type ActResult, type AgentState, type ConformanceEvent, type EcosystemWorldSupplyState, type Observation, type RegionState, type StoredObservation} from "../../../packages/kernel/src/index.js";
 import {createSaiMcpHandler} from "../../../packages/mcp/src/index.js";
 import {createObserverSnapshot, observatoryResponse, type AgentWorldTimes, type ObserverSnapshot} from "./observatory.js";
-import {agentGuideResponse, canonicalHttpsRedirect, faviconResponse, helpResponse, legalResponse, llmsResponse, resolveLegalRoute, robotsResponse, seasonResponse, sitemapResponse, socialCardResponse} from "./public-pages.js";
+import {agentGuideResponse, canonicalHttpsRedirect, faviconResponse, legalResponse, llmsResponse, resolveLegalRoute, robotsResponse, seasonResponse, sitemapResponse, socialCardResponse} from "./public-pages.js";
 import {handleLabsRequest} from "../../../packages/labs/src/http.js";
 import {LabsRepository, type LabsPersistence, type LabsStoredObject} from "../../../packages/labs/src/store.js";
 import {LEGACY_REFERENCE_FORK_ID, PREVIOUS_REFERENCE_FORK_ID, REFERENCE_FORK_ID, exactMeritFactor, type LabsFrontier} from "../../../packages/labs/src/index.js";
@@ -15,7 +15,7 @@ import {protocolSchemaResponse} from "./protocol-schemas.js";
 import {researchResponse} from "./research-pages.js";
 import {handleJournalRequest} from "../../../packages/journal/src/http.js";
 import {JournalRepository, type JournalArtifact, type JournalPersistence, type JournalSubmission} from "../../../packages/journal/src/index.js";
-import {journalPageResponse} from "./journal-pages.js";
+import {agentAccessResponse, journalPageResponse} from "./journal-pages.js";
 
 interface Env {
   REGIONS: DurableObjectNamespace<RegionDurableObject>;
@@ -251,8 +251,8 @@ export class RegionDurableObject extends DurableObject<Env> {
       if (url.pathname === "/" && (request.method === "GET" || request.method === "HEAD")) return observatoryResponse(request.method);
       if (url.pathname === "/en" && (request.method === "GET" || request.method === "HEAD")) return observatoryResponse(request.method, "en");
       if (url.pathname === "/") return json({error: "method_not_allowed"}, 405, {allow: "GET, HEAD"});
-      if (url.pathname === "/help" && (request.method === "GET" || request.method === "HEAD")) return helpResponse(request.method);
-      if (url.pathname === "/en/help" && (request.method === "GET" || request.method === "HEAD")) return helpResponse(request.method, "en");
+      if (url.pathname === "/help" && (request.method === "GET" || request.method === "HEAD")) return agentAccessResponse(request);
+      if (url.pathname === "/en/help" && (request.method === "GET" || request.method === "HEAD")) return agentAccessResponse(request, "en");
       if (url.pathname === "/season" && (request.method === "GET" || request.method === "HEAD")) return seasonResponse(request.method);
       if (url.pathname === "/en/season" && (request.method === "GET" || request.method === "HEAD")) return seasonResponse(request.method, "en");
       if ((url.pathname === "/research" || url.pathname === "/en/research") && (request.method === "GET" || request.method === "HEAD")) return researchResponse(request, this.labs, url.pathname.startsWith("/en/") ? "en" : "zh-CN");

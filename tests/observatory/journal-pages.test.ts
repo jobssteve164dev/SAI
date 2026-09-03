@@ -1,7 +1,7 @@
 import {describe, expect, it} from "vitest";
 import {createIdentity} from "../../packages/identity/src/index.js";
 import {JournalRepository, MemoryJournalPersistence, createJournalVersion, signJournalDecision, signJournalVersion} from "../../packages/journal/src/index.js";
-import {renderJournalIndex, renderJournalPaper} from "../../apps/cloudflare-worker/src/journal-pages.js";
+import {agentAccessResponse, renderJournalIndex, renderJournalPaper, renderJournalSubmissionGuide} from "../../apps/cloudflare-worker/src/journal-pages.js";
 import {manuscript, reviewFor} from "../journal/journal.test.js";
 
 async function publishedPaper() {
@@ -33,7 +33,8 @@ describe("Agent 研究论文读者页面", () => {
     expect(page).not.toContain('href="/research" aria-current="page">研究成果</a>');
     expect(page).toContain('<h1>Proofwild Journal</h1>');
     expect(page).toContain("自主 Agent 研究期刊");
-    for (const section of ["latest-papers", "about-journal", "publication-model", "for-agents"]) expect(page).toContain(`href="#${section}"`);
+    for (const section of ["latest-papers", "about-journal", "publication-model"]) expect(page).toContain(`href="#${section}"`);
+    expect(page).toContain('href="/help?mode=journal">投稿指南</a>');
     for (const principle of ["持续出版", "开放同行评审", "开放获取", "签名作者身份"]) expect(page).toContain(principle);
     expect(page).toContain("npx --yes sai-agent-bridge papers submit");
     expect(page).toContain("研究论文不是已认证正确的科学事实");
@@ -80,5 +81,46 @@ describe("Agent 研究论文读者页面", () => {
     const detail = renderJournalPaper(paper, "en");
     expect(detail).toContain('href="/en/research/papers" aria-current="page">Papers</a>');
     expect(detail).not.toContain('href="/en/research" aria-current="page">Results</a>');
+  });
+
+  it("提供可独立访问的双语 Agent 投稿指南，而不是只展示一条命令", () => {
+    const zh = renderJournalSubmissionGuide();
+    expect(zh).toContain("Agent 投稿指南");
+    expect(zh).toContain("沿用现有 Agent 身份");
+    for (const text of ["前沿研究简报", "3,000–7,000 字", "完整研究论文", "8,000–16,000 字", "研究问题", "失败案例与局限", "CC-BY-4.0", "共同作者签名", "两名独立 Agent 评审"]) expect(zh).toContain(text);
+    expect(zh).toContain("npx --yes sai-agent-bridge papers submit ./paper.md --manifest ./paper.json --json");
+    expect(zh).toContain('href="/spec/journal/1.0.0/manifest.schema.json"');
+    expect(zh).toContain('href="/help" aria-current="page">接入</a>');
+    expect(zh).toContain('href="/help?mode=journal" aria-current="page">投稿期刊</a>');
+
+    const en = renderJournalSubmissionGuide("en");
+    expect(en).toContain("Agent submission guide");
+    expect(en).toContain("Use your existing Agent identity");
+    expect(en).toContain("1,500–3,500 words");
+    expect(en).toContain("4,000–8,000 words");
+    expect(en).toContain('href="/en/help" aria-current="page">Connect</a>');
+    expect(en).toContain('href="/en/help?mode=journal" aria-current="page">Submit to the journal</a>');
+  });
+
+  it("通用接入路由按 Tab 返回双语指南，并为 HEAD 保持空正文", async () => {
+    const zh = await agentAccessResponse(new Request("https://proofwild.science/help?mode=journal")).text();
+    expect(zh).toContain("Agent 投稿指南");
+    expect(zh).not.toContain("让你的 Agent<br>进入这个世界");
+    expect(zh).toContain('<link rel="canonical" href="https://proofwild.science/help?mode=journal">');
+    expect(zh).toContain('<meta property="og:url" content="https://proofwild.science/help?mode=journal">');
+    expect(zh).toContain('hreflang="en" href="https://proofwild.science/en/help?mode=journal"');
+    expect(zh).toContain('href="/en/help?mode=journal" hreflang="en">EN</a>');
+
+    const en = await agentAccessResponse(new Request("https://proofwild.science/en/help?mode=journal"), "en").text();
+    expect(en).toContain("Agent submission guide");
+    expect(en).not.toContain("Bring your Agent<br>into this world");
+    expect(en).toContain('<link rel="canonical" href="https://proofwild.science/en/help?mode=journal">');
+    expect(en).toContain('hreflang="zh-CN" href="https://proofwild.science/help?mode=journal"');
+    expect(en).toContain('href="/help?mode=journal" hreflang="zh-CN">中文</a>');
+
+    const head = agentAccessResponse(new Request("https://proofwild.science/help?mode=journal", {method: "HEAD"}));
+    expect(head.status).toBe(200);
+    expect(await head.text()).toBe("");
+    expect(await agentAccessResponse(new Request("https://proofwild.science/help")).text()).toContain("让你的 Agent<br>进入这个世界");
   });
 });

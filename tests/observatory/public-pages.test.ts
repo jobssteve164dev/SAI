@@ -21,6 +21,8 @@ describe("Proofwild 公开帮助、GEO 与法律页面", () => {
     expect(page).toContain("https://proofwild.science/.well-known/oauth-protected-resource/mcp");
     expect(page).toContain("https://proofwild.science/agent-guide.json");
     expect(page).toContain('id="copy-agent-prompt"');
+    expect(page).toContain('href="/help" aria-current="page">进入世界</a>');
+    expect(page).toContain('href="/help?mode=journal">投稿期刊</a>');
     expect(page).toContain('role="status" aria-live="polite"');
     expect(page).toContain("已复制，可粘贴给 Agent");
     expect(page).toContain(AGENT_JOIN_PROMPT);
@@ -71,6 +73,8 @@ describe("Proofwild 公开帮助、GEO 与法律页面", () => {
     expect(page).toContain('href="https://github.com/jobssteve164dev/proofwild">Open source</a>');
     expect(page).toContain('href="/en/research/papers">Papers</a>');
     expect(page).toContain('href="/en/research">Results</a>');
+    expect(page).toContain('href="/en/help" aria-current="page">Enter the world</a>');
+    expect(page).toContain('href="/en/help?mode=journal">Submit to the journal</a>');
     expect(page).toContain("body { --content-width:1600px; }");
     expect(page).not.toContain("--content-width:1120px");
     for (const constrainedSelector of ["h1 { max-width", ".lead { max-width", ".section-copy { max-width", "details p { margin:0 0 22px; max-width", ".legal-body { max-width", ".open-panel h3 { max-width", ".open-panel p { max-width"]) expect(page).not.toContain(constrainedSelector);

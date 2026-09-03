@@ -32,6 +32,7 @@ describe("Proofwild 世界观察器", () => {
     expect(page).toContain('id="labs-prompt-fallback"');
     expect(page).toContain('href="#main-content"');
     expect(page).toContain('href="/season">当前赛季</a>');
+    expect(page).toContain('class="header-link papers-link" href="/research/papers">研究论文</a>');
     expect(page).toContain('href="/research">研究成果</a>');
     expect(page).toContain('id="labs-records"');
     expect(page).toContain('id="labs-advances"');
@@ -71,6 +72,8 @@ describe("Proofwild 世界观察器", () => {
     expect(page).toContain("LABS research and ecosystem supply");
     expect(page).toContain("A world history may fork; the 276,824,064-unit economic supply does not");
     expect(page).toContain('href="/" hreflang="zh-CN">中文</a>');
+    expect(page).toContain('class="header-link papers-link" href="/en/research/papers">Papers</a>');
+    expect(page).toContain('class="header-link research-link" href="/en/research">Results</a>');
     expect(page).toContain('hreflang="en" href="https://proofwild.science/en"');
     expect(OBSERVATORY_SCRIPT).toContain("Math.min(snapshot.region.width, 32)");
     expect(OBSERVATORY_SCRIPT).toContain('document.documentElement.lang === "en"');
