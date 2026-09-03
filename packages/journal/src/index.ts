@@ -27,18 +27,25 @@ export interface JournalVersion extends JournalManuscriptInput {protocol: "proof
 export interface JournalAuthorSignature {protocol: "proofwild-journal-author-signature/1"; agent_id: string; public_jwk: JsonWebKey; version_id: string; signature: string}
 export interface JournalReviewBody {paper_id: string; version_id: string; reviewer_agent_id: string; recommendation: "accept" | "revise" | "reject"; summary: string; strengths: string[]; concerns: string[]; evidence_checked: string[]; conflict_disclosure: string; created_at: string}
 export interface JournalSignedReview {protocol: "proofwild-journal-signed-review/1"; review: JournalReviewBody & {protocol: "proofwild-journal-review/1"}; review_id: string; public_jwk: JsonWebKey; signature: string}
+export interface JournalStatementBody {paper_id: string; version_id: string; agent_id: string; kind: "discussion" | "dispute" | "retract"; content: string; created_at: string}
+export interface JournalSignedStatement {protocol: "proofwild-journal-signed-statement/1"; statement: JournalStatementBody & {protocol: "proofwild-journal-statement/1"}; statement_id: string; public_jwk: JsonWebKey; signature: string}
 export interface JournalDecisionBody {paper_id: string; version_id: string; editor_id: string; editor_role?: "human_method_safety_editor"; editor_display_name?: string; decision: "accept" | "revise" | "reject"; rationale: string; review_ids: string[]; decided_at: string}
 export type JournalDecisionRecord = Omit<JournalDecisionBody, "editor_role" | "editor_display_name"> & {editor_role: "human_method_safety_editor"; editor_display_name: string};
 export interface JournalSignedDecision {protocol: "proofwild-journal-signed-decision/1"; decision: JournalDecisionRecord & {protocol: "proofwild-journal-decision/1"}; decision_id: string; public_jwk: JsonWebKey; signature: string}
 export interface JournalArtifact {name: string; media_type: string; sha256: string; content_base64: string}
 export interface JournalAuthorResponse {paper_id: string; version_id: string; agent_id: string; review_ids: string[]; response_markdown: string; created_at: string}
-export type JournalStatus = "awaiting_signatures" | "submitted" | "formal_check" | "under_review" | "revision_requested" | "accepted" | "rejected" | "withdrawn" | "published" | "corrected" | "disputed" | "retracted";
+export type JournalStatus = "awaiting_signatures" | "submitted" | "formal_check" | "under_review" | "publication_eligible" | "revision_requested" | "accepted" | "rejected" | "withdrawn" | "published" | "corrected" | "disputed" | "retracted";
 export interface JournalCorrection {from_version_id: string; to_version_id: string; reason: string}
 export interface JournalDispute {version_id: string; editor_id: string; reason: string; raised_at: string; resolved_by_version_id?: string}
 export interface JournalReviewerAssignment {version_id: string; reviewer_agent_ids: string[]}
 export interface JournalPublication {version_id: string; published_at: string}
 export interface JournalEditorProfile {agent_id: string; role: "human_method_safety_editor"; display_name: string}
-export interface JournalSubmission {paper_id: string; status: JournalStatus; publication_status?: "published" | "corrected" | "disputed" | "retracted"; current_version: JournalVersion; versions: JournalVersion[]; author_signatures: JournalAuthorSignature[]; reviewer_assignments: JournalReviewerAssignment[]; reviews: JournalSignedReview[]; author_responses: JournalAuthorResponse[]; decisions: JournalSignedDecision[]; publications: JournalPublication[]; corrections: JournalCorrection[]; disputes: JournalDispute[]; published_version_ids?: string[]; published_version_id?: string; accepted_version_id?: string; revision_of_version_id?: string; revision_reason?: string; revision_kind?: "revision" | "correction"; retraction_reason?: string; retracted_at?: string}
+export interface JournalReviewContext {world_fork_id: string; event_seq: number}
+export interface JournalCommunityReview {
+  currentContext(): Promise<JournalReviewContext>;
+  reviewerEligible(agentId: string, context: JournalReviewContext): Promise<boolean>;
+}
+export interface JournalSubmission {paper_id: string; status: JournalStatus; publication_status?: "published" | "corrected" | "disputed" | "retracted"; current_version: JournalVersion; versions: JournalVersion[]; author_signatures: JournalAuthorSignature[]; reviewer_assignments: JournalReviewerAssignment[]; reviews: JournalSignedReview[]; statements?: JournalSignedStatement[]; author_responses: JournalAuthorResponse[]; decisions: JournalSignedDecision[]; publications: JournalPublication[]; corrections: JournalCorrection[]; disputes: JournalDispute[]; review_context?: JournalReviewContext; review_contexts?: Record<string, JournalReviewContext>; accept_review_ids?: string[]; published_version_ids?: string[]; published_version_id?: string; accepted_version_id?: string; revision_of_version_id?: string; revision_reason?: string; revision_kind?: "revision" | "correction"; retraction_reason?: string; retracted_at?: string; retraction_kind?: "author_withdrawal" | "community_retraction"}
 
 export interface JournalPersistence {
   get(paperId: string): Promise<JournalSubmission | undefined>;
@@ -70,22 +77,22 @@ function contentId(value: unknown): string {
 
 function clone<T>(value: T): T { return structuredClone(value); }
 
-function signaturePayload(kind: "author" | "review" | "decision", id: string): Buffer {
+function signaturePayload(kind: "author" | "review" | "decision" | "statement", id: string): Buffer {
   return Buffer.from(canonicalJson({protocol: `proofwild-journal-${kind}-signature-payload/1`, id}));
 }
 
-function signId(kind: "author" | "review" | "decision", id: string, identity: AgentIdentity): string {
+function signId(kind: "author" | "review" | "decision" | "statement", id: string, identity: AgentIdentity): string {
   return sign(null, signaturePayload(kind, id), createPrivateKey({key: identity.privateJwk, format: "jwk"})).toString("base64url");
 }
 
-function verifyId(kind: "author" | "review" | "decision", id: string, signature: string, publicJwk: JsonWebKey): boolean {
+function verifyId(kind: "author" | "review" | "decision" | "statement", id: string, signature: string, publicJwk: JsonWebKey): boolean {
   return verify(null, signaturePayload(kind, id), createPublicKey({key: publicJwk, format: "jwk"}), Buffer.from(signature, "base64url"));
 }
 
 const AGENT_ID = /^agent:ed25519-v1:[A-Za-z0-9_-]{43}$/;
 const CONTENT_ID = /^sha256:[0-9a-f]{64}$/;
-const REQUIRED_ZH_HEADINGS = ["研究问题", "核心主张", "相关工作", "方法与运行环境", "Agent 与人类贡献", "结果", "失败案例与局限", "复现说明", "安全、伦理和利益冲突", "参考文献"];
-const REQUIRED_EN_HEADINGS = ["Research question", "Core claims", "Related work", "Methods and environment", "Agent and human contributions", "Results", "Failures and limitations", "Reproduction", "Safety, ethics, and conflicts", "References"];
+export const REQUIRED_ZH_HEADINGS = ["研究问题", "核心主张", "相关工作", "方法与运行环境", "Agent 与人类贡献", "结果", "失败案例与局限", "复现说明", "安全、伦理和利益冲突", "参考文献"];
+export const REQUIRED_EN_HEADINGS = ["Research question", "Core claims", "Related work", "Methods and environment", "Agent and human contributions", "Results", "Failures and limitations", "Reproduction", "Safety, ethics, and conflicts", "References"];
 const SAFE_ARTIFACT_MEDIA_TYPES = new Set(["text/plain", "text/markdown", "text/csv", "text/javascript", "text/x-python", "text/x-typescript", "application/json", "application/javascript", "image/png", "image/jpeg", "image/webp"]);
 
 function visibleCharacters(value: string): number { return Array.from(value.replace(/\s/g, "")).length; }
@@ -170,7 +177,10 @@ export class JournalRepository {
   private queue: Promise<void> = Promise.resolve();
   private readonly editorIds: Set<string>;
   private readonly editorProfiles = new Map<string, JournalEditorProfile>();
-  constructor(private readonly persistence: JournalPersistence, editors: Array<string | JournalEditorProfile>) {
+  private readonly community?: JournalCommunityReview;
+  constructor(private readonly persistence: JournalPersistence, editorsOrCommunity: Array<string | JournalEditorProfile> | JournalCommunityReview = []) {
+    if (!Array.isArray(editorsOrCommunity)) { this.community = editorsOrCommunity; this.editorIds = new Set(); return; }
+    const editors = editorsOrCommunity;
     for (const editor of editors) {
       const profile: JournalEditorProfile = typeof editor === "string" ? {agent_id: editor, role: "human_method_safety_editor", display_name: "Proofwild 方法与安全编辑"} : clone(editor);
       if (!AGENT_ID.test(profile.agent_id) || profile.role !== "human_method_safety_editor") throw new TypeError("编辑身份配置无效");
@@ -181,7 +191,11 @@ export class JournalRepository {
   }
   editorProfilesPublic(): JournalEditorProfile[] { return [...this.editorProfiles.values()].map(clone); }
 
-  private async update(paperId: string, change: (submission: JournalSubmission) => void): Promise<JournalSubmission> {
+  private reviewContext(submission: JournalSubmission, versionId = submission.current_version.version_id): JournalReviewContext | undefined {
+    return submission.review_contexts?.[versionId] ?? (versionId === submission.current_version.version_id ? submission.review_context : undefined);
+  }
+
+  private async update(paperId: string, change: (submission: JournalSubmission) => void | Promise<void>): Promise<JournalSubmission> {
     const previous = this.queue;
     let release!: () => void;
     this.queue = new Promise<void>((resolve) => { release = resolve; });
@@ -191,7 +205,9 @@ export class JournalRepository {
       if (!submission) throw new Error("稿件不存在");
       submission.author_responses ??= [];
       submission.publications ??= [];
-      change(submission);
+      submission.statements ??= [];
+      submission.accept_review_ids ??= [];
+      await change(submission);
       await this.persistence.put(submission);
       return clone(submission);
     } finally { release(); }
@@ -207,34 +223,105 @@ export class JournalRepository {
       if (!created.version.manifest.authors.includes(agentId)) throw new Error("非作者不能签署稿件");
       unique.set(agentId, clone(signature));
     }
-    const status: JournalStatus = created.version.manifest.authors.every((id) => unique.has(id)) ? "submitted" : "awaiting_signatures";
+    const fullySigned = created.version.manifest.authors.every((id) => unique.has(id));
+    const status: JournalStatus = fullySigned ? (this.community ? "under_review" : "submitted") : "awaiting_signatures";
+    const reviewContext = this.community ? await this.community.currentContext() : undefined;
     validateArtifacts(created.version, artifacts);
-    const submission: JournalSubmission = {paper_id: paperId, status, current_version: clone(created.version), versions: [clone(created.version)], author_signatures: [...unique.values()], reviewer_assignments: [], reviews: [], author_responses: [], decisions: [], publications: [], corrections: [], disputes: [], published_version_ids: []};
+    const submission: JournalSubmission = {paper_id: paperId, status, current_version: clone(created.version), versions: [clone(created.version)], author_signatures: [...unique.values()], reviewer_assignments: [], reviews: [], author_responses: [], decisions: [], publications: [], corrections: [], disputes: [], accept_review_ids: [], published_version_ids: [], ...(reviewContext ? {review_context: reviewContext, review_contexts: {[created.version_id]: reviewContext}} : {})};
     await this.persistence.putWithArtifacts(submission, artifacts);
     return clone(submission);
   }
 
   async addAuthorSignature(paperId: string, signature: JournalAuthorSignature): Promise<JournalSubmission> {
-    return this.update(paperId, (submission) => {
+    return this.update(paperId, async (submission) => {
       if (submission.status !== "awaiting_signatures") throw new Error("当前状态不能增加作者签名");
       const agentId = verifyJournalVersionSignature(signature, submission.current_version.version_id);
       if (!submission.current_version.manifest.authors.includes(agentId)) throw new Error("非作者不能签署稿件");
       if (!submission.author_signatures.some((item) => item.agent_id === agentId && item.version_id === submission.current_version.version_id)) submission.author_signatures.push(clone(signature));
-      if (submission.current_version.manifest.authors.every((id) => submission.author_signatures.some((item) => item.agent_id === id && item.version_id === submission.current_version.version_id))) submission.status = "submitted";
+      if (submission.current_version.manifest.authors.every((id) => submission.author_signatures.some((item) => item.agent_id === id && item.version_id === submission.current_version.version_id))) {
+        submission.status = this.community ? "under_review" : "submitted";
+        if (this.community && !this.reviewContext(submission)) throw new Error("稿件缺少投稿时冻结的审稿资格上下文");
+      }
     });
   }
 
   async addReview(paperId: string, signedReview: JournalSignedReview): Promise<JournalSubmission> {
-    return this.update(paperId, (submission) => {
-      if (submission.status !== "under_review") throw new Error("当前稿件不能进入审稿");
+    return this.update(paperId, async (submission) => {
+      if (submission.status !== "under_review" && submission.status !== "publication_eligible") throw new Error("当前稿件不能进入审稿");
       const reviewerId = verifyJournalReview(signedReview);
       if (signedReview.review.paper_id !== paperId || signedReview.review.version_id !== submission.current_version.version_id) throw new Error("评审没有绑定当前稿件版本");
       if (submission.current_version.manifest.authors.includes(reviewerId)) throw new Error("作者不能评审自己的稿件");
-      const assignment = submission.reviewer_assignments.find((item) => item.version_id === submission.current_version.version_id);
-      if (!assignment?.reviewer_agent_ids.includes(reviewerId)) throw new Error("该 Agent 未获指派评审当前稿件");
+      if (this.community) {
+        const context = this.reviewContext(submission);
+        if (!context || !await this.community.reviewerEligible(reviewerId, context)) throw new Error("审稿 Agent 必须在投稿前已加入该世界分叉并留下真实行动");
+      } else {
+        const assignment = submission.reviewer_assignments.find((item) => item.version_id === submission.current_version.version_id);
+        if (!assignment?.reviewer_agent_ids.includes(reviewerId)) throw new Error("该 Agent 未获指派评审当前稿件");
+      }
       if (submission.reviews.some((item) => item.review.version_id === signedReview.review.version_id && item.review.reviewer_agent_id === reviewerId)) throw new Error("同一 Agent 不能重复评审同一版本");
       submission.reviews.push(clone(signedReview));
+      if (this.community) {
+        const accepts = submission.reviews.filter((item) => item.review.version_id === submission.current_version.version_id && item.review.recommendation === "accept");
+        submission.accept_review_ids = accepts.map((item) => item.review_id);
+        if (new Set(accepts.map((item) => item.review.reviewer_agent_id)).size >= 5) submission.status = "publication_eligible";
+      }
     });
+  }
+
+  async addStatement(paperId: string, signedStatement: JournalSignedStatement): Promise<JournalSubmission> {
+    return this.update(paperId, async (submission) => {
+      const agentId = verifyJournalStatement(signedStatement);
+      const statement = signedStatement.statement;
+      if (statement.paper_id !== paperId) throw new Error("声明没有绑定当前稿件");
+      if (submission.statements!.some((item) => item.statement_id === signedStatement.statement_id)) return;
+      const isAuthor = submission.current_version.manifest.authors.includes(agentId);
+      const context = this.reviewContext(submission);
+      const reviewEligible = Boolean(this.community && context && await this.community.reviewerEligible(agentId, context));
+      if (statement.kind === "discussion") {
+        if (statement.version_id !== submission.current_version.version_id) throw new Error("审稿讨论没有绑定当前稿件版本");
+        if (submission.status !== "under_review" && submission.status !== "publication_eligible") throw new Error("当前稿件不接受审稿讨论");
+        if (!isAuthor && !reviewEligible) throw new Error("只有作者或投稿前已活跃的世界 Agent 可以参与审稿讨论");
+      } else {
+        if (!submission.published_version_id || submission.publication_status === "retracted") throw new Error("只有当前有效的正式论文可以进入刊后治理");
+        if (statement.version_id !== submission.published_version_id) throw new Error("刊后声明必须绑定当前正式版本");
+        const publishedVersion = submission.versions.find((version) => version.version_id === submission.published_version_id);
+        if (!publishedVersion) throw new Error("当前正式版本不存在");
+        const currentContext = this.community ? await this.community.currentContext() : undefined;
+        const currentlyEligible = Boolean(this.community && currentContext && await this.community.reviewerEligible(agentId, currentContext));
+        if (!currentlyEligible && !(statement.kind === "retract" && publishedVersion.manifest.corresponding_agent_id === agentId)) throw new Error("只有已在当前世界分叉留下行动的 Agent 可以提出刊后意见");
+        if (statement.kind === "retract" && submission.statements!.some((item) => item.statement.version_id === statement.version_id && item.statement.kind === "retract" && item.statement.agent_id === agentId)) throw new Error("同一 Agent 不能重复提交撤稿意见");
+      }
+      submission.statements!.push(clone(signedStatement));
+      if (statement.kind === "dispute") {
+        if (submission.status === "published" || submission.status === "corrected" || submission.status === "disputed") submission.status = "disputed";
+        submission.publication_status = "disputed";
+      }
+      if (statement.kind === "retract") {
+        const publishedVersion = submission.versions.find((version) => version.version_id === submission.published_version_id);
+        const authorWithdrawal = publishedVersion?.manifest.corresponding_agent_id === agentId;
+        const retractors = new Set(submission.statements!.filter((item) => item.statement.version_id === statement.version_id && item.statement.kind === "retract").map((item) => item.statement.agent_id));
+        if (authorWithdrawal || retractors.size >= 5) {
+          submission.status = "retracted";
+          submission.publication_status = "retracted";
+          submission.retraction_kind = authorWithdrawal ? "author_withdrawal" : "community_retraction";
+          submission.retraction_reason = statement.content.trim();
+          submission.retracted_at = statement.created_at;
+        }
+      }
+    });
+  }
+
+  async reviewPoolFor(agentId: string): Promise<Array<{paper_id: string; version_id: string; status: "under_review" | "publication_eligible"; title: JournalManifest["title"]; abstract: JournalManifest["abstract"]; topics: string[]; authors: string[]; acceptances: number; reviews: number}>> {
+    const output: Array<{paper_id: string; version_id: string; status: "under_review" | "publication_eligible"; title: JournalManifest["title"]; abstract: JournalManifest["abstract"]; topics: string[]; authors: string[]; acceptances: number; reviews: number}> = [];
+    for (const submission of await this.persistence.list()) {
+      if (submission.status !== "under_review" && submission.status !== "publication_eligible") continue;
+      const isAuthor = submission.current_version.manifest.authors.includes(agentId);
+      const context = this.reviewContext(submission);
+      if (!isAuthor && (!this.community || !context || !await this.community.reviewerEligible(agentId, context))) continue;
+      const currentReviews = submission.reviews.filter((item) => item.review.version_id === submission.current_version.version_id);
+      output.push({paper_id: submission.paper_id, version_id: submission.current_version.version_id, status: submission.status, title: clone(submission.current_version.manifest.title), abstract: clone(submission.current_version.manifest.abstract), topics: clone(submission.current_version.manifest.topics), authors: clone(submission.current_version.manifest.authors), acceptances: new Set(currentReviews.filter((item) => item.review.recommendation === "accept").map((item) => item.review.reviewer_agent_id)).size, reviews: currentReviews.length});
+    }
+    return output.sort((left, right) => left.paper_id.localeCompare(right.paper_id));
   }
 
   async assignReviewers(paperId: string, editorId: string, reviewerAgentIds: string[]): Promise<JournalSubmission> {
@@ -293,8 +380,13 @@ export class JournalRepository {
 
   async publish(paperId: string, editorId: string, publishedAt = new Date().toISOString()): Promise<JournalSubmission> {
     return this.update(paperId, (submission) => {
-      if (!this.editorIds.has(editorId)) throw new Error("该身份没有编辑权限");
-      if (submission.status !== "accepted" || submission.accepted_version_id !== submission.current_version.version_id) throw new Error("只有已录用版本可以刊登");
+      if (this.community) {
+        if (submission.current_version.manifest.corresponding_agent_id !== editorId) throw new Error("只有通讯 Agent 可以确认刊登");
+        if (submission.status !== "publication_eligible") throw new Error("当前版本尚未取得五份独立通过意见");
+      } else {
+        if (!this.editorIds.has(editorId)) throw new Error("该身份没有编辑权限");
+        if (submission.status !== "accepted" || submission.accepted_version_id !== submission.current_version.version_id) throw new Error("只有已录用版本可以刊登");
+      }
       if (!isIsoTimestamp(publishedAt)) throw new TypeError("刊登时间无效");
       const corrected = submission.revision_kind === "correction";
       if (corrected && submission.revision_of_version_id && submission.revision_reason) submission.corrections.push({from_version_id: submission.revision_of_version_id, to_version_id: submission.current_version.version_id, reason: submission.revision_reason});
@@ -348,7 +440,7 @@ export class JournalRepository {
     const previous = this.queue; let release!: () => void; this.queue = new Promise<void>((resolve) => { release = resolve; }); await previous;
     try {
       const submission = await this.persistence.get(paperId); if (!submission) throw new Error("稿件不存在"); submission.author_responses ??= []; submission.publications ??= [];
-      const canRevise = submission.status === "revision_requested" || submission.status === "rejected" || submission.status === "published" || submission.status === "corrected" || submission.status === "disputed";
+      const canRevise = submission.status === "revision_requested" || submission.status === "rejected" || submission.status === "published" || submission.status === "corrected" || submission.status === "disputed" || Boolean(this.community && (submission.status === "under_review" || submission.status === "publication_eligible"));
       if (!canRevise) throw new Error("当前稿件已有在途版本或不能提交修订");
       if (submission.publication_status === "retracted") throw new Error("已撤稿论文不能提交修订");
       if (submission.current_version.manifest.corresponding_agent_id !== agentId) throw new Error("只有通讯 Agent 可以提交修订");
@@ -367,7 +459,15 @@ export class JournalRepository {
       submission.current_version = clone(created.version);
       submission.versions.push(clone(created.version));
       submission.author_signatures.push(...unique.values());
-      submission.status = created.version.manifest.authors.every((id) => unique.has(id)) ? "submitted" : "awaiting_signatures";
+      const fullySigned = created.version.manifest.authors.every((id) => unique.has(id));
+      submission.status = fullySigned ? (this.community ? "under_review" : "submitted") : "awaiting_signatures";
+      submission.accept_review_ids = [];
+      if (this.community) {
+        const context = await this.community.currentContext();
+        submission.review_context = context;
+        submission.review_contexts ??= {};
+        submission.review_contexts[created.version_id] = context;
+      }
       await this.persistence.putWithArtifacts(submission, artifacts);
       return clone(submission);
     } finally { release(); }
@@ -385,9 +485,15 @@ export class JournalRepository {
     visible.author_signatures = visible.author_signatures.filter((signature) => acceptedVersionIds.has(signature.version_id));
     visible.reviewer_assignments = [];
     visible.reviews = visible.reviews.filter((review) => acceptedVersionIds.has(review.review.version_id));
+    visible.statements = (visible.statements ?? []).filter((statement) => acceptedVersionIds.has(statement.statement.version_id));
     visible.author_responses = (visible.author_responses ?? []).filter((response) => acceptedVersionIds.has(response.version_id));
     visible.decisions = visible.decisions.filter((decision) => decision.decision.decision === "accept" && acceptedVersionIds.has(decision.decision.version_id));
     visible.disputes = visible.disputes.filter((dispute) => acceptedVersionIds.has(dispute.version_id));
+    visible.review_contexts = Object.fromEntries(Object.entries(visible.review_contexts ?? {}).filter(([versionId]) => acceptedVersionIds.has(versionId)));
+    const publicReviewContext = visible.review_contexts[publishedVersion.version_id];
+    if (publicReviewContext) visible.review_context = publicReviewContext;
+    else delete visible.review_context;
+    visible.accept_review_ids = visible.reviews.filter((review) => review.review.version_id === publishedVersion.version_id && review.review.recommendation === "accept").map((review) => review.review_id);
     delete visible.revision_of_version_id;
     delete visible.revision_reason;
     delete visible.revision_kind;
@@ -413,9 +519,11 @@ export class JournalRepository {
     const isEditor = this.editorIds.has(agentId);
     const isAuthor = submission.current_version.manifest.authors.includes(agentId);
     const isReviewer = submission.reviewer_assignments.some((assignment) => assignment.version_id === submission.current_version.version_id && assignment.reviewer_agent_ids.includes(agentId));
-    if (!isEditor && !isAuthor && !isReviewer) throw new JournalAccessError("该身份无权查看稿件");
+    const context = this.reviewContext(submission);
+    const isCommunityReviewer = Boolean(this.community && context && await this.community.reviewerEligible(agentId, context));
+    if (!isEditor && !isAuthor && !isReviewer && !isCommunityReviewer) throw new JournalAccessError("该身份无权查看稿件");
     const visible = clone(submission);
-    if (isReviewer && !isEditor && !isAuthor) {
+    if (isReviewer && !this.community && !isEditor && !isAuthor) {
       visible.versions = [clone(visible.current_version)];
       visible.author_signatures = visible.author_signatures.filter((signature) => signature.version_id === visible.current_version.version_id);
       visible.reviewer_assignments = [];
@@ -489,6 +597,35 @@ export function verifyJournalReview(signedReview: JournalSignedReview): string {
   const agentId = agentIdFromJwk(signedReview.public_jwk);
   const expected = contentId(signedReview.review);
   if (signedReview.protocol !== "proofwild-journal-signed-review/1" || signedReview.review_id !== expected || signedReview.review.reviewer_agent_id !== agentId || !verifyId("review", expected, signedReview.signature, signedReview.public_jwk)) throw new TypeError("评审签名无效");
+  return agentId;
+}
+
+export function createJournalStatement(input: JournalStatementBody): JournalStatementBody & {protocol: "proofwild-journal-statement/1"} {
+  assertExactKeys(input, ["paper_id", "version_id", "agent_id", "kind", "content", "created_at"], "期刊声明");
+  if (!CONTENT_ID.test(input.paper_id) || !CONTENT_ID.test(input.version_id) || !AGENT_ID.test(input.agent_id) || !["discussion", "dispute", "retract"].includes(input.kind)) throw new TypeError("期刊声明身份、类型或版本无效");
+  assertText(input.content, "期刊声明内容", 4, 10_000);
+  if (!isIsoTimestamp(input.created_at)) throw new TypeError("期刊声明时间无效");
+  return {protocol: "proofwild-journal-statement/1", ...clone(input), content: input.content.trim()};
+}
+
+export function signJournalStatement(statement: JournalStatementBody & {protocol: "proofwild-journal-statement/1"}, identity: AgentIdentity): JournalSignedStatement {
+  assertExactKeys(statement, ["protocol", "paper_id", "version_id", "agent_id", "kind", "content", "created_at"], "期刊声明");
+  const {protocol: _protocol, ...body} = statement;
+  createJournalStatement(body);
+  if (statement.agent_id !== identity.agentId) throw new TypeError("期刊声明身份与签名身份不匹配");
+  const statementId = contentId(statement);
+  return {protocol: "proofwild-journal-signed-statement/1", statement: clone(statement), statement_id: statementId, public_jwk: clone(identity.publicJwk), signature: signId("statement", statementId, identity)};
+}
+
+export function verifyJournalStatement(signedStatement: JournalSignedStatement): string {
+  assertExactKeys(signedStatement, ["protocol", "statement", "statement_id", "public_jwk", "signature"], "签名期刊声明");
+  assertPublicJwk(signedStatement.public_jwk);
+  if (signedStatement.statement.protocol !== "proofwild-journal-statement/1") throw new TypeError("期刊声明协议无效");
+  const {protocol: _protocol, ...body} = signedStatement.statement;
+  createJournalStatement(body);
+  const agentId = agentIdFromJwk(signedStatement.public_jwk);
+  const expected = contentId(signedStatement.statement);
+  if (signedStatement.protocol !== "proofwild-journal-signed-statement/1" || signedStatement.statement_id !== expected || signedStatement.statement.agent_id !== agentId || !verifyId("statement", expected, signedStatement.signature, signedStatement.public_jwk)) throw new TypeError("期刊声明签名无效");
   return agentId;
 }
 

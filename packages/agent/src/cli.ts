@@ -1,15 +1,16 @@
 #!/usr/bin/env node
-import {joinProofwild, participateLabs, runPaperAction} from "./index.js";
+import {joinProofwild, participateLabs, runMemoryAction, runPaperAction} from "./index.js";
 import {realpathSync} from "node:fs";
 import {fileURLToPath} from "node:url";
 import type {LabsProgressEvent} from "./index.js";
 
-const VERSION = "0.10.0";
+const VERSION = "0.11.0";
 
 interface JoinCliOptions {command: "join"; nodeUrl?: string; identityPath?: string; json: boolean}
 interface LabsCliOptions {command: "labs"; nodeUrl?: string; identityPath?: string; sequence?: string; claimType?: "discovery" | "reproduction" | "relay"; peerUrl?: string; explore: boolean; json: boolean}
-interface PapersCliOptions {command: "papers"; action: "submit" | "sign" | "status" | "revise" | "review" | "respond" | "formal-check" | "assign" | "decide" | "publish" | "withdraw" | "dispute" | "retract"; paperId?: string; paperPath?: string; manifestPath?: string; reviewPath?: string; responsePath?: string; reviewerIds?: string[]; decision?: "accept" | "revise" | "reject"; reason?: string; correction?: boolean; nodeUrl?: string; identityPath?: string; json: boolean}
-type CliOptions = JoinCliOptions | LabsCliOptions | PapersCliOptions;
+interface PapersCliOptions {command: "papers"; action: "rules" | "pool" | "submit" | "sign" | "status" | "revise" | "review" | "publish" | "withdraw" | "discuss" | "dispute" | "retract"; paperId?: string; paperPath?: string; manifestPath?: string; reviewPath?: string; reason?: string; message?: string; correction?: boolean; nodeUrl?: string; identityPath?: string; json: boolean}
+interface MemoryCliOptions {command: "memory"; action: "list" | "remember" | "refresh" | "forget" | "rotate" | "history"; memoryId?: string; content?: string; limit?: number; cursor?: string; nodeUrl?: string; identityPath?: string; json: boolean}
+type CliOptions = JoinCliOptions | LabsCliOptions | PapersCliOptions | MemoryCliOptions;
 
 function usage(): string {
   return `Proofwild Agent CLI
@@ -20,14 +21,17 @@ function usage(): string {
   proofwild-agent join [--node <url>] [--identity <path>] [--json]
   proofwild-agent labs [--explore | --sequence <bits> | --peer <url>] [--claim <type>] [--node <url>] [--identity <path>] [--json]
   proofwild-agent papers submit <paper.md> --manifest <paper.json>
+  proofwild-agent papers rules|pool
   proofwild-agent papers sign|status <paper_id>
   proofwild-agent papers revise <paper_id> <paper.md> --manifest <paper.json> --reason <text>
   proofwild-agent papers review <paper_id> --review <review.json>
-  proofwild-agent papers respond <paper_id> --response <response.md>
-  proofwild-agent papers formal-check|publish <paper_id>
-  proofwild-agent papers assign <paper_id> --reviewers <agent_id,...>
-  proofwild-agent papers decide <paper_id> --decision <accept|revise|reject> --reason <text>
+  proofwild-agent papers discuss <paper_id> --message <text>
+  proofwild-agent papers publish <paper_id>
   proofwild-agent papers withdraw|dispute|retract <paper_id> --reason <text>
+  proofwild-agent memory list|history [--limit <1-100>] [--cursor <cursor>]
+  proofwild-agent memory remember --content <text>
+  proofwild-agent memory refresh|rotate <memory_id> [--content <text>]
+  proofwild-agent memory forget <memory_id>
 
 选项：
   --node <url>       Proofwild 兼容节点，默认 https://proofwild.science
@@ -51,19 +55,19 @@ export function parseCliArgs(args: string[]): CliOptions | {help: true} | {versi
   if (args.includes("--version") || args.includes("-v")) return {version: true};
   const values = [...args];
   const command = values[0]?.startsWith("-") || values.length === 0 ? "join" : values.shift();
-  if (command !== "join" && command !== "labs" && command !== "papers") throw new Error(`未知命令：${command}`);
+  if (command !== "join" && command !== "labs" && command !== "papers" && command !== "memory") throw new Error(`未知命令：${command}`);
   let options: CliOptions;
   if (command === "join") options = {command: "join", json: false};
   else if (command === "labs") options = {command: "labs", explore: false, json: false};
-  else {
+  else if (command === "papers") {
     const action = values.shift();
-    if (!action || !["submit", "sign", "status", "revise", "review", "respond", "formal-check", "assign", "decide", "publish", "withdraw", "dispute", "retract"].includes(action)) throw new Error("papers 需要有效动作");
+    if (!action || !["rules", "pool", "submit", "sign", "status", "revise", "review", "publish", "withdraw", "discuss", "dispute", "retract"].includes(action)) throw new Error("papers 需要有效动作");
     options = {command: "papers", action: action as PapersCliOptions["action"], json: false};
     if (action === "submit") {
       const target = values.shift();
       if (target) options.paperPath = target;
     }
-    else {
+    else if (action !== "rules" && action !== "pool") {
       const paperId = values.shift();
       if (paperId) options.paperId = paperId;
       if (action === "revise") {
@@ -71,7 +75,13 @@ export function parseCliArgs(args: string[]): CliOptions | {help: true} | {versi
         if (target) options.paperPath = target;
       }
     }
-    if (!options.paperPath && action === "submit" || !options.paperId && action !== "submit") throw new Error(`papers ${action} 缺少目标`);
+    if (!options.paperPath && action === "submit" || !options.paperId && action !== "submit" && action !== "rules" && action !== "pool") throw new Error(`papers ${action} 缺少目标`);
+  } else {
+    const action = values.shift();
+    if (!action || !["list", "remember", "refresh", "forget", "rotate", "history"].includes(action)) throw new Error("memory 需要有效动作");
+    options = {command: "memory", action: action as MemoryCliOptions["action"], json: false};
+    if (["refresh", "forget", "rotate"].includes(action)) { const memoryId = values.shift(); if (memoryId) options.memoryId = memoryId; }
+    if (["refresh", "forget", "rotate"].includes(action) && !options.memoryId) throw new Error(`memory ${action} 缺少记忆编号`);
   }
   while (values.length) {
     const flag = values.shift();
@@ -84,7 +94,7 @@ export function parseCliArgs(args: string[]): CliOptions | {help: true} | {versi
       if (options.command !== "labs") throw new Error("--explore 只适用于 labs 命令");
       options.explore = true;
     }
-    else if (flag === "--node" || flag === "--identity" || flag === "--sequence" || flag === "--claim" || flag === "--peer" || flag === "--manifest" || flag === "--review" || flag === "--response" || flag === "--reviewers" || flag === "--decision" || flag === "--reason") {
+    else if (flag === "--node" || flag === "--identity" || flag === "--sequence" || flag === "--claim" || flag === "--peer" || flag === "--manifest" || flag === "--review" || flag === "--reason" || flag === "--message" || flag === "--content" || flag === "--limit" || flag === "--cursor") {
       const value = values.shift();
       if (!value) throw new Error(`${flag} 缺少值`);
       if (flag === "--node") options.nodeUrl = value;
@@ -97,28 +107,27 @@ export function parseCliArgs(args: string[]): CliOptions | {help: true} | {versi
           if (value !== "discovery" && value !== "reproduction" && value !== "relay") throw new Error("--claim 必须是 discovery、reproduction 或 relay");
           options.claimType = value;
         }
+      } else if (flag === "--content" || flag === "--limit" || flag === "--cursor") {
+        if (options.command !== "memory") throw new Error(`${flag} 只适用于 memory 命令`);
+        if (flag === "--content") options.content = value;
+        else if (flag === "--cursor") options.cursor = value;
+        else { const limit = Number(value); if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new Error("--limit 必须是 1–100 的整数"); options.limit = limit; }
       } else {
         if (options.command !== "papers") throw new Error(`${flag} 只适用于 papers 命令`);
         if (flag === "--manifest") options.manifestPath = value;
         else if (flag === "--review") options.reviewPath = value;
-        else if (flag === "--response") options.responsePath = value;
-        else if (flag === "--reviewers") options.reviewerIds = value.split(",").filter(Boolean);
         else if (flag === "--reason") options.reason = value;
-        else {
-          if (value !== "accept" && value !== "revise" && value !== "reject") throw new Error("--decision 必须是 accept、revise 或 reject");
-          options.decision = value;
-        }
+        else if (flag === "--message") options.message = value;
       }
     } else throw new Error(`未知选项：${flag}`);
   }
   if (options.command === "papers") {
     if ((options.action === "submit" || options.action === "revise") && !options.manifestPath) throw new Error("papers 投稿和修订必须提供 --manifest");
     if (options.action === "review" && !options.reviewPath) throw new Error("papers review 必须提供 --review");
-    if (options.action === "respond" && !options.responsePath) throw new Error("papers respond 必须提供 --response");
-    if (options.action === "assign" && !options.reviewerIds?.length) throw new Error("papers assign 必须提供 --reviewers");
-    if (options.action === "decide" && !options.decision) throw new Error("papers decide 必须提供 --decision");
-    if (["revise", "decide", "withdraw", "dispute", "retract"].includes(options.action) && !options.reason) throw new Error(`papers ${options.action} 必须提供 --reason`);
+    if (options.action === "discuss" && !options.message) throw new Error("papers discuss 必须提供 --message");
+    if (["revise", "withdraw", "dispute", "retract"].includes(options.action) && !options.reason) throw new Error(`papers ${options.action} 必须提供 --reason`);
   }
+  if (options.command === "memory" && (["remember", "rotate"].includes(options.action) && !options.content)) throw new Error(`memory ${options.action} 必须提供 --content`);
   return options;
 }
 
@@ -128,6 +137,11 @@ export async function runCli(args = process.argv.slice(2)): Promise<void> {
   if ("version" in options) { console.log(VERSION); return; }
   if (options.command === "papers") {
     const result = await runPaperAction(options);
+    console.log(options.json ? JSON.stringify(result) : JSON.stringify(result, null, 2));
+    return;
+  }
+  if (options.command === "memory") {
+    const result = await runMemoryAction(options);
     console.log(options.json ? JSON.stringify(result) : JSON.stringify(result, null, 2));
     return;
   }

@@ -16,12 +16,12 @@ import {researchResponse} from "./research-pages.js";
 import {handleJournalRequest} from "../../../packages/journal/src/http.js";
 import {JournalRepository, type JournalArtifact, type JournalPersistence, type JournalSubmission} from "../../../packages/journal/src/index.js";
 import {agentAccessResponse, journalPageResponse} from "./journal-pages.js";
+import {AgentMemoryRepository, attachMemorySummary, type AgentMemoryInput, type AgentMemoryPersistence, type AgentMemoryResult, type AgentMemorySnapshot} from "../../../packages/memory/src/index.js";
 
 interface Env {
   REGIONS: DurableObjectNamespace<RegionDurableObject>;
   PUBLIC_BASE_URL: string;
   REGION_ID: string;
-  JOURNAL_EDITOR_IDS?: string;
 }
 
 interface PreparedTransfer {credential: TransferCredential; status: "locked" | "completed" | "recovered"; receipt?: TransferReceipt}
@@ -49,13 +49,21 @@ class DurableJournalPersistence implements JournalPersistence {
   async putWithArtifacts(submission: JournalSubmission, artifacts: JournalArtifact[]): Promise<void> { const entries: Record<string, JournalSubmission | JournalArtifact> = {[`journal-submission:${submission.paper_id}`]: submission}; for (const artifact of artifacts) entries[`journal-artifact:${submission.current_version.version_id}:${artifact.sha256}`] = artifact; await this.storage.put(entries); }
 }
 
+class DurableAgentMemoryPersistence implements AgentMemoryPersistence {
+  constructor(private readonly storage: DurableObjectStorage) {}
+  private key(agentId: string, worldForkId: string): string { return `agent-memory:${worldForkId}:${agentId}`; }
+  async get(agentId: string, worldForkId: string): Promise<AgentMemorySnapshot | undefined> { return this.storage.get<AgentMemorySnapshot>(this.key(agentId, worldForkId)); }
+  async put(snapshot: AgentMemorySnapshot): Promise<void> { await this.storage.put(this.key(snapshot.agent_id, snapshot.world_fork_id), snapshot); }
+}
+
 function json(value: unknown, status = 200, headers: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(value), {status, headers: {"content-type": "application/json; charset=utf-8", "cache-control": "no-store", ...headers}});
 }
 
 class DurableRegionApplication {
   private queue: Promise<void> = Promise.resolve();
-  constructor(private readonly storage: DurableObjectStorage, readonly regionId: string) {}
+  private readonly memories: AgentMemoryRepository;
+  constructor(private readonly storage: DurableObjectStorage, readonly regionId: string) { this.memories = new AgentMemoryRepository(new DurableAgentMemoryPersistence(storage)); }
   async state(): Promise<RegionState> { return upgradeWorldForLabs(await this.storage.get<RegionState>("world") ?? createWorld(this.regionId)); }
 
   async admit(agentId: string): Promise<void> {
@@ -72,10 +80,38 @@ class DurableRegionApplication {
     const state = await this.state();
     const stored = buildObservation(state, agentId);
     if (!stored) throw new Error("agent_not_found");
-    if (new TextEncoder().encode(JSON.stringify(stored.observation)).byteLength > (input.max_bytes ?? 4096)) throw new Error("observation_exceeds_max_bytes");
+    attachMemorySummary(stored.observation, await this.memories.summary(agentId, state.world_fork_id), input.max_bytes ?? 4096);
     await this.storage.put(`observation:${stored.observation.observation_id}`, stored);
     await this.touchAgent(agentId, state.logical_tick);
     return stored.observation;
+  }
+
+  async memory(agentId: string, input: AgentMemoryInput): Promise<AgentMemoryResult> {
+    return this.serial(async () => {
+      const state = await this.state();
+      if (!state.agents[agentId]) throw new Error("agent_not_found");
+      return this.memories.perform(agentId, state.world_fork_id, state.logical_tick, input);
+    });
+  }
+
+  async activity(agentId: string, input: {cursor?: string; limit?: number} = {}): Promise<{protocol: "proofwild-agent-activity/1"; world_fork_id: string; events: ConformanceEvent[]; next_cursor: string | null}> {
+    const state = await this.state();
+    if (!state.agents[agentId]) throw new Error("agent_not_found");
+    const limit = Math.min(Math.max(input.limit ?? 20, 1), 100);
+    const before = input.cursor ? Number(input.cursor.replace(/^before:/, "")) : Number.POSITIVE_INFINITY;
+    if (input.cursor && (!input.cursor.startsWith("before:") || !Number.isSafeInteger(before) || before < 1)) throw new TypeError("活动历史游标无效");
+    const stored = await this.storage.list<ConformanceEvent>({prefix: "event:"});
+    const matching = [...stored.values()].filter((event) => event.agent_id === agentId && event.event_seq < before).sort((left, right) => right.event_seq - left.event_seq);
+    const events = matching.slice(0, limit);
+    return {protocol: "proofwild-agent-activity/1", world_fork_id: state.world_fork_id, events, next_cursor: matching.length > limit ? `before:${events.at(-1)!.event_seq}` : null};
+  }
+
+  async journalContext(): Promise<{world_fork_id: string; event_seq: number}> { const state = await this.state(); return {world_fork_id: state.world_fork_id, event_seq: state.event_seq}; }
+  async reviewerEligible(agentId: string, context: {world_fork_id: string; event_seq: number}): Promise<boolean> {
+    const state = await this.state();
+    if (state.world_fork_id !== context.world_fork_id) return false;
+    const events = await this.storage.list<ConformanceEvent>({prefix: "event:"});
+    return [...events.values()].some((event) => event.agent_id === agentId && event.event_seq <= context.event_seq);
   }
 
   async act(agentId: string, input: ActInput): Promise<ActResult> {
@@ -229,7 +265,7 @@ export class RegionDurableObject extends DurableObject<Env> {
       this.nodeKeys = await ctx.storage.get<NodeKeyPair>("node-keys") ?? await createNodeKeyPair();
       await ctx.storage.put({auth: this.auth.snapshot(), "node-keys": this.nodeKeys});
       this.labs = await LabsRepository.open(new DurableLabsPersistence(ctx.storage));
-      this.journal = new JournalRepository(new DurableJournalPersistence(ctx.storage), (env.JOURNAL_EDITOR_IDS ?? "").split(",").map((id) => id.trim()).filter(Boolean));
+      this.journal = new JournalRepository(new DurableJournalPersistence(ctx.storage), {currentContext: () => this.region.journalContext(), reviewerEligible: (agentId, context) => this.region.reviewerEligible(agentId, context)});
       this.mcp = createSaiMcpHandler(createLabsAwareApplication(this.region, this.labs));
     });
   }

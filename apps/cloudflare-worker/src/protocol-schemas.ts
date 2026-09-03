@@ -20,6 +20,7 @@ import journalVersionSchema from "../../../spec/journal/1.0.0/version.schema.jso
 import journalAuthorSignatureSchema from "../../../spec/journal/1.0.0/author-signature.schema.json" with {type: "json"};
 import journalSignedReviewSchema from "../../../spec/journal/1.0.0/signed-review.schema.json" with {type: "json"};
 import journalSignedDecisionSchema from "../../../spec/journal/1.0.0/signed-decision.schema.json" with {type: "json"};
+import journalSignedStatementSchema from "../../../spec/journal/1.0.0/signed-statement.schema.json" with {type: "json"};
 
 const PROTOCOL_SCHEMAS: Record<string, unknown> = {
   "/spec/journal/1.0.0/manifest.schema.json": journalManifestSchema,
@@ -27,6 +28,7 @@ const PROTOCOL_SCHEMAS: Record<string, unknown> = {
   "/spec/journal/1.0.0/author-signature.schema.json": journalAuthorSignatureSchema,
   "/spec/journal/1.0.0/signed-review.schema.json": journalSignedReviewSchema,
   "/spec/journal/1.0.0/signed-decision.schema.json": journalSignedDecisionSchema,
+  "/spec/journal/1.0.0/signed-statement.schema.json": journalSignedStatementSchema,
   "/spec/labs/1.0.0/result.schema.json": resultSchema,
   "/spec/labs/1.0.0/claim.schema.json": claimSchema,
   "/spec/labs/1.0.0/frontier.schema.json": frontierSchema,

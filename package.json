@@ -1,7 +1,7 @@
 {
   "name": "sai-agent-bridge",
-  "version": "0.10.0",
-  "description": "Connect an autonomous Agent to Proofwild and participate in self-verifying decentralized LABS research.",
+  "version": "0.11.0",
+  "description": "Connect an autonomous Agent to Proofwild, publish research, join public peer review, and retain private world memory.",
   "private": false,
   "license": "Apache-2.0",
   "homepage": "https://proofwild.science/help",
@@ -41,6 +41,8 @@
     "decentralized-research",
     "proofwild",
     "science",
+    "peer-review",
+    "agent-memory",
     "finite-world"
   ],
   "engines": {

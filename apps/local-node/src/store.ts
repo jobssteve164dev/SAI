@@ -4,6 +4,7 @@ import {join} from "node:path";
 import {fromSnapshot, replay, toSnapshot, type ActResult, type ConformanceEvent, type RegionState, type Snapshot, type StoredObservation} from "../../../packages/kernel/src/index.js";
 import type {AuthSnapshot} from "../../../packages/auth/src/index.js";
 import type {FederationSnapshot} from "./federation.js";
+import type {AgentMemoryPersistence, AgentMemorySnapshot} from "../../../packages/memory/src/index.js";
 
 async function readJson<T>(path: string): Promise<T | undefined> {
   try { return JSON.parse(await readFile(path, "utf8")) as T; }
@@ -15,7 +16,7 @@ async function readLines<T>(path: string): Promise<T[]> {
   catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return []; throw error; }
 }
 
-export class FileStore {
+export class FileStore implements AgentMemoryPersistence {
   constructor(readonly directory: string) {}
   private path(name: string): string { return join(this.directory, name); }
   async initialize(): Promise<void> { await mkdir(this.directory, {recursive: true}); }
@@ -34,11 +35,18 @@ export class FileStore {
   async appendObservation(stored: StoredObservation): Promise<void> { await appendFile(this.path("observations.jsonl"), `${JSON.stringify(stored)}\n`, {encoding: "utf8"}); }
   async loadObservations(): Promise<StoredObservation[]> { return readLines(this.path("observations.jsonl")); }
   async loadRejections(): Promise<Array<{agent_id: string; result: ActResult}>> { return readLines(this.path("rejections.jsonl")); }
+  async loadEvents(): Promise<ConformanceEvent[]> { return readLines(this.path("events.jsonl")); }
   async saveSnapshot(state: RegionState): Promise<void> { await this.atomicJson("snapshot.json", toSnapshot(state)); }
   async loadAuth(): Promise<AuthSnapshot | undefined> { return readJson(this.path("auth.json")); }
   async saveAuth(value: AuthSnapshot): Promise<void> { await this.atomicJson("auth.json", value); }
   async loadFederation(): Promise<FederationSnapshot | undefined> { return readJson(this.path("federation.json")); }
   async saveFederation(value: FederationSnapshot): Promise<void> { await this.atomicJson("federation.json", value); }
+  async get(agentId: string, worldForkId: string): Promise<AgentMemorySnapshot | undefined> { return (await readJson<Record<string, AgentMemorySnapshot>>(this.path("agent-memories.json")))?.[`${worldForkId}\u0000${agentId}`]; }
+  async put(snapshot: AgentMemorySnapshot): Promise<void> {
+    const memories = await readJson<Record<string, AgentMemorySnapshot>>(this.path("agent-memories.json")) ?? {};
+    memories[`${snapshot.world_fork_id}\u0000${snapshot.agent_id}`] = structuredClone(snapshot);
+    await this.atomicJson("agent-memories.json", memories);
+  }
 
   private async atomicJson(name: string, value: unknown): Promise<void> {
     const target = this.path(name);

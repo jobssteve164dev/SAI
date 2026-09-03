@@ -6,15 +6,17 @@ import {createHash, randomUUID} from "node:crypto";
 import {SaiBridge} from "../../bridge/src/index.js";
 import {agentIdFromJwk, createClientAssertion, createIdentity, type AgentIdentity} from "../../identity/src/index.js";
 import {WORLD_RESOURCE_TILE_AXIS, type ActResult, type LegalAction, type Observation} from "../../kernel/src/index.js";
-import {createJournalReview, createJournalVersion, signJournalDecision, signJournalReview, signJournalVersion, type JournalManifest, type JournalReviewBody, type JournalSubmission} from "../../journal/src/index.js";
+import {createJournalReview, createJournalStatement, createJournalVersion, signJournalReview, signJournalStatement, signJournalVersion, type JournalManifest, type JournalReviewBody, type JournalSubmission} from "../../journal/src/index.js";
+import type {AgentMemoryInput} from "../../memory/src/index.js";
 
 export {SaiBridge, SaiBridge as ProofwildBridge} from "../../bridge/src/index.js";
 export {agentIdFromJwk, createClientAssertion, createIdentity, verifyIdentityAssertion, type AgentIdentity} from "../../identity/src/index.js";
 export type {ActInput, ActResult, LegalAction, Observation} from "../../kernel/src/index.js";
 export type {LabsResearchReceipt} from "../../bridge/src/index.js";
 export type {LabsRegistryEntry, LabsRegistrySnapshot} from "../../labs/src/store.js";
-export {createJournalReview, createJournalVersion, signJournalDecision, signJournalReview, signJournalVersion, verifyJournalDecision, verifyJournalReview, verifyJournalVersionSignature} from "../../journal/src/index.js";
-export type {JournalManifest, JournalSubmission, JournalVersion, JournalSignedReview, JournalSignedDecision} from "../../journal/src/index.js";
+export {createJournalReview, createJournalStatement, createJournalVersion, signJournalReview, signJournalStatement, signJournalVersion, verifyJournalReview, verifyJournalStatement, verifyJournalVersionSignature} from "../../journal/src/index.js";
+export type {JournalManifest, JournalSubmission, JournalVersion, JournalSignedReview, JournalSignedStatement} from "../../journal/src/index.js";
+export type {AgentMemoryEntry, AgentMemoryInput, AgentMemoryMutationResult, AgentMemoryResult, AgentMemoryView} from "../../memory/src/index.js";
 export {ECONOMIC_NETWORK_ID, WORLD_BRANCHES_PER_STRATUM, WORLD_MAX_SUPPLY, WORLD_REWARDED_BRANCH_COUNT, WORLD_RESOURCE_STRATA, WORLD_SUPPLY_SCHEDULE_BODY, WORLD_SUPPLY_SCHEDULE_ID, createWorldSupplySchedule, worldResourceBranch} from "../../kernel/src/index.js";
 export type {EcosystemWorldSupplyState, WorldSupplyObservation, WorldSupplyState} from "../../kernel/src/index.js";
 export {canonicalLabsSequence, createLabsResearchTask, createLabsWorldBranch, exactMeritFactor, executeLabsResearchTask, executeLabsWorldResearch, labsEnergy, labsSettlementChallengeBits, labsSymmetries, verifyLabsArtifact, verifyLabsClaim, verifyLabsResearchRecord, verifyLabsResearchTask, verifyLabsResult, verifyLabsWorldSubmission, REFERENCE_FORK_ID, REFERENCE_RULESET_ID, REFERENCE_SEARCH_METHOD_ARTIFACT, REFERENCE_SEARCH_METHOD_ARTIFACT_ID} from "../../labs/src/index.js";
@@ -102,9 +104,9 @@ export async function joinProofwild(options: JoinProofwildOptions = {}): Promise
 }
 
 export interface PaperActionOptions {
-  action: "submit" | "sign" | "status" | "revise" | "review" | "respond" | "formal-check" | "assign" | "decide" | "publish" | "withdraw" | "dispute" | "retract";
-  paperId?: string; paperPath?: string; manifestPath?: string; reviewPath?: string; responsePath?: string; reviewerIds?: string[];
-  decision?: "accept" | "revise" | "reject"; reason?: string; nodeUrl?: string; identityPath?: string;
+  action: "rules" | "pool" | "submit" | "sign" | "status" | "revise" | "review" | "publish" | "withdraw" | "discuss" | "dispute" | "retract";
+  paperId?: string; paperPath?: string; manifestPath?: string; reviewPath?: string;
+  reason?: string; message?: string; nodeUrl?: string; identityPath?: string;
   correction?: boolean;
 }
 
@@ -116,9 +118,18 @@ async function journalPost(nodeUrl: string, path: string, identity: AgentIdentit
   return result;
 }
 
+async function journalGet(nodeUrl: string, path: string): Promise<unknown> {
+  const response = await fetch(`${nodeUrl}${path}`, {headers: {accept: "application/json"}});
+  const result = await response.json() as {error_description?: string; error?: string};
+  if (!response.ok) throw new Error(result.error_description ?? result.error ?? `期刊请求失败（HTTP ${response.status}）`);
+  return result;
+}
+
 export async function runPaperAction(options: PaperActionOptions): Promise<unknown> {
   const nodeUrl = (options.nodeUrl ?? DEFAULT_PROOFWILD_NODE_URL).replace(/\/$/, "");
+  if (options.action === "rules") return journalGet(nodeUrl, "/journal/v1");
   const identity = await loadOrCreateIdentity(options.identityPath);
+  if (options.action === "pool") return journalPost(nodeUrl, "/journal/v1/review-pool", identity, {});
   const paperId = options.paperId ? encodeURIComponent(options.paperId) : undefined;
   if (options.action === "submit" || options.action === "revise") {
     if (!options.paperPath || !options.manifestPath) throw new Error("投稿或修订缺少正文与清单路径");
@@ -132,7 +143,7 @@ export async function runPaperAction(options: PaperActionOptions): Promise<unkno
   if (!paperId) throw new Error("期刊动作缺少论文编号");
   const statusPath = `/journal/v1/submissions/${paperId}/status`;
   if (options.action === "status") return journalPost(nodeUrl, statusPath, identity, {});
-  if (options.action === "formal-check" || options.action === "publish") return journalPost(nodeUrl, `/journal/v1/submissions/${paperId}/${options.action}`, identity, {});
+  if (options.action === "publish") return journalPost(nodeUrl, `/journal/v1/submissions/${paperId}/publish`, identity, {});
   if (options.action === "sign") {
     const submission = await journalPost(nodeUrl, statusPath, identity, {}) as JournalSubmission;
     return journalPost(nodeUrl, `/journal/v1/submissions/${paperId}/signatures`, identity, {signature: signJournalVersion(submission.current_version.version_id, identity)});
@@ -144,18 +155,30 @@ export async function runPaperAction(options: PaperActionOptions): Promise<unkno
     const review = createJournalReview({...input, paper_id: options.paperId!, version_id: submission.current_version.version_id, reviewer_agent_id: identity.agentId, created_at: input.created_at ?? new Date().toISOString()});
     return journalPost(nodeUrl, `/journal/v1/submissions/${paperId}/reviews`, identity, {review: signJournalReview(review, identity)});
   }
-  if (options.action === "respond") {
-    if (!options.responsePath) throw new Error("回复审稿缺少 --response 文件");
-    const submission = await journalPost(nodeUrl, statusPath, identity, {}) as JournalSubmission;
-    return journalPost(nodeUrl, `/journal/v1/submissions/${paperId}/responses`, identity, {response_markdown: await readFile(resolve(options.responsePath), "utf8"), review_ids: submission.reviews.filter((review) => review.review.version_id === submission.current_version.version_id).map((review) => review.review_id), created_at: new Date().toISOString()});
+  if (options.action === "discuss" || options.action === "dispute" || options.action === "retract") {
+    const submission = options.action === "discuss"
+      ? await journalPost(nodeUrl, statusPath, identity, {}) as JournalSubmission
+      : (await journalGet(nodeUrl, `/journal/v1/papers/${paperId}`) as {paper: JournalSubmission}).paper;
+    const kind = options.action === "discuss" ? "discussion" : options.action;
+    const statement = signJournalStatement(createJournalStatement({paper_id: options.paperId!, version_id: submission.current_version.version_id, agent_id: identity.agentId, kind, content: options.action === "discuss" ? options.message! : options.reason!, created_at: new Date().toISOString()}), identity);
+    return journalPost(nodeUrl, `/journal/v1/submissions/${paperId}/statements`, identity, {statement});
   }
-  if (options.action === "assign") return journalPost(nodeUrl, `/journal/v1/submissions/${paperId}/assignments`, identity, {reviewer_agent_ids: options.reviewerIds});
-  if (options.action === "decide") {
-    const submission = await journalPost(nodeUrl, statusPath, identity, {}) as JournalSubmission;
-    const decision = signJournalDecision({paper_id: options.paperId!, version_id: submission.current_version.version_id, editor_id: identity.agentId, decision: options.decision!, rationale: options.reason!, review_ids: submission.reviews.filter((review) => review.review.version_id === submission.current_version.version_id).map((review) => review.review_id), decided_at: new Date().toISOString()}, identity);
-    return journalPost(nodeUrl, `/journal/v1/submissions/${paperId}/decisions`, identity, {decision});
-  }
-  return journalPost(nodeUrl, `/journal/v1/submissions/${paperId}/${options.action === "dispute" ? "disputes" : options.action}`, identity, {reason: options.reason});
+  return journalPost(nodeUrl, `/journal/v1/submissions/${paperId}/${options.action}`, identity, {reason: options.reason});
+}
+
+export interface MemoryActionOptions {action: "list" | "remember" | "refresh" | "forget" | "rotate" | "history"; memoryId?: string; content?: string; limit?: number; cursor?: string; nodeUrl?: string; identityPath?: string}
+
+export async function runMemoryAction(options: MemoryActionOptions): Promise<unknown> {
+  const nodeUrl = (options.nodeUrl ?? DEFAULT_PROOFWILD_NODE_URL).replace(/\/$/, "");
+  const identity = await loadOrCreateIdentity(options.identityPath);
+  const bridge = new SaiBridge(nodeUrl, identity);
+  try {
+    await bridge.register();
+    await bridge.connect();
+    if (options.action === "history") return bridge.activity({...(options.cursor ? {cursor: options.cursor} : {}), ...(options.limit ? {limit: options.limit} : {})});
+    const input: AgentMemoryInput = {operation: options.action, ...(options.action === "list" ? {} : {request_id: `${identity.agentId}:${randomUUID()}`}), ...(options.memoryId ? {memory_id: options.memoryId} : {}), ...(options.content ? {content: options.content} : {})};
+    return bridge.memory(input);
+  } finally { await bridge.close(); }
 }
 
 export interface ParticipateLabsOptions {

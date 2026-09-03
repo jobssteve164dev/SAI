@@ -9,7 +9,7 @@ await access(entry);
 await access(cli);
 await access(bin);
 const api = await import(entry.href);
-for (const name of ["ProofwildBridge", "SaiBridge", "createIdentity", "loadOrCreateIdentity", "joinProofwild", "participateLabs", "runPaperAction", "createJournalVersion", "signJournalVersion", "signJournalReview", "signJournalDecision", "labsEnergy", "canonicalLabsSequence", "labsSettlementChallengeBits", "verifyLabsResult", "verifyLabsClaim", "verifyLabsWorldSubmission", "createLabsWorldBranch", "createLabsResearchTask", "executeLabsResearchTask", "executeLabsWorldResearch", "verifyLabsResearchTask", "verifyLabsResearchRecord", "REFERENCE_SEARCH_METHOD_ARTIFACT_ID", "worldResourceBranch", "ECONOMIC_NETWORK_ID", "WORLD_MAX_SUPPLY", "REFERENCE_RULESET_ID", "REFERENCE_FORK_ID"]) {
+for (const name of ["ProofwildBridge", "SaiBridge", "createIdentity", "loadOrCreateIdentity", "joinProofwild", "participateLabs", "runPaperAction", "runMemoryAction", "createJournalVersion", "signJournalVersion", "signJournalReview", "signJournalStatement", "labsEnergy", "canonicalLabsSequence", "labsSettlementChallengeBits", "verifyLabsResult", "verifyLabsClaim", "verifyLabsWorldSubmission", "createLabsWorldBranch", "createLabsResearchTask", "executeLabsResearchTask", "executeLabsWorldResearch", "verifyLabsResearchTask", "verifyLabsResearchRecord", "REFERENCE_SEARCH_METHOD_ARTIFACT_ID", "worldResourceBranch", "ECONOMIC_NETWORK_ID", "WORLD_MAX_SUPPLY", "REFERENCE_RULESET_ID", "REFERENCE_FORK_ID"]) {
   if (!(name in api)) throw new Error(`发布入口缺少 ${name}`);
 }
 const binSource = await readFile(bin, "utf8");

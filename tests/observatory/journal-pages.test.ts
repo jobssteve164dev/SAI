@@ -1,24 +1,19 @@
 import {describe, expect, it} from "vitest";
 import {createIdentity} from "../../packages/identity/src/index.js";
-import {JournalRepository, MemoryJournalPersistence, createJournalVersion, signJournalDecision, signJournalVersion} from "../../packages/journal/src/index.js";
+import {JournalRepository, MemoryJournalPersistence, createJournalStatement, createJournalVersion, signJournalStatement, signJournalVersion} from "../../packages/journal/src/index.js";
 import {agentAccessResponse, renderJournalIndex, renderJournalPaper, renderJournalSubmissionGuide} from "../../apps/cloudflare-worker/src/journal-pages.js";
 import {manuscript, reviewFor} from "../journal/journal.test.js";
 
 async function publishedPaper() {
   const author = await createIdentity();
-  const reviewerA = await createIdentity();
-  const reviewerB = await createIdentity();
-  const editor = await createIdentity();
-  const repository = new JournalRepository(new MemoryJournalPersistence(), [editor.agentId]);
+  const reviewers = await Promise.all(Array.from({length: 5}, () => createIdentity()));
+  const eligible = new Set(reviewers.map((reviewer) => reviewer.agentId));
+  const repository = new JournalRepository(new MemoryJournalPersistence(), {currentContext: async () => ({world_fork_id: "fork:pages:journal", event_seq: 10}), reviewerEligible: async (agentId: string) => eligible.has(agentId)});
   const created = createJournalVersion(manuscript([author]));
   const submitted = await repository.submit(created, [signJournalVersion(created.version_id, author)]);
-  await repository.startFormalCheck(submitted.paper_id, editor.agentId);
-  await repository.assignReviewers(submitted.paper_id, editor.agentId, [reviewerA.agentId, reviewerB.agentId]);
-  await repository.addReview(submitted.paper_id, await reviewFor(submitted.paper_id, created.version_id, reviewerA));
-  await repository.addReview(submitted.paper_id, await reviewFor(submitted.paper_id, created.version_id, reviewerB));
-  const current = await repository.submission(submitted.paper_id);
-  await repository.decide(submitted.paper_id, signJournalDecision({paper_id: submitted.paper_id, version_id: created.version_id, editor_id: editor.agentId, decision: "accept", rationale: "两份独立评审完成方法与证据检查，达到本刊出版标准。", review_ids: current!.reviews.map((item) => item.review_id), decided_at: "2026-09-03T15:00:00.000Z"}, editor));
-  await repository.publish(submitted.paper_id, editor.agentId);
+  for (const reviewer of reviewers) await repository.addReview(submitted.paper_id, await reviewFor(submitted.paper_id, created.version_id, reviewer));
+  await repository.addStatement(submitted.paper_id, signJournalStatement(createJournalStatement({paper_id: submitted.paper_id, version_id: created.version_id, agent_id: reviewers[0]!.agentId, kind: "discussion", content: "我复核了制品摘要与正文中的复现步骤。", created_at: "2026-09-03T14:00:00.000Z"}), reviewers[0]!));
+  await repository.publish(submitted.paper_id, author.agentId, "2026-09-03T15:00:00.000Z");
   return (await repository.publicPaper(submitted.paper_id))!;
 }
 
@@ -51,14 +46,20 @@ describe("Agent 研究论文读者页面", () => {
 
   it("详情按读者顺序展示摘要、正文、证据、审稿、版本与下载，且不执行稿件 HTML", async () => {
     const paper = await publishedPaper();
+    const template = paper.statements![0]!;
+    paper.statements!.push({...template, statement_id: `sha256:${"d".repeat(64)}`, statement: {...template.statement, kind: "dispute", content: "公开复现结果出现差异。"}});
+    paper.statements!.push({...template, statement_id: `sha256:${"e".repeat(64)}`, statement: {...template.statement, kind: "retract", content: "第一份撤稿意见：关键结果无法复现。"}});
     paper.current_version.body_markdown += "\n<script>alert(1)</script>";
     const page = renderJournalPaper(paper);
     for (const label of ["摘要", "正文", "证据与复现材料", "公开审稿", "版本与出版记录", "下载与引用"]) expect(page).toContain(label);
-    expect(page).toContain("两份独立评审完成方法与证据检查");
+    expect(page).toContain("5 / 5");
+    expect(page).toContain("我复核了制品摘要与正文中的复现步骤");
+    for (const text of ["优点", "疑虑", "已核查证据", "利益冲突披露", "刊后治理记录", "公开复现结果出现差异", "第一份撤稿意见"]) expect(page).toContain(text);
     expect(page).toContain('href="/research/papers" aria-current="page">研究论文</a>');
     expect(page).not.toContain('href="/research" aria-current="page">研究成果</a>');
     expect(page).toContain('class="journal-bar"');
-    expect(page).toContain("人类方法与安全编辑");
+    expect(page).not.toContain("人类方法与安全编辑");
+    expect(page).not.toContain("编辑决定");
     expect(page).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
     expect(page).not.toContain("<script>alert(1)</script>");
     expect(page).toContain(`/journal/v1/papers/${encodeURIComponent(paper.paper_id)}/paper.md`);
@@ -87,8 +88,10 @@ describe("Agent 研究论文读者页面", () => {
     const zh = renderJournalSubmissionGuide();
     expect(zh).toContain("Agent 投稿指南");
     expect(zh).toContain("沿用现有 Agent 身份");
-    for (const text of ["前沿研究简报", "3,000–7,000 字", "完整研究论文", "8,000–16,000 字", "研究问题", "失败案例与局限", "CC-BY-4.0", "共同作者签名", "两名独立 Agent 评审"]) expect(zh).toContain(text);
+    for (const text of ["前沿研究简报", "3,000–7,000 字", "完整研究论文", "8,000–16,000 字", "研究问题", "失败案例与局限", "CC-BY-4.0", "共同作者签名", "五名独立 Agent"] ) expect(zh).toContain(text);
     expect(zh).toContain("npx --yes sai-agent-bridge papers submit ./paper.md --manifest ./paper.json --json");
+    expect(zh).toContain("npx --yes sai-agent-bridge papers rules --json");
+    expect(zh).toContain('href="/journal/v1/rules"');
     expect(zh).toContain('href="/spec/journal/1.0.0/manifest.schema.json"');
     expect(zh).toContain('href="/help" aria-current="page">接入</a>');
     expect(zh).toContain('href="/help?mode=journal" aria-current="page">投稿期刊</a>');

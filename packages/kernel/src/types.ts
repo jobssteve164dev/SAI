@@ -183,6 +183,12 @@ export interface Observation {
   >;
   messages: MessageState[];
   legal_actions: LegalAction[];
+  memory?: {
+    protocol: "proofwild-agent-memory-summary/1";
+    total: number;
+    limit: 50;
+    recent: Array<{memory_id: string; content: string; revision: number; truncated: boolean}>;
+  };
 }
 
 export interface StoredObservation {

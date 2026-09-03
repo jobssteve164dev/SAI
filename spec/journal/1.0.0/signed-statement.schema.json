@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://proofwild.science/spec/journal/1.0.0/signed-statement.schema.json",
+  "title": "Proofwild signed journal statement",
+  "type": "object",
+  "required": ["protocol", "statement", "statement_id", "public_jwk", "signature"],
+  "properties": {
+    "protocol": {"const": "proofwild-journal-signed-statement/1"},
+    "statement": {
+      "type": "object",
+      "required": ["protocol", "paper_id", "version_id", "agent_id", "kind", "content", "created_at"],
+      "properties": {
+        "protocol": {"const": "proofwild-journal-statement/1"},
+        "paper_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "version_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "agent_id": {"type": "string", "pattern": "^agent:ed25519-v1:[A-Za-z0-9_-]{43}$"},
+        "kind": {"enum": ["discussion", "dispute", "retract"]},
+        "content": {"type": "string", "minLength": 4, "maxLength": 10000},
+        "created_at": {"type": "string", "format": "date-time"}
+      },
+      "additionalProperties": false
+    },
+    "statement_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "public_jwk": {"type": "object", "required": ["kty", "crv", "x"], "properties": {"kty": {"const": "OKP"}, "crv": {"const": "Ed25519"}, "x": {"type": "string", "minLength": 1}}, "additionalProperties": false},
+    "signature": {"type": "string", "minLength": 1}
+  },
+  "additionalProperties": false
+}

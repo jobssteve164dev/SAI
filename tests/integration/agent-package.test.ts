@@ -20,7 +20,7 @@ describe("可发布 Proofwild Agent 包", () => {
     const executable = process.platform === "win32" ? "npx.cmd" : "npx";
     const result = spawnSync(executable, ["--yes", "sai-agent-bridge", "--version"], {encoding: "utf8"});
     expect(result.status, result.stderr).toBe(0);
-    expect(result.stdout.trim()).toBe("0.10.0");
+    expect(result.stdout.trim()).toBe("0.11.0");
   });
 
   it("持久保存并复用同一个 Ed25519 身份", async () => {
@@ -56,9 +56,16 @@ describe("可发布 Proofwild Agent 包", () => {
     expect(parseCliArgs(["papers", "status", "sha256:paper", "--node", "https://node.example"])).toEqual({command: "papers", action: "status", paperId: "sha256:paper", nodeUrl: "https://node.example", json: false});
     expect(parseCliArgs(["papers", "revise", "sha256:paper", "paper.md", "--manifest", "paper.json", "--reason", "回应审稿并补充实验"])).toEqual({command: "papers", action: "revise", paperId: "sha256:paper", paperPath: "paper.md", manifestPath: "paper.json", reason: "回应审稿并补充实验", json: false});
     expect(parseCliArgs(["papers", "review", "sha256:paper", "--review", "review.json"])).toEqual({command: "papers", action: "review", paperId: "sha256:paper", reviewPath: "review.json", json: false});
-    expect(parseCliArgs(["papers", "assign", "sha256:paper", "--reviewers", "agent:a,agent:b"])).toEqual({command: "papers", action: "assign", paperId: "sha256:paper", reviewerIds: ["agent:a", "agent:b"], json: false});
-    expect(parseCliArgs(["papers", "decide", "sha256:paper", "--decision", "accept", "--reason", "通过两份独立评审"])).toEqual({command: "papers", action: "decide", paperId: "sha256:paper", decision: "accept", reason: "通过两份独立评审", json: false});
     expect(() => parseCliArgs(["papers", "submit", "paper.md"])).toThrow("--manifest");
+  });
+
+  it("CLI 为公共审稿和 Agent 自主记忆提供可发现的直接动作", () => {
+    expect(parseCliArgs(["papers", "rules", "--json"])).toEqual({command: "papers", action: "rules", json: true});
+    expect(parseCliArgs(["papers", "pool", "--json"])).toEqual({command: "papers", action: "pool", json: true});
+    expect(parseCliArgs(["papers", "discuss", "sha256:paper", "--message", "复现步骤需要补充随机种子"])).toEqual({command: "papers", action: "discuss", paperId: "sha256:paper", message: "复现步骤需要补充随机种子", json: false});
+    expect(parseCliArgs(["memory", "remember", "--content", "记住本次研究", "--json"])).toEqual({command: "memory", action: "remember", content: "记住本次研究", json: true});
+    expect(parseCliArgs(["memory", "refresh", "memo:sha256:id", "--content", "更新后的记忆"])).toEqual({command: "memory", action: "refresh", memoryId: "memo:sha256:id", content: "更新后的记忆", json: false});
+    expect(parseCliArgs(["memory", "history", "--limit", "10"])).toEqual({command: "memory", action: "history", limit: 10, json: false});
   });
 
   it("papers submit 从现有身份生成精确 audience 断言和持久作者签名", async () => {
@@ -78,6 +85,23 @@ describe("可发布 Proofwild Agent 包", () => {
       const payload = JSON.parse(String(init?.body)) as {public_jwk: JsonWebKey; assertion: string; version_id: string; signature: {agent_id: string; version_id: string}};
       expect((await verifyIdentityAssertion(payload.assertion, payload.public_jwk, String(target))).agentId).toBe(identity.agentId);
       expect(payload.signature).toMatchObject({agent_id: identity.agentId, version_id: payload.version_id});
+    } finally { fetchMock.mockRestore(); }
+  });
+
+  it("刊后争议从公开论文读取正式版本，不依赖私密投稿状态", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "proofwild-paper-dispute-"));
+    const identityPath = join(directory, "identity.json");
+    const identity = await loadOrCreateIdentity(identityPath);
+    const paperId = `sha256:${"a".repeat(64)}`;
+    const versionId = `sha256:${"b".repeat(64)}`;
+    const fetchMock = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(JSON.stringify({paper: {current_version: {version_id: versionId}}}), {status: 200, headers: {"content-type": "application/json"}}))
+      .mockResolvedValueOnce(new Response(JSON.stringify({status: "disputed"}), {status: 200, headers: {"content-type": "application/json"}}));
+    try {
+      await runPaperAction({action: "dispute", paperId, reason: "公开版本的结果无法复现", identityPath, nodeUrl: "https://journal.example"});
+      expect(fetchMock.mock.calls[0]![0]).toBe(`https://journal.example/journal/v1/papers/${encodeURIComponent(paperId)}`);
+      const payload = JSON.parse(String(fetchMock.mock.calls[1]![1]?.body)) as {statement: {statement: {version_id: string; agent_id: string}}};
+      expect(payload.statement.statement).toMatchObject({version_id: versionId, agent_id: identity.agentId});
     } finally { fetchMock.mockRestore(); }
   });
 });

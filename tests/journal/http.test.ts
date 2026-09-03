@@ -3,7 +3,7 @@ import {describe, expect, it} from "vitest";
 import {AuthService} from "../../packages/auth/src/index.js";
 import {createClientAssertion, createIdentity, type AgentIdentity} from "../../packages/identity/src/index.js";
 import {handleJournalRequest} from "../../packages/journal/src/http.js";
-import {JournalRepository, MemoryJournalPersistence, createJournalVersion, signJournalDecision, signJournalVersion} from "../../packages/journal/src/index.js";
+import {JournalRepository, MemoryJournalPersistence, createJournalStatement, createJournalVersion, signJournalStatement, signJournalVersion} from "../../packages/journal/src/index.js";
 import {manuscript, reviewFor} from "./journal.test.js";
 
 const ORIGIN = "https://journal.example";
@@ -20,13 +20,15 @@ describe("Agent 研究期刊 HTTP 闭环", () => {
     expect(response?.status).toBe(413); expect(cancelled).toBe(true);
   });
 
-  it("只有签名 Agent 能提交私密稿件，录用后才从公开接口下载正文与引用", async () => {
+  it("只有签名 Agent 能投稿，五个投稿前已活跃的 Agent 独立通过后由通讯 Agent 刊登", async () => {
     const author = await createIdentity();
-    const reviewerA = await createIdentity();
-    const reviewerB = await createIdentity();
-    const editor = await createIdentity();
+    const reviewers = await Promise.all(Array.from({length: 5}, () => createIdentity()));
+    const eligible = new Set(reviewers.map((reviewer) => reviewer.agentId));
     const auth = new AuthService({baseUrl: ORIGIN, region: "journal"});
-    const repository = new JournalRepository(new MemoryJournalPersistence(), [editor.agentId]);
+    const repository = new JournalRepository(new MemoryJournalPersistence(), {
+      currentContext: async () => ({world_fork_id: "fork:http:journal", event_seq: 12}),
+      reviewerEligible: async (agentId: string) => eligible.has(agentId),
+    });
     const authenticate = async (publicJwk: JsonWebKey, assertion: string, audience: string) => auth.verifyAgentAssertion(publicJwk, assertion, audience);
     const handle = async (request: Request): Promise<Response> => {
       const response = await handleJournalRequest(request, repository, authenticate);
@@ -36,7 +38,15 @@ describe("Agent 研究期刊 HTTP 闭环", () => {
 
     const discovery = await handle(new Request(`${ORIGIN}/journal/v1`));
     expect(discovery.status).toBe(200);
-    expect(await discovery.json()).toEqual(expect.objectContaining({protocol: "proofwild-journal-discovery/1", submit_command: "npx --yes sai-agent-bridge papers submit ./paper.md --manifest ./paper.json"}));
+    expect(await discovery.json()).toEqual(expect.objectContaining({
+      protocol: "proofwild-journal-discovery/2",
+      authority: "five-independent-agent-reviews",
+      human_editor: false,
+      rules: expect.objectContaining({public_review: expect.objectContaining({acceptances_required: 5})}),
+    }));
+    expect((await handle(new Request(`${ORIGIN}/journal/v1/rules`)).then((response) => response.json()) as {commands: {submit: string}}).commands.submit).toContain("papers submit");
+    const retiredEditorPath = "/journal/v1/submissions/retired/formal-check";
+    expect((await handle(new Request(`${ORIGIN}${retiredEditorPath}`, {method: "POST", headers: {"content-type": "application/json"}, body: JSON.stringify(await envelope(author, retiredEditorPath))}))).status).toBe(404);
 
     const artifactBytes = Buffer.from("verified reproduction\n"); const artifactSha = createHash("sha256").update(artifactBytes).digest("hex");
     const input = manuscript([author]); input.manifest.artifacts = [{name: "result.txt", media_type: "text/plain", sha256: artifactSha, license: "CC0-1.0"}];
@@ -48,40 +58,33 @@ describe("Agent 研究期刊 HTTP 闭环", () => {
     const submittedResponse = await handle(new Request(`${ORIGIN}${path}`, {method: "POST", headers: {"content-type": "application/json"}, body: JSON.stringify({...await envelope(author, path), version: created.version, version_id: created.version_id, signature: signJournalVersion(created.version_id, author), artifacts: [{name: "result.txt", media_type: "text/plain", sha256: artifactSha, content_base64: artifactBytes.toString("base64")}]})}));
     expect(submittedResponse.status).toBe(201);
     const submitted = await submittedResponse.json() as {paper_id: string; status: string};
-    expect(submitted.status).toBe("submitted");
+    expect(submitted.status).toBe("under_review");
     expect((await handle(new Request(`${ORIGIN}/journal/v1/papers`)).then((response) => response.json()) as {papers: unknown[]}).papers).toHaveLength(0);
     expect((await handle(new Request(`${ORIGIN}/journal/v1/papers/${encodeURIComponent(submitted.paper_id)}`))).status).toBe(404);
 
-    const formalPath = `/journal/v1/submissions/${encodeURIComponent(submitted.paper_id)}/formal-check`;
-    expect((await handle(new Request(`${ORIGIN}${formalPath}`, {method: "POST", headers: {"content-type": "application/json"}, body: JSON.stringify(await envelope(editor, formalPath))}))).status).toBe(200);
-    const assignmentPath = `/journal/v1/submissions/${encodeURIComponent(submitted.paper_id)}/assignments`;
-    const assignmentResponse = await handle(new Request(`${ORIGIN}${assignmentPath}`, {method: "POST", headers: {"content-type": "application/json"}, body: JSON.stringify({...await envelope(editor, assignmentPath), reviewer_agent_ids: [reviewerA.agentId, reviewerB.agentId]})}));
-    expect(assignmentResponse.status).toBe(200);
-
     const statusPath = `/journal/v1/submissions/${encodeURIComponent(submitted.paper_id)}/status`;
-    const assignedStatus = await handle(new Request(`${ORIGIN}${statusPath}`, {method: "POST", headers: {"content-type": "application/json"}, body: JSON.stringify(await envelope(reviewerA, statusPath))}));
+    const assignedStatus = await handle(new Request(`${ORIGIN}${statusPath}`, {method: "POST", headers: {"content-type": "application/json"}, body: JSON.stringify(await envelope(reviewers[0]!, statusPath))}));
     expect(assignedStatus.status).toBe(200);
     expect((await assignedStatus.json() as {current_version: {body_markdown: string}; reviews: unknown[]}).current_version.body_markdown).toContain("## 研究问题");
     const stranger = await createIdentity();
     const forbiddenStatus = await handle(new Request(`${ORIGIN}${statusPath}`, {method: "POST", headers: {"content-type": "application/json"}, body: JSON.stringify(await envelope(stranger, statusPath))}));
     expect(forbiddenStatus.status).toBe(404);
 
-    for (const reviewer of [reviewerA, reviewerB]) {
+    const poolPath = "/journal/v1/review-pool";
+    const pool = await handle(new Request(`${ORIGIN}${poolPath}`, {method: "POST", headers: {"content-type": "application/json"}, body: JSON.stringify(await envelope(reviewers[0]!, poolPath))}));
+    expect((await pool.json() as {papers: Array<{paper_id: string}>}).papers[0]?.paper_id).toBe(submitted.paper_id);
+
+    for (const [index, reviewer] of reviewers.entries()) {
       const reviewPath = `/journal/v1/submissions/${encodeURIComponent(submitted.paper_id)}/reviews`;
       const review = await reviewFor(submitted.paper_id, created.version_id, reviewer);
       const response = await handle(new Request(`${ORIGIN}${reviewPath}`, {method: "POST", headers: {"content-type": "application/json"}, body: JSON.stringify({...await envelope(reviewer, reviewPath), review})}));
       expect(response.status).toBe(200);
-      expect((await response.clone().json() as {reviews: Array<{review: {reviewer_agent_id: string}}>}).reviews.every((item) => item.review.reviewer_agent_id === reviewer.agentId)).toBe(true);
+      expect((await response.clone().json() as {status: string}).status).toBe(index === 4 ? "publication_eligible" : "under_review");
     }
 
-    const current = await repository.submission(submitted.paper_id);
-    const decisionPath = `/journal/v1/submissions/${encodeURIComponent(submitted.paper_id)}/decisions`;
-    const decision = signJournalDecision({paper_id: submitted.paper_id, version_id: created.version_id, editor_id: editor.agentId, decision: "accept", rationale: "两份独立评审均完成证据核查，达到创刊标准。", review_ids: current!.reviews.map((review) => review.review_id), decided_at: "2026-09-03T15:00:00.000Z"}, editor);
-    const decisionResponse = await handle(new Request(`${ORIGIN}${decisionPath}`, {method: "POST", headers: {"content-type": "application/json"}, body: JSON.stringify({...await envelope(editor, decisionPath), decision})}));
-    expect(decisionResponse.status).toBe(200);
-    expect((await decisionResponse.clone().json() as {status: string}).status).toBe("accepted");
     const publishPath = `/journal/v1/submissions/${encodeURIComponent(submitted.paper_id)}/publish`;
-    expect((await handle(new Request(`${ORIGIN}${publishPath}`, {method: "POST", headers: {"content-type": "application/json"}, body: JSON.stringify(await envelope(editor, publishPath))}))).status).toBe(200);
+    expect((await handle(new Request(`${ORIGIN}${publishPath}`, {method: "POST", headers: {"content-type": "application/json"}, body: JSON.stringify(await envelope(reviewers[0]!, publishPath))}))).status).toBe(400);
+    expect((await handle(new Request(`${ORIGIN}${publishPath}`, {method: "POST", headers: {"content-type": "application/json"}, body: JSON.stringify(await envelope(author, publishPath))}))).status).toBe(200);
 
     const publicResponse = await handle(new Request(`${ORIGIN}/journal/v1/papers/${encodeURIComponent(submitted.paper_id)}`));
     expect(publicResponse.status).toBe(200);
@@ -100,8 +103,9 @@ describe("Agent 研究期刊 HTTP 闭环", () => {
     expect(await artifactManifest.json()).toEqual(expect.objectContaining({protocol: "proofwild-journal-artifact-index/1", paper_id: submitted.paper_id, version_id: created.version_id, artifacts: [expect.objectContaining({sha256: artifactSha, download_url: expect.stringContaining("/artifacts/")})]}));
     const artifactDownload = await handle(new Request(`${ORIGIN}/journal/v1/papers/${encodeURIComponent(submitted.paper_id)}/versions/${encodeURIComponent(created.version_id)}/artifacts/${artifactSha}/result.txt`));
     expect(await artifactDownload.text()).toBe("verified reproduction\n"); expect(artifactDownload.headers.get("content-disposition")).toContain("attachment");
-    const disputePath = `/journal/v1/submissions/${encodeURIComponent(submitted.paper_id)}/disputes`;
-    const dispute = await handle(new Request(`${ORIGIN}${disputePath}`, {method: "POST", headers: {"content-type": "application/json"}, body: JSON.stringify({...await envelope(editor, disputePath), reason: "外部复现者报告关键结果存在未解决差异"})}));
+    const statementPath = `/journal/v1/submissions/${encodeURIComponent(submitted.paper_id)}/statements`;
+    const statement = signJournalStatement(createJournalStatement({paper_id: submitted.paper_id, version_id: created.version_id, agent_id: reviewers[0]!.agentId, kind: "dispute", content: "外部复现者报告关键结果存在未解决差异", created_at: "2026-09-03T16:00:00.000Z"}), reviewers[0]!);
+    const dispute = await handle(new Request(`${ORIGIN}${statementPath}`, {method: "POST", headers: {"content-type": "application/json"}, body: JSON.stringify({...await envelope(reviewers[0]!, statementPath), statement})}));
     expect(dispute.status).toBe(200);
     expect((await dispute.json() as {status: string}).status).toBe("disputed");
   });

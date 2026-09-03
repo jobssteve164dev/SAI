@@ -5,6 +5,7 @@ import {ECONOMIC_NETWORK_ID, syncWorldSupplyFromPeer, worldSupplyBlockId, type A
 import {verifyNodeDescriptor, type NodeDescriptor, type TransferCancellation, type TransferCredential, type TransferReceipt} from "../../federation/src/index.js";
 import {REFERENCE_FORK_ID, REFERENCE_RULESET_ID, createClaimBody, createLabsResult, executeLabsWorldResearch, signLabsClaim, verifyLabsResult, verifyLabsWorldSubmission, type LabsClaimType, type LabsFrontier, type LabsResult, type LabsRuleset, type LabsWorldBranch} from "../../labs/src/index.js";
 import {LabsRepository, MemoryLabsPersistence, syncLabsFromPeer, type LabsExchangeBundle, type LabsRegistryEntry, type LabsRegistrySnapshot} from "../../labs/src/store.js";
+import type {AgentMemoryInput, AgentMemoryResult} from "../../memory/src/index.js";
 
 async function expectJson<T>(response: Response): Promise<T> {
   const body = await response.json() as T & {error_description?: string};
@@ -101,6 +102,18 @@ export class SaiBridge {
       };
     }
     return structured;
+  }
+
+  async memory(input: AgentMemoryInput): Promise<AgentMemoryResult> {
+    const result = await this.requiredClient().callTool({name: "sai_memory", arguments: {...input}});
+    if (result.isError || !result.structuredContent) throw new Error("sai_memory 未返回结构化结果");
+    return result.structuredContent as unknown as AgentMemoryResult;
+  }
+
+  async activity(input: {cursor?: string; limit?: number} = {}): Promise<{protocol: "proofwild-agent-activity/1"; world_fork_id: string; events: import("../../kernel/src/index.js").ConformanceEvent[]; next_cursor: string | null}> {
+    const result = await this.requiredClient().callTool({name: "sai_activity", arguments: input});
+    if (result.isError || !result.structuredContent) throw new Error("sai_activity 未返回结构化结果");
+    return result.structuredContent as unknown as {protocol: "proofwild-agent-activity/1"; world_fork_id: string; events: import("../../kernel/src/index.js").ConformanceEvent[]; next_cursor: string | null};
   }
 
   lastLabsResearch(): LabsResearchReceipt | undefined { return this.lastResearchReceipt ? structuredClone(this.lastResearchReceipt) : undefined; }

@@ -1,6 +1,7 @@
 import {randomBytes, randomUUID} from "node:crypto";
 import {admitAgentAtRandomAddress, assertEcosystemSupplyImportAllowed, buildObservation, createWorld, expandWorldForPopulation, mergeWorldSupplyStates, reconcileWorldMines, reconcileWorldSupplyInventories, transition, validateState, type ActInput, type ActResult, type AgentState, type ConformanceEvent, type EcosystemWorldSupplyState, type Observation, type RegionState, type StoredObservation} from "../../../packages/kernel/src/index.js";
 import {FileStore} from "./store.js";
+import {AgentMemoryRepository, attachMemorySummary, type AgentMemoryInput, type AgentMemoryResult} from "../../../packages/memory/src/index.js";
 
 export class RegionService {
   private state: RegionState;
@@ -8,8 +9,9 @@ export class RegionService {
   private readonly requests = new Map<string, ActResult>();
   private readonly lockedAgents = new Set<string>();
   private queue: Promise<void> = Promise.resolve();
+  private readonly memories: AgentMemoryRepository;
 
-  private constructor(readonly store: FileStore, state: RegionState) { this.state = state; }
+  private constructor(readonly store: FileStore, state: RegionState) { this.state = state; this.memories = new AgentMemoryRepository(store); }
 
   static async open(store: FileStore, regionId = "local"): Promise<RegionService> {
     const loaded = await store.loadState(createWorld(regionId, [], `fork:sai-local:${randomUUID()}`));
@@ -72,10 +74,31 @@ export class RegionService {
     const stored = buildObservation(this.state, agentId);
     if (!stored) throw new Error("agent_not_found");
     const maxBytes = _input.max_bytes ?? 4096;
-    if (Buffer.byteLength(JSON.stringify(stored.observation)) > maxBytes) throw new Error("observation_exceeds_max_bytes");
+    attachMemorySummary(stored.observation, await this.memories.summary(agentId, this.state.world_fork_id), maxBytes);
     this.observations.set(stored.observation.observation_id, stored);
     await this.store.appendObservation(stored);
     return stored.observation;
+  }
+
+  async memory(agentId: string, input: AgentMemoryInput): Promise<AgentMemoryResult> {
+    if (!this.state.agents[agentId]) throw new Error("agent_not_found");
+    return this.serial(() => this.memories.perform(agentId, this.state.world_fork_id, this.state.logical_tick, input));
+  }
+
+  async activity(agentId: string, input: {cursor?: string; limit?: number} = {}): Promise<{protocol: "proofwild-agent-activity/1"; world_fork_id: string; events: ConformanceEvent[]; next_cursor: string | null}> {
+    if (!this.state.agents[agentId]) throw new Error("agent_not_found");
+    const limit = Math.min(Math.max(input.limit ?? 20, 1), 100);
+    const before = input.cursor ? Number(input.cursor.replace(/^before:/, "")) : Number.POSITIVE_INFINITY;
+    if (input.cursor && (!input.cursor.startsWith("before:") || !Number.isSafeInteger(before) || before < 1)) throw new TypeError("活动历史游标无效");
+    const matching = (await this.store.loadEvents()).filter((event) => event.agent_id === agentId && event.event_seq < before).sort((left, right) => right.event_seq - left.event_seq);
+    const events = matching.slice(0, limit);
+    return {protocol: "proofwild-agent-activity/1", world_fork_id: this.state.world_fork_id, events, next_cursor: matching.length > limit ? `before:${events.at(-1)!.event_seq}` : null};
+  }
+
+  async journalContext(): Promise<{world_fork_id: string; event_seq: number}> { return {world_fork_id: this.state.world_fork_id, event_seq: this.state.event_seq}; }
+  async reviewerEligible(agentId: string, context: {world_fork_id: string; event_seq: number}): Promise<boolean> {
+    if (this.state.world_fork_id !== context.world_fork_id) return false;
+    return (await this.store.loadEvents()).some((event) => event.agent_id === agentId && event.event_seq <= context.event_seq);
   }
 
   async act(agentId: string, input: ActInput): Promise<ActResult> {

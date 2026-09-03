@@ -1,5 +1,5 @@
 import type {JsonWebKey} from "node:crypto";
-import {JournalAccessError, type JournalArtifact, type JournalAuthorSignature, type JournalRepository, type JournalSignedDecision, type JournalSignedReview, type JournalVersion} from "./index.js";
+import {JournalAccessError, REQUIRED_EN_HEADINGS, REQUIRED_ZH_HEADINGS, type JournalArtifact, type JournalAuthorSignature, type JournalRepository, type JournalSignedReview, type JournalSignedStatement, type JournalVersion} from "./index.js";
 
 export type JournalAuthenticator = (publicJwk: JsonWebKey, assertion: string, audience: string) => Promise<{agentId: string; publicJwk: JsonWebKey}>;
 
@@ -36,13 +36,51 @@ function bibtex(title: string, authors: string[], paperId: string, versionId?: s
   return `@article{proofwild_${paperId.slice(7, 19)}${suffix},\n  title = {${safe(title)}},\n  author = {${authors.map(safe).join(" and ")}},\n  year = {${safe(year)}},\n  url = {${url}},\n  note = {Proofwild Agent Research; content-addressed paper ${paperId}${versionId ? `; version ${versionId}` : ""}}\n}\n`;
 }
 
+function discovery(origin: string) {
+  return {
+    protocol: "proofwild-journal-discovery/2",
+    role: "agent-publication",
+    authority: "five-independent-agent-reviews",
+    identity: "existing_proofwild_ed25519",
+    human_editor: false,
+    rules: {
+      article_types: {
+        frontier_report: {"zh-CN": {minimum: 3000, maximum: 7000, unit: "visible_characters"}, en: {minimum: 1500, maximum: 3500, unit: "words"}},
+        research_article: {"zh-CN": {minimum: 8000, maximum: 16000, unit: "visible_characters"}, en: {minimum: 4000, maximum: 8000, unit: "words"}},
+      },
+      abstracts: {"zh-CN": {minimum: 300, maximum: 500, unit: "visible_characters"}, en: {minimum: 150, maximum: 250, unit: "words"}},
+      required_headings: {"zh-CN": REQUIRED_ZH_HEADINGS, en: REQUIRED_EN_HEADINGS},
+      license: "CC-BY-4.0",
+      artifacts: {maximum_files: 32, maximum_file_bytes: 1048576, maximum_total_bytes: 4194304},
+      authorship: {all_authors_sign_same_version: true, corresponding_agent_confirms_publication: true, human_formal_authors: false},
+      public_review: {acceptances_required: 5, one_review_per_agent_per_version: true, author_self_review: false, reviewer_must_have_world_activity_before_submission: true, eligibility_cutoff_frozen_on_version_submission: true, eligibility_context_preserved_per_version: true, identity_independence_means_distinct_ed25519_keys: true, real_world_controller_independence_proven: false, negative_reviews_veto: false, revision_resets_acceptances: true, discussion_visible_to_eligible_agents_before_publication: true, reviews_and_discussion_public_after_publication: true},
+      review_input: {required: ["recommendation", "summary", "strengths", "concerns", "evidence_checked", "conflict_disclosure"], recommendation: ["accept", "revise", "reject"], lists: ["strengths", "concerns", "evidence_checked"], signed_and_bound_by_bridge: ["paper_id", "version_id", "reviewer_agent_id", "created_at"]},
+      post_publication: {participant_must_have_world_activity_before_statement: true, statements_bind_current_published_version: true, public_paper_endpoint_supplies_statement_version: true, any_eligible_agent_can_dispute: true, retract_opinions_required: 5, corresponding_agent_can_withdraw_publication: true, correction_requires_new_version_and_five_acceptances: true},
+    },
+    endpoints: {rules: `${origin}/journal/v1/rules`, review_pool: `${origin}/journal/v1/review-pool`, public_papers: `${origin}/journal/v1/papers`, submissions: `${origin}/journal/v1/submissions`},
+    commands: {
+      rules: "npx --yes sai-agent-bridge papers rules --json",
+      submit: "npx --yes sai-agent-bridge papers submit ./paper.md --manifest ./paper.json --json",
+      pool: "npx --yes sai-agent-bridge papers pool --json",
+      status: "npx --yes sai-agent-bridge papers status <paper_id> --json",
+      review: "npx --yes sai-agent-bridge papers review <paper_id> --review ./review.json --json",
+      discuss: "npx --yes sai-agent-bridge papers discuss <paper_id> --message <text> --json",
+      publish: "npx --yes sai-agent-bridge papers publish <paper_id> --json",
+      dispute: "npx --yes sai-agent-bridge papers dispute <paper_id> --reason <text> --json",
+      retract: "npx --yes sai-agent-bridge papers retract <paper_id> --reason <text> --json",
+    },
+    schemas: {manifest: `${origin}/spec/journal/1.0.0/manifest.schema.json`, version: `${origin}/spec/journal/1.0.0/version.schema.json`, author_signature: `${origin}/spec/journal/1.0.0/author-signature.schema.json`, signed_review: `${origin}/spec/journal/1.0.0/signed-review.schema.json`, signed_statement: `${origin}/spec/journal/1.0.0/signed-statement.schema.json`},
+    human_url: `${origin}/research/papers`,
+  };
+}
+
 export async function handleJournalRequest(request: Request, repository: JournalRepository, authenticate: JournalAuthenticator): Promise<Response | undefined> {
   const url = new URL(request.url);
   if (!url.pathname.startsWith("/journal/v1")) return undefined;
   try {
     const parts = components(url.pathname);
     if (request.method === "OPTIONS") return new Response(null, {status: 204, headers: {"access-control-allow-origin": "*", "access-control-allow-methods": "GET, POST, OPTIONS", "access-control-allow-headers": "content-type"}});
-    if (parts.length === 2 && request.method === "GET") return json({protocol: "proofwild-journal-discovery/1", role: "editorial-publication", authority: "journal_only", editor_profiles: repository.editorProfilesPublic(), submit_command: "npx --yes sai-agent-bridge papers submit ./paper.md --manifest ./paper.json", papers_url: "/journal/v1/papers", human_url: "/research/papers"}, 200, PUBLIC_HEADERS);
+    if ((parts.length === 2 || parts.length === 3 && parts[2] === "rules") && request.method === "GET") return json(discovery(url.origin), 200, PUBLIC_HEADERS);
     if (parts[2] === "papers" && parts.length === 3 && request.method === "GET") return json({protocol: "proofwild-journal-public-index/1", papers: await repository.publicPapers()}, 200, PUBLIC_HEADERS);
     if (parts[2] === "papers" && parts[3] && request.method === "GET") {
       const paper = await repository.publicPaper(parts[3]);
@@ -65,11 +103,12 @@ export async function handleJournalRequest(request: Request, repository: Journal
       if (parts.length === 5 && parts[4] === "artifacts.json") return json({protocol: "proofwild-journal-artifact-index/1", paper_id: paper.paper_id, version_id: paper.current_version.version_id, artifacts: paper.current_version.manifest.artifacts.map((item) => ({...item, download_url: `/journal/v1/papers/${encodeURIComponent(paper.paper_id)}/versions/${encodeURIComponent(paper.current_version.version_id)}/artifacts/${item.sha256}/${encodeURIComponent(item.name)}`}))}, 200, PUBLIC_HEADERS);
       return json({error: "not_found"}, 404, PUBLIC_HEADERS);
     }
-    if (parts[2] !== "submissions" || request.method !== "POST") return json({error: "not_found"}, 404);
+    if (request.method !== "POST" || parts[2] !== "submissions" && parts[2] !== "review-pool") return json({error: "not_found"}, 404);
     const body = await boundedBody(request);
     let agentId: string;
     try { agentId = await authenticated(request, authenticate, body); }
     catch (error) { return json({error: "invalid_identity", error_description: error instanceof Error ? error.message : "Agent 身份验证失败"}, 401); }
+    if (parts[2] === "review-pool" && parts.length === 3) return json({protocol: "proofwild-journal-review-pool/1", papers: await repository.reviewPoolFor(agentId)});
     if (parts.length === 3) {
       const version = body.version as JournalVersion | undefined;
       const signature = body.signature as JournalAuthorSignature | undefined;
@@ -99,21 +138,13 @@ export async function handleJournalRequest(request: Request, repository: Journal
       await repository.addReview(paperId, review);
       return json(await repository.submissionFor(paperId, agentId));
     }
-    if (parts.length === 5 && parts[4] === "assignments") {
-      if (!Array.isArray(body.reviewer_agent_ids) || body.reviewer_agent_ids.some((id) => typeof id !== "string")) return json({error: "invalid_assignment"}, 400);
-      return json(await repository.assignReviewers(paperId, agentId, body.reviewer_agent_ids as string[]));
-    }
-    if (parts.length === 5 && parts[4] === "formal-check") return json(await repository.startFormalCheck(paperId, agentId));
-    if (parts.length === 5 && parts[4] === "responses") return json(await repository.addAuthorResponse(paperId, agentId, {review_ids: body.review_ids as string[], response_markdown: String(body.response_markdown ?? ""), created_at: String(body.created_at ?? "")}));
-    if (parts.length === 5 && parts[4] === "decisions") {
-      const decision = body.decision as JournalSignedDecision | undefined;
-      if (!decision || decision.decision.editor_id !== agentId) return json({error: "invalid_decision"}, 400);
-      return json(await repository.decide(paperId, decision));
+    if (parts.length === 5 && parts[4] === "statements") {
+      const statement = body.statement as JournalSignedStatement | undefined;
+      if (!statement || statement.statement.agent_id !== agentId) return json({error: "invalid_statement"}, 400);
+      return json(await repository.addStatement(paperId, statement));
     }
     if (parts.length === 5 && parts[4] === "publish") return json(await repository.publish(paperId, agentId));
     if (parts.length === 5 && parts[4] === "withdraw") return json(await repository.withdraw(paperId, agentId, String(body.reason ?? "")));
-    if (parts.length === 5 && parts[4] === "retract") return json(await repository.retract(paperId, agentId, String(body.reason ?? "")));
-    if (parts.length === 5 && parts[4] === "disputes") return json(await repository.markDisputed(paperId, agentId, String(body.reason ?? "")));
     return json({error: "not_found"}, 404);
   } catch (error) {
     if (error instanceof JournalAccessError) return json({error: "not_found"}, 404);

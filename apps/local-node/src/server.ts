@@ -12,6 +12,9 @@ import {handleLabsRequest} from "../../../packages/labs/src/http.js";
 import {FileLabsPersistence, LabsRepository} from "../../../packages/labs/src/store.js";
 import {createLabsAwareApplication} from "../../../packages/labs/src/application.js";
 import {LABS_CONFORMANCE_VECTORS, handleWorldSupplyRequest} from "../../../packages/kernel/src/index.js";
+import {handleJournalRequest} from "../../../packages/journal/src/http.js";
+import {JournalRepository} from "../../../packages/journal/src/index.js";
+import {FileJournalPersistence} from "./journal-store.js";
 
 function json(value: unknown, status = 200, headers: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(value), {status, headers: {"content-type": "application/json", ...headers}});
@@ -24,6 +27,7 @@ export interface LocalNode {
   region: RegionService;
   federation: LocalFederationService;
   labs: LabsRepository;
+  journal: JournalRepository;
   close(): Promise<void>;
 }
 
@@ -42,6 +46,7 @@ export async function startLocalNode(options: {dataDirectory: string; host?: str
   const auth = new AuthService({baseUrl: url, region: options.regionId ?? "local", ...(authSnapshot ? {snapshot: authSnapshot} : {})});
   const federation = await LocalFederationService.open({baseUrl: url, regionId: options.regionId ?? "local", region, auth, store});
   const labs = await LabsRepository.open(await FileLabsPersistence.open(options.dataDirectory));
+  const journal = new JournalRepository(await FileJournalPersistence.open(options.dataDirectory), {currentContext: () => region.journalContext(), reviewerEligible: (agentId, context) => region.reviewerEligible(agentId, context)});
   const mcp = createSaiMcpHandler(createLabsAwareApplication(region, labs));
   let authQueue: Promise<void> = Promise.resolve();
   const serialAuth = async <T>(operation: () => Promise<T>): Promise<T> => {
@@ -57,6 +62,8 @@ export async function startLocalNode(options: {dataDirectory: string; host?: str
       const requestUrl = new URL(request.url);
       try {
         if (request.headers.get("host") !== new URL(url).host) return json({error: "invalid_host"}, 403);
+        const journalResponse = await handleJournalRequest(request, journal, (publicJwk, assertion, audience) => serialAuth(async () => { const verified = await auth.verifyAgentAssertion(publicJwk, assertion, audience); await store.saveAuth(auth.snapshot()); return verified; }));
+        if (journalResponse) return journalResponse;
         const labsResponse = await handleLabsRequest(request, labs, LABS_CONFORMANCE_VECTORS);
         if (labsResponse) return labsResponse;
         const supplyResponse = await handleWorldSupplyRequest(request, region);
@@ -131,7 +138,7 @@ export async function startLocalNode(options: {dataDirectory: string; host?: str
   };
   server.removeAllListeners("request");
   server.on("request", toNodeHandler(fetchHandler));
-  return {url, server, auth, region, federation, labs, close: async () => { await mcp.close(); await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve())); }};
+  return {url, server, auth, region, federation, labs, journal, close: async () => { await mcp.close(); await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve())); }};
 }
 
 async function authenticated(request: Request, auth: AuthService, requiredScope: "observe" | "act") {

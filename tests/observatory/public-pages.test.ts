@@ -144,7 +144,7 @@ describe("Proofwild 公开帮助、GEO 与法律页面", () => {
     expect(guide.brand).toEqual(expect.objectContaining({name: "Proofwild", canonical_domain: "proofwild.science", sole_public_origin: "https://proofwild.science"}));
     expect(guide.brand.tagline).toEqual({"zh-CN": "在有限世界中，留下可验证的发现。", en: "Verifiable discovery in a finite world."});
     expect(guide.protocol.endpoint).toBe("https://proofwild.science/mcp");
-    expect(guide.protocol.tools).toEqual(["sai_observe", "sai_act"]);
+    expect(guide.protocol.tools).toEqual(["sai_observe", "sai_act", "sai_memory", "sai_activity"]);
     expect(guide.participation.human_direct_actions).toBe(false);
     expect(guide.npm_package).toBe("sai-agent-bridge");
     expect(guide.cli_bin).toBe("proofwild-agent");
@@ -168,6 +168,13 @@ describe("Proofwild 公开帮助、GEO 与法律页面", () => {
     expect(guide.labs.schemas.research_record).toBe("https://proofwild.science/spec/labs/6.0.0/research-record.schema.json");
     expect(guide.journal.submit_command).toContain("papers submit");
     expect(guide.journal.identity).toBe("existing_proofwild_ed25519");
+    expect(guide.journal.public_review.acceptances_required).toBe(5);
+    expect(guide.journal.public_review.human_editor).toBe(false);
+    expect(guide.journal.rules_endpoint).toBe("https://proofwild.science/journal/v1/rules");
+    expect(guide.memory.limit).toBe(50);
+    expect(guide.memory.tools).toEqual(["sai_memory", "sai_activity"]);
+    expect(guide.memory.commands.history).toContain("memory history");
+    expect(guide.memory.private_to_agent).toBe(true);
     expect(guide.labs.official_global_ranking).toBe(false);
     expect(guide.world_history.unique_official_history).toBe(false);
     expect(guide.current_season_url).toBe("https://proofwild.science/season");
@@ -180,6 +187,8 @@ describe("Proofwild 公开帮助、GEO 与法律页面", () => {
     expect((await llmsResponse().text())).toContain("Verifiable discovery in a finite world");
     expect((await llmsResponse().text())).toContain("npx --yes sai-agent-bridge join --json");
     expect((await llmsResponse().text())).toContain("npx --yes sai-agent-bridge labs --explore --json");
+    expect((await llmsResponse().text())).toContain("Five independent Agent accept reviews");
+    expect((await llmsResponse().text())).toContain("sai_memory");
     expect((await llmsResponse().text())).toContain("Human research registry: https://proofwild.science/en/research");
     expect((await llmsResponse().text())).toContain("Self-contained byte-conformance vectors: https://proofwild.science/labs/v1/test-vectors");
     expect((await llmsResponse().text())).toContain("binds the task to that parent and the local Agent identity");
@@ -210,7 +219,7 @@ describe("Proofwild 公开帮助、GEO 与法律页面", () => {
   });
 
   it("公开当前 LABS 与世界发行 JSON Schema，并为正文使用不可变缓存", async () => {
-    expect(PROTOCOL_SCHEMA_PATHS).toHaveLength(22);
+    expect(PROTOCOL_SCHEMA_PATHS).toHaveLength(23);
     for (const path of PROTOCOL_SCHEMA_PATHS) {
       const response = protocolSchemaResponse(path)!;
       expect(response.status).toBe(200);
