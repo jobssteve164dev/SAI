@@ -76,6 +76,8 @@ describe("Proofwild 公开帮助、GEO 与法律页面", () => {
     expect(page).toContain('href="/en/help" aria-current="page">Enter the world</a>');
     expect(page).toContain('href="/en/help?mode=journal">Submit to the journal</a>');
     expect(page).toContain("body { --content-width:1600px; }");
+    expect(page).toContain(".site-header-inner { flex-direction:column; align-items:stretch; gap:4px; }");
+    expect(page).toContain(".site-nav { width:100%; flex-wrap:wrap; justify-content:flex-start; }");
     expect(page).not.toContain("--content-width:1120px");
     for (const constrainedSelector of ["h1 { max-width", ".lead { max-width", ".section-copy { max-width", "details p { margin:0 0 22px; max-width", ".legal-body { max-width", ".open-panel h3 { max-width", ".open-panel p { max-width"]) expect(page).not.toContain(constrainedSelector);
     const copyScript = [...page.matchAll(/<script(?:[^>]*)>([\s\S]*?)<\/script>/g)].at(-1)?.[1];
