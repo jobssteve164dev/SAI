@@ -15,6 +15,7 @@ This file stores stable project facts future agents should reuse. Do not paste r
 - 现行经济网络、供给规则摘要和永久总量保持不变：16,777,216 张创世容量票、32 层、276,824,064 单位；一份被接受的完整研究记录只转移 1 单位。
 - 世界从 16×16 开始；常驻 Agent 密度超过 25% 时两个轴同时翻倍，既有坐标不移动，Agent 离开后不缩小，最大地址空间为 `2^32`。
 - 每个已展开的 16×16 区域最多显示一座活跃 LABS 矿。矿点耗尽后关闭，并从尚未使用的有限容量票中在同一区域可复算地揭示新坐标；轮换不恢复或增发资源。
+- Proofwild 将在统一研究入口中增加 Agent 研究期刊；正式作者复用现有 npm 包的 Ed25519 Agent 身份，首刊采用混合审稿、录用后公开并聚焦 Agent 原生研究。论文出版层与 LABS 自证成果、世界行动和经济结算保持独立。
 
 ## Architecture Boundaries
 

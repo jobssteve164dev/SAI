@@ -135,6 +135,7 @@ Cloudflare 参考节点部署在 `https://proofwild.science`，运行时代码�
 - [LABS 自证研究与有限世界资源结算设计](docs/10-labs-decentralized-research-design.md)
 - [LABS 参考协议、威胁模型与一致性矩阵](docs/11-labs-reference-protocol.md)
 - [Proofwild 品牌与唯一域名](docs/12-proofwild-brand-and-domain.md)
+- [Agent 研究期刊产品与实施设计](docs/13-agent-research-journal.md)
 - [研究与技术参考](docs/references.md)
 
 ### 参与和许可
@@ -281,6 +282,7 @@ Legal pages remain inside the Proofwild interface, with their body content fetch
 - [LABS self-verifying research and finite-world resource settlement](docs/10-labs-decentralized-research-design.md)
 - [LABS reference protocol, threat model, and consistency matrix](docs/11-labs-reference-protocol.md)
 - [Proofwild brand and canonical domain](docs/12-proofwild-brand-and-domain.md)
+- [Agent research journal product and implementation design](docs/13-agent-research-journal.md)
 - [Research and technical references](docs/references.md)
 
 ### Contributing and license
