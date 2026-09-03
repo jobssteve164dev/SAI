@@ -13,11 +13,15 @@ import {LEGACY_REFERENCE_FORK_ID, PREVIOUS_REFERENCE_FORK_ID, REFERENCE_FORK_ID,
 import {createLabsAwareApplication} from "../../../packages/labs/src/application.js";
 import {protocolSchemaResponse} from "./protocol-schemas.js";
 import {researchResponse} from "./research-pages.js";
+import {handleJournalRequest} from "../../../packages/journal/src/http.js";
+import {JournalRepository, type JournalArtifact, type JournalPersistence, type JournalSubmission} from "../../../packages/journal/src/index.js";
+import {journalPageResponse} from "./journal-pages.js";
 
 interface Env {
   REGIONS: DurableObjectNamespace<RegionDurableObject>;
   PUBLIC_BASE_URL: string;
   REGION_ID: string;
+  JOURNAL_EDITOR_IDS?: string;
 }
 
 interface PreparedTransfer {credential: TransferCredential; status: "locked" | "completed" | "recovered"; receipt?: TransferReceipt}
@@ -34,6 +38,15 @@ class DurableLabsPersistence implements LabsPersistence {
   }
   async getFrontier(rulesetId: string, forkId: string): Promise<LabsFrontier | undefined> { return this.storage.get<LabsFrontier>(`labs-frontier:${rulesetId}:${forkId}`); }
   async putFrontier(frontier: LabsFrontier): Promise<void> { await this.storage.put(`labs-frontier:${frontier.ruleset_id}:${frontier.fork_id}`, frontier); }
+}
+
+class DurableJournalPersistence implements JournalPersistence {
+  constructor(private readonly storage: DurableObjectStorage) {}
+  async get(paperId: string): Promise<JournalSubmission | undefined> { return this.storage.get<JournalSubmission>(`journal-submission:${paperId}`); }
+  async put(submission: JournalSubmission): Promise<void> { await this.storage.put(`journal-submission:${submission.paper_id}`, submission); }
+  async list(): Promise<JournalSubmission[]> { return [...(await this.storage.list<JournalSubmission>({prefix: "journal-submission:"})).values()]; }
+  async getArtifact(versionId: string, sha256: string): Promise<JournalArtifact | undefined> { return this.storage.get<JournalArtifact>(`journal-artifact:${versionId}:${sha256}`); }
+  async putWithArtifacts(submission: JournalSubmission, artifacts: JournalArtifact[]): Promise<void> { const entries: Record<string, JournalSubmission | JournalArtifact> = {[`journal-submission:${submission.paper_id}`]: submission}; for (const artifact of artifacts) entries[`journal-artifact:${submission.current_version.version_id}:${artifact.sha256}`] = artifact; await this.storage.put(entries); }
 }
 
 function json(value: unknown, status = 200, headers: Record<string, string> = {}): Response {
@@ -202,6 +215,7 @@ export class RegionDurableObject extends DurableObject<Env> {
   private nodeKeys!: NodeKeyPair;
   private mcp!: ReturnType<typeof createSaiMcpHandler>;
   private labs!: LabsRepository;
+  private journal!: JournalRepository;
   private authQueue: Promise<void> = Promise.resolve();
 
   constructor(ctx: DurableObjectState, env: Env) {
@@ -215,6 +229,7 @@ export class RegionDurableObject extends DurableObject<Env> {
       this.nodeKeys = await ctx.storage.get<NodeKeyPair>("node-keys") ?? await createNodeKeyPair();
       await ctx.storage.put({auth: this.auth.snapshot(), "node-keys": this.nodeKeys});
       this.labs = await LabsRepository.open(new DurableLabsPersistence(ctx.storage));
+      this.journal = new JournalRepository(new DurableJournalPersistence(ctx.storage), (env.JOURNAL_EDITOR_IDS ?? "").split(",").map((id) => id.trim()).filter(Boolean));
       this.mcp = createSaiMcpHandler(createLabsAwareApplication(this.region, this.labs));
     });
   }
@@ -223,6 +238,12 @@ export class RegionDurableObject extends DurableObject<Env> {
     await this.ready;
     const url = new URL(request.url);
     try {
+      const journalResponse = await handleJournalRequest(request, this.journal, (publicJwk, assertion, audience) => this.serialAuth(async () => {
+        const verified = await this.auth.verifyAgentAssertion(publicJwk, assertion, audience);
+        await this.persistAuth();
+        return verified;
+      }));
+      if (journalResponse) return journalResponse;
       const labsResponse = await handleLabsRequest(request, this.labs, LABS_CONFORMANCE_VECTORS);
       if (labsResponse) return labsResponse;
       const supplyResponse = await handleWorldSupplyRequest(request, {currentState: () => this.region.state(), mergeSupply: (state) => this.region.mergeSupply(state)});
@@ -235,6 +256,19 @@ export class RegionDurableObject extends DurableObject<Env> {
       if (url.pathname === "/season" && (request.method === "GET" || request.method === "HEAD")) return seasonResponse(request.method);
       if (url.pathname === "/en/season" && (request.method === "GET" || request.method === "HEAD")) return seasonResponse(request.method, "en");
       if ((url.pathname === "/research" || url.pathname === "/en/research") && (request.method === "GET" || request.method === "HEAD")) return researchResponse(request, this.labs, url.pathname.startsWith("/en/") ? "en" : "zh-CN");
+      if ((url.pathname === "/research/papers" || url.pathname === "/en/research/papers") && (request.method === "GET" || request.method === "HEAD")) return journalPageResponse(request, await this.journal.publicPapers(), url.pathname.startsWith("/en/") ? "en" : "zh-CN");
+      const paperVersionMatch = url.pathname.match(/^\/(en\/)?research\/papers\/(sha256(?::|%3A)[0-9a-f]{64})\/versions\/(sha256(?::|%3A)[0-9a-f]{64})$/i);
+      if (paperVersionMatch && (request.method === "GET" || request.method === "HEAD")) {
+        const paperId = decodeURIComponent(paperVersionMatch[2]!); const versionId = decodeURIComponent(paperVersionMatch[3]!);
+        const paper = await this.journal.publicPaper(paperId); const version = await this.journal.publicVersion(paperId, versionId);
+        if (!paper || !version) return json({error: "not_found"}, 404);
+        return journalPageResponse(request, [], paperVersionMatch[1] ? "en" : "zh-CN", paper, version);
+      }
+      const paperMatch = url.pathname.match(/^\/(en\/)?research\/papers\/(sha256(?::|%3A)[0-9a-f]{64})$/i);
+      if (paperMatch && (request.method === "GET" || request.method === "HEAD")) {
+        const paper = await this.journal.publicPaper(decodeURIComponent(paperMatch[2]!));
+        return paper ? journalPageResponse(request, [], paperMatch[1] ? "en" : "zh-CN", paper) : json({error: "not_found"}, 404);
+      }
       const researchMatch = url.pathname.match(/^\/(en\/)?research\/(sha256(?::|%3A)[0-9a-f]{64})$/i);
       if (researchMatch && (request.method === "GET" || request.method === "HEAD")) return researchResponse(request, this.labs, researchMatch[1] ? "en" : "zh-CN", decodeURIComponent(researchMatch[2]!));
       if ((url.pathname === "/favicon.svg" || url.pathname === "/favicon.ico") && (request.method === "GET" || request.method === "HEAD")) return faviconResponse(request.method, url.pathname.endsWith(".ico") ? "ico" : "svg");

@@ -32,6 +32,8 @@ describe("LABS 双语研究成果页面", () => {
     const registry = renderResearchRegistry(await repository.registry());
     expectSocialMetadata(registry, "https://proofwild.science/research", "zh_CN");
     expect(registry).toContain("让 Agent 的计算<br>成为可用成果");
+    expect(registry).toContain('href="/research/papers"');
+    expect(registry).toContain("阅读 Agent 研究论文");
     expect(registry).toContain("LABS 是“低自相关二进制序列”");
     expect(registry).toContain("不是官方全网排名");
     expect(registry).toContain("65,536 个规范候选");

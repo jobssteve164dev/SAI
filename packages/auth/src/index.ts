@@ -3,7 +3,7 @@ import {importJWK, jwtVerify, SignJWT} from "jose";
 import {agentIdFromJwk, verifyIdentityAssertion} from "../../identity/src/index.js";
 
 export interface RegisteredAgent {publicJwk: JsonWebKey; epoch: number; enabled: boolean}
-export interface AuthSnapshot {agents: Record<string, RegisteredAgent>; usedAssertions: string[]; signingKeys?: {publicJwk: JsonWebKey; privateJwk: JsonWebKey}}
+export interface AuthSnapshot {agents: Record<string, RegisteredAgent>; usedAssertions: string[]; journalAssertions?: Array<{key: string; agentId: string; usedAt: number; expiresAt: number}>; signingKeys?: {publicJwk: JsonWebKey; privateJwk: JsonWebKey}}
 export interface AccessClaims {agentId: string; scopes: string[]; region: string; epoch: number}
 
 export class AuthService {
@@ -14,6 +14,7 @@ export class AuthService {
   private readonly publicJwk: JsonWebKey;
   private readonly agents: Record<string, RegisteredAgent>;
   private readonly usedAssertions: Set<string>;
+  private journalAssertions: Array<{key: string; agentId: string; usedAt: number; expiresAt: number}>;
 
   constructor(options: {baseUrl: string; region: string; snapshot?: AuthSnapshot}) {
     this.issuer = options.baseUrl;
@@ -30,12 +31,14 @@ export class AuthService {
     }
     this.agents = structuredClone(options.snapshot?.agents ?? {});
     this.usedAssertions = new Set(options.snapshot?.usedAssertions ?? []);
+    this.journalAssertions = structuredClone(options.snapshot?.journalAssertions ?? []);
   }
 
   snapshot(): AuthSnapshot {
     return {
       agents: structuredClone(this.agents),
       usedAssertions: [...this.usedAssertions].sort(),
+      journalAssertions: structuredClone(this.journalAssertions),
       signingKeys: {publicJwk: structuredClone(this.publicJwk), privateJwk: structuredClone(this.privateJwk)},
     };
   }
@@ -53,6 +56,13 @@ export class AuthService {
     this.consumeAssertion(agentId, jti);
     this.agents[agentId] = {publicJwk: structuredClone(publicJwk), epoch: this.agents[agentId]?.epoch ?? 0, enabled: true};
     return agentId;
+  }
+
+  async verifyAgentAssertion(publicJwk: JsonWebKey, assertion: string, audience: string, now?: number): Promise<{agentId: string; publicJwk: JsonWebKey}> {
+    if (!audience.startsWith(`${this.issuer}/journal/v1/`)) throw new Error("Agent 请求 audience 不属于本站期刊");
+    const {agentId, jti} = await verifyIdentityAssertion(assertion, publicJwk, audience, now);
+    this.consumeJournalAssertion(agentId, jti, now ?? Math.floor(Date.now() / 1000));
+    return {agentId, publicJwk: structuredClone(publicJwk)};
   }
 
   async token(input: {clientId: string; assertion: string; resource: string; scopes: string[]}, now = Math.floor(Date.now() / 1000), ttl = 300): Promise<{access_token: string; token_type: "Bearer"; expires_in: number; scope: string}> {
@@ -93,6 +103,15 @@ export class AuthService {
     const key = `${agentId}:${jti}`;
     if (this.usedAssertions.has(key)) throw new Error("client assertion 已使用");
     this.usedAssertions.add(key);
+  }
+  private consumeJournalAssertion(agentId: string, jti: string, now: number): void {
+    if (typeof jti !== "string" || !/^[A-Za-z0-9._:-]{1,128}$/.test(jti)) throw new Error("期刊 client assertion jti 无效");
+    this.journalAssertions = this.journalAssertions.filter((item) => item.expiresAt > now);
+    const key = `${agentId}:${jti}`;
+    if (this.journalAssertions.some((item) => item.key === key)) throw new Error("client assertion 已使用");
+    if (this.journalAssertions.filter((item) => item.agentId === agentId && item.usedAt > now - 60).length >= 30) throw new Error("期刊请求频率超过每分钟上限");
+    if (this.journalAssertions.length >= 4096) throw new Error("期刊身份断言容量暂满，请稍后重试");
+    this.journalAssertions.push({key, agentId, usedAt: now, expiresAt: now + 61});
   }
 }
 

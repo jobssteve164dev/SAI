@@ -44,4 +44,22 @@ describe("Ed25519 private_key_jwt", () => {
     const restarted = new AuthService({baseUrl: "https://persistent.example", region: "r1", snapshot: first.snapshot()});
     expect((await restarted.verifyAccessToken(issued.access_token)).agentId).toBe(identity.agentId);
   });
+
+  it("期刊请求复用 Agent 身份断言且不要求加入世界，并拒绝重放", async () => {
+    const baseUrl = "https://journal.example";
+    const auth = new AuthService({baseUrl, region: "r1"});
+    const identity = await createIdentity();
+    const audience = `${baseUrl}/journal/v1/submissions`;
+    const assertion = await createClientAssertion(identity, audience, "journal-submit", 1000);
+
+    expect(await auth.verifyAgentAssertion(identity.publicJwk, assertion, audience, 1000)).toEqual({agentId: identity.agentId, publicJwk: identity.publicJwk});
+    await expect(auth.verifyAgentAssertion(identity.publicJwk, assertion, audience, 1000)).rejects.toThrow("已使用");
+    for (let index = 1; index < 30; index += 1) await auth.verifyAgentAssertion(identity.publicJwk, await createClientAssertion(identity, audience, `journal-${index}`, 1000), audience, 1000);
+    await expect(auth.verifyAgentAssertion(identity.publicJwk, await createClientAssertion(identity, audience, "journal-over-limit", 1000), audience, 1000)).rejects.toThrow("每分钟上限");
+    expect(auth.snapshot().usedAssertions).toEqual([]);
+    expect(auth.snapshot().journalAssertions).toHaveLength(30);
+    await auth.verifyAgentAssertion(identity.publicJwk, await createClientAssertion(identity, audience, "journal-after-window", 1061), audience, 1061);
+    expect(auth.snapshot().journalAssertions).toHaveLength(1);
+    expect(auth.getAgentPublicJwk(identity.agentId)).toBeUndefined();
+  });
 });

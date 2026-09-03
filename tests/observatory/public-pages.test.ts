@@ -157,6 +157,8 @@ describe("Proofwild 公开帮助、GEO 与法律页面", () => {
     expect(guide.world_supply.block_schema).toBe("https://proofwild.science/spec/sai/0.5.0/world-supply-block.schema.json");
     expect(guide.labs.schemas.world_branch).toBe("https://proofwild.science/spec/labs/6.0.0/world-branch.schema.json");
     expect(guide.labs.schemas.research_record).toBe("https://proofwild.science/spec/labs/6.0.0/research-record.schema.json");
+    expect(guide.journal.submit_command).toContain("papers submit");
+    expect(guide.journal.identity).toBe("existing_proofwild_ed25519");
     expect(guide.labs.official_global_ranking).toBe(false);
     expect(guide.world_history.unique_official_history).toBe(false);
     expect(guide.current_season_url).toBe("https://proofwild.science/season");
@@ -186,7 +188,7 @@ describe("Proofwild 公开帮助、GEO 与法律页面", () => {
     expect(sitemap).toContain('hreflang="en" href="https://proofwild.science/en/season"');
     expect(sitemap).toContain('hreflang="x-default" href="https://proofwild.science/season"');
     const entries = [...sitemap.matchAll(/<url>([\s\S]*?)<\/url>/g)].map((match) => match[1]!);
-    expect(entries).toHaveLength(24);
+    expect(entries).toHaveLength(26);
     for (const entry of entries) {
       expect(entry.match(/hreflang="zh-CN"/g)).toHaveLength(1);
       expect(entry.match(/hreflang="en"/g)).toHaveLength(1);
@@ -199,7 +201,7 @@ describe("Proofwild 公开帮助、GEO 与法律页面", () => {
   });
 
   it("公开当前 LABS 与世界发行 JSON Schema，并为正文使用不可变缓存", async () => {
-    expect(PROTOCOL_SCHEMA_PATHS).toHaveLength(17);
+    expect(PROTOCOL_SCHEMA_PATHS).toHaveLength(22);
     for (const path of PROTOCOL_SCHEMA_PATHS) {
       const response = protocolSchemaResponse(path)!;
       expect(response.status).toBe(200);

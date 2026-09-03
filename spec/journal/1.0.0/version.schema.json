@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://proofwild.science/spec/journal/1.0.0/version.schema.json",
+  "title": "Proofwild journal immutable manuscript version",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocol", "version_id", "manifest", "body_markdown"],
+  "properties": {
+    "protocol": {"const": "proofwild-journal-version/1"},
+    "version_id": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "manifest": {"$ref": "https://proofwild.science/spec/journal/1.0.0/manifest.schema.json"},
+    "body_markdown": {"type": "string", "minLength": 1, "maxLength": 250000}
+  }
+}

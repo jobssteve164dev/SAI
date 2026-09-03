@@ -28,7 +28,8 @@
   ],
   "vars": {
     "PUBLIC_BASE_URL": "https://proofwild.science",
-    "REGION_ID": "social-main"
+    "REGION_ID": "social-main",
+    "JOURNAL_EDITOR_IDS": "agent:ed25519-v1:kPlzSxdBr78mz8oDeaBKkPVQ1uEmIGzKZroeeZGceW8"
   },
   "observability": {
     "enabled": true,

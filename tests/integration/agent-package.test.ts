@@ -1,10 +1,13 @@
 import {spawnSync} from "node:child_process";
-import {mkdtemp, readFile, stat} from "node:fs/promises";
+import type {JsonWebKey} from "node:crypto";
+import {mkdtemp, readFile, stat, writeFile} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join, resolve} from "node:path";
-import {describe, expect, it} from "vitest";
-import {DEFAULT_PROOFWILD_IDENTITY_PATH, DEFAULT_PROOFWILD_NODE_URL, loadOrCreateIdentity} from "../../packages/agent/src/index.js";
+import {describe, expect, it, vi} from "vitest";
+import {DEFAULT_PROOFWILD_IDENTITY_PATH, DEFAULT_PROOFWILD_NODE_URL, loadOrCreateIdentity, runPaperAction} from "../../packages/agent/src/index.js";
+import {verifyIdentityAssertion} from "../../packages/identity/src/index.js";
 import {parseCliArgs} from "../../packages/agent/src/cli.js";
+import {manuscript} from "../journal/journal.test.js";
 
 describe("可发布 Proofwild Agent 包", () => {
   it("源码仓库中的正式 bin 不依赖预先存在的 dist", () => {
@@ -17,7 +20,7 @@ describe("可发布 Proofwild Agent 包", () => {
     const executable = process.platform === "win32" ? "npx.cmd" : "npx";
     const result = spawnSync(executable, ["--yes", "sai-agent-bridge", "--version"], {encoding: "utf8"});
     expect(result.status, result.stderr).toBe(0);
-    expect(result.stdout.trim()).toBe("0.9.1");
+    expect(result.stdout.trim()).toBe("0.10.0");
   });
 
   it("持久保存并复用同一个 Ed25519 身份", async () => {
@@ -45,5 +48,36 @@ describe("可发布 Proofwild Agent 包", () => {
     expect(parseCliArgs(["labs", "--explore", "--json"])).toEqual({command: "labs", explore: true, json: true});
     expect(() => parseCliArgs(["labs", "--claim", "winner"])).toThrow("--claim 必须");
     expect(() => parseCliArgs(["join", "--sequence", "+-"])).toThrow("只适用于 labs");
+  });
+
+  it("CLI 用 papers 下的直接动作完成投稿、签署、查询、修订与审稿", () => {
+    expect(parseCliArgs(["papers", "submit", "paper.md", "--manifest", "paper.json", "--json"])).toEqual({command: "papers", action: "submit", paperPath: "paper.md", manifestPath: "paper.json", json: true});
+    expect(parseCliArgs(["papers", "sign", "sha256:paper", "--identity", "agent.json"])).toEqual({command: "papers", action: "sign", paperId: "sha256:paper", identityPath: "agent.json", json: false});
+    expect(parseCliArgs(["papers", "status", "sha256:paper", "--node", "https://node.example"])).toEqual({command: "papers", action: "status", paperId: "sha256:paper", nodeUrl: "https://node.example", json: false});
+    expect(parseCliArgs(["papers", "revise", "sha256:paper", "paper.md", "--manifest", "paper.json", "--reason", "回应审稿并补充实验"])).toEqual({command: "papers", action: "revise", paperId: "sha256:paper", paperPath: "paper.md", manifestPath: "paper.json", reason: "回应审稿并补充实验", json: false});
+    expect(parseCliArgs(["papers", "review", "sha256:paper", "--review", "review.json"])).toEqual({command: "papers", action: "review", paperId: "sha256:paper", reviewPath: "review.json", json: false});
+    expect(parseCliArgs(["papers", "assign", "sha256:paper", "--reviewers", "agent:a,agent:b"])).toEqual({command: "papers", action: "assign", paperId: "sha256:paper", reviewerIds: ["agent:a", "agent:b"], json: false});
+    expect(parseCliArgs(["papers", "decide", "sha256:paper", "--decision", "accept", "--reason", "通过两份独立评审"])).toEqual({command: "papers", action: "decide", paperId: "sha256:paper", decision: "accept", reason: "通过两份独立评审", json: false});
+    expect(() => parseCliArgs(["papers", "submit", "paper.md"])).toThrow("--manifest");
+  });
+
+  it("papers submit 从现有身份生成精确 audience 断言和持久作者签名", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "proofwild-paper-submit-"));
+    const identityPath = join(directory, "identity.json");
+    const identity = await loadOrCreateIdentity(identityPath);
+    const input = manuscript([identity]);
+    const paperPath = join(directory, "paper.md");
+    const manifestPath = join(directory, "paper.json");
+    await writeFile(paperPath, input.body_markdown);
+    await writeFile(manifestPath, JSON.stringify(input.manifest));
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({paper_id: "sha256:accepted", status: "submitted"}), {status: 201, headers: {"content-type": "application/json"}}));
+    try {
+      await runPaperAction({action: "submit", paperPath, manifestPath, identityPath, nodeUrl: "https://journal.example"});
+      const [target, init] = fetchMock.mock.calls[0]!;
+      expect(target).toBe("https://journal.example/journal/v1/submissions");
+      const payload = JSON.parse(String(init?.body)) as {public_jwk: JsonWebKey; assertion: string; version_id: string; signature: {agent_id: string; version_id: string}};
+      expect((await verifyIdentityAssertion(payload.assertion, payload.public_jwk, String(target))).agentId).toBe(identity.agentId);
+      expect(payload.signature).toMatchObject({agent_id: identity.agentId, version_id: payload.version_id});
+    } finally { fetchMock.mockRestore(); }
   });
 });

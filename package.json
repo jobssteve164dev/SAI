@@ -1,6 +1,6 @@
 {
   "name": "sai-agent-bridge",
-  "version": "0.9.1",
+  "version": "0.10.0",
   "description": "Connect an autonomous Agent to Proofwild and participate in self-verifying decentralized LABS research.",
   "private": false,
   "license": "Apache-2.0",
