@@ -5,6 +5,50 @@ import {PROTOCOL_SCHEMA_PATHS, protocolSchemaResponse} from "../../apps/cloudfla
 
 afterEach(() => vi.unstubAllGlobals());
 
+function decodeRgbPng(bytes: Uint8Array): {width: number; height: number; pixels: Uint8Array} {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const width = view.getUint32(16);
+  const height = view.getUint32(20);
+  const chunks: Buffer[] = [];
+  for (let offset = 8; offset < bytes.length;) {
+    const length = view.getUint32(offset);
+    const type = Buffer.from(bytes.slice(offset + 4, offset + 8)).toString("ascii");
+    if (type === "IDAT") chunks.push(Buffer.from(bytes.slice(offset + 8, offset + 8 + length)));
+    offset += 12 + length;
+  }
+  const packed = inflateSync(Buffer.concat(chunks));
+  const stride = width * 3;
+  const pixels = new Uint8Array(stride * height);
+  const paeth = (left: number, above: number, upperLeft: number) => {
+    const estimate = left + above - upperLeft;
+    const leftDistance = Math.abs(estimate - left);
+    const aboveDistance = Math.abs(estimate - above);
+    const upperLeftDistance = Math.abs(estimate - upperLeft);
+    return leftDistance <= aboveDistance && leftDistance <= upperLeftDistance ? left : aboveDistance <= upperLeftDistance ? above : upperLeft;
+  };
+  for (let y = 0; y < height; y += 1) {
+    const filter = packed[y * (stride + 1)]!;
+    for (let x = 0; x < stride; x += 1) {
+      const raw = packed[y * (stride + 1) + x + 1]!;
+      const left = x >= 3 ? pixels[y * stride + x - 3]! : 0;
+      const above = y > 0 ? pixels[(y - 1) * stride + x]! : 0;
+      const upperLeft = y > 0 && x >= 3 ? pixels[(y - 1) * stride + x - 3]! : 0;
+      const predictor = filter === 0 ? 0 : filter === 1 ? left : filter === 2 ? above : filter === 3 ? Math.floor((left + above) / 2) : paeth(left, above, upperLeft);
+      pixels[y * stride + x] = (raw + predictor) & 0xff;
+    }
+  }
+  return {width, height, pixels};
+}
+
+function coloredPixelCenter(image: ReturnType<typeof decodeRgbPng>, yStart: number, yEnd: number, predicate: (red: number, green: number, blue: number) => boolean): number {
+  const xs: number[] = [];
+  for (let y = yStart; y < yEnd; y += 1) for (let x = 916; x < 1105; x += 1) {
+    const offset = (y * image.width + x) * 3;
+    if (predicate(image.pixels[offset]!, image.pixels[offset + 1]!, image.pixels[offset + 2]!)) xs.push(x);
+  }
+  return (Math.min(...xs) + Math.max(...xs)) / 2;
+}
+
 describe("Proofwild 公开帮助、GEO 与法律页面", () => {
   it("HTTP 请求以 308 保留路径和查询参数跳转到唯一 HTTPS 站点", () => {
     const redirect = canonicalHttpsRedirect(new Request("http://proofwild.science/en/help?source=agent"));
@@ -53,9 +97,9 @@ describe("Proofwild 公开帮助、GEO 与法律页面", () => {
     expect(page).toContain('<meta property="og:title" content="让你的 Agent 接入 Proofwild">');
     expect(page).toContain('<meta property="og:url" content="https://proofwild.science/help">');
     expect(page).toContain('<meta name="twitter:card" content="summary_large_image">');
-    expect(page).toContain('<meta property="og:image" content="https://proofwild.science/social-card.png?locale=zh-CN&amp;v=20260903">');
-    expect(page).toContain('<meta property="og:image:secure_url" content="https://proofwild.science/social-card.png?locale=zh-CN&amp;v=20260903">');
-    expect(page).toContain('<meta name="twitter:image" content="https://proofwild.science/social-card.png?locale=zh-CN&amp;v=20260903">');
+    expect(page).toContain('<meta property="og:image" content="https://proofwild.science/social-card.png?locale=zh-CN&amp;v=20260904-postcard">');
+    expect(page).toContain('<meta property="og:image:secure_url" content="https://proofwild.science/social-card.png?locale=zh-CN&amp;v=20260904-postcard">');
+    expect(page).toContain('<meta name="twitter:image" content="https://proofwild.science/social-card.png?locale=zh-CN&amp;v=20260904-postcard">');
     expect((await helpResponse("HEAD").text())).toBe("");
   });
 
@@ -77,6 +121,9 @@ describe("Proofwild 公开帮助、GEO 与法律页面", () => {
     expect(page).toContain('href="/en/research">Results</a>');
     expect(page).toContain('href="/en/help" aria-current="page">Enter the world</a>');
     expect(page).toContain('href="/en/help?mode=journal">Submit to the journal</a>');
+    expect(page).toContain('src="/social-card.png?locale=en&amp;v=20260904-postcard"');
+    expect(page).toContain('download="proofwild-postcard-en.png"');
+    expect(page).toContain("Verifiable discovery in a finite world.");
     expect(page).toContain("body { --content-width:1600px; }");
     expect(page).toContain(".site-header-inner { flex-direction:column; align-items:stretch; gap:4px; }");
     expect(page).toContain(".site-nav { width:100%; flex-wrap:wrap; justify-content:flex-start; }");
@@ -84,6 +131,77 @@ describe("Proofwild 公开帮助、GEO 与法律页面", () => {
     for (const constrainedSelector of ["h1 { max-width", ".lead { max-width", ".section-copy { max-width", "details p { margin:0 0 22px; max-width", ".legal-body { max-width", ".open-panel h3 { max-width", ".open-panel p { max-width"]) expect(page).not.toContain(constrainedSelector);
     const copyScript = [...page.matchAll(/<script(?:[^>]*)>([\s\S]*?)<\/script>/g)].at(-1)?.[1];
     expect(() => new Function(copyScript!)).not.toThrow();
+  });
+
+  it("加入页让访客保存并通过系统分享带二维码的 OG 明信片", async () => {
+    const page = renderHelpPage();
+    expect(page).toContain('class="share-card"');
+    expect(page).toContain('src="/social-card.png?locale=zh-CN&amp;v=20260904-postcard"');
+    expect(page).toContain('alt="Proofwild 分享明信片：在有限世界中，留下可验证的发现；二维码可打开加入页"');
+    expect(page).toContain('id="save-share-card"');
+    expect(page).toContain('download="proofwild-postcard-zh.png"');
+    expect(page).toContain('id="share-share-card"');
+
+    const clickHandlers = new Map<string, () => Promise<void>>();
+    const shareButton = {
+      disabled: false,
+      dataset: {} as Record<string, string>,
+      setAttribute: vi.fn(),
+      removeAttribute: vi.fn(),
+      addEventListener: (name: string, handler: () => Promise<void>) => clickHandlers.set(name, handler),
+    };
+    const shareStatus = {textContent: ""};
+    const saveLink = {click: vi.fn()};
+    const shareImage = {src: "https://proofwild.science/social-card.png?locale=zh-CN&v=20260904-postcard"};
+    vi.stubGlobal("document", {getElementById: (id: string) => ({
+      "share-card-image": shareImage,
+      "share-share-card": shareButton,
+      "share-card-status": shareStatus,
+      "save-share-card": saveLink,
+    })[id] ?? null});
+    const share = vi.fn(async (_data: Record<string, unknown>) => undefined);
+    vi.stubGlobal("navigator", {canShare: ({files}: {files: File[]}) => files.length === 1, share});
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(new Blob(["postcard"], {type: "image/png"}))));
+
+    const interactionScript = [...page.matchAll(/<script(?:[^>]*)>([\s\S]*?)<\/script>/g)].at(-1)?.[1];
+    expect(interactionScript).toBeDefined();
+    new Function(interactionScript!)();
+    expect(clickHandlers.has("click")).toBe(true);
+    await vi.waitFor(() => expect(shareButton.dataset.shareReady).toBe("true"));
+    expect(fetch).toHaveBeenCalledWith(shareImage.src);
+    const fileShare = clickHandlers.get("click")!();
+
+    expect(share).toHaveBeenCalledOnce();
+    expect(share.mock.calls[0]?.[0]).toEqual(expect.objectContaining({
+      title: "Proofwild",
+      text: "在有限世界中，留下可验证的发现。",
+      files: [expect.objectContaining({name: "proofwild-postcard-zh.png", type: "image/png"})],
+    }));
+    await fileShare;
+    expect(shareButton.disabled).toBe(false);
+    expect(shareStatus.textContent).toBe("已完成分享");
+    expect(saveLink.click).not.toHaveBeenCalled();
+
+    const shareUrl = vi.fn(async (_data: Record<string, unknown>) => undefined);
+    vi.stubGlobal("navigator", {canShare: () => false, share: shareUrl});
+    await clickHandlers.get("click")!();
+    expect(shareUrl).toHaveBeenCalledWith(expect.objectContaining({url: "https://proofwild.science/help"}));
+
+    vi.stubGlobal("navigator", {});
+    await clickHandlers.get("click")!();
+    expect(saveLink.click).toHaveBeenCalledOnce();
+    expect(shareStatus.textContent).toBe("当前浏览器不支持直接分享，已为你保存明信片。");
+  });
+
+  it("双语明信片把二维码下的标题与网址对齐到卡片中心线", async () => {
+    for (const locale of ["zh-CN", "en"] as const) {
+      const bytes = new Uint8Array(await socialCardResponse("GET", locale).arrayBuffer());
+      const image = decodeRgbPng(bytes);
+      const titleCenter = coloredPixelCenter(image, 485, 510, (red, green, blue) => red > 170 && green > 170 && blue > 170);
+      const linkCenter = coloredPixelCenter(image, 518, 530, (red, green, blue) => red < 150 && green > 150 && blue > 150);
+      expect(Math.abs(titleCenter - 1010)).toBeLessThanOrEqual(2);
+      expect(Math.abs(linkCenter - 1010)).toBeLessThanOrEqual(2);
+    }
   });
 
   it("双语帮助与赛季最终页面保持 canonical 和社交 URL 一致", () => {
